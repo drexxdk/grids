@@ -22,21 +22,26 @@ export interface OverflowCell {
   column: number;
   cell: Cell;
 }
-export interface Board {
-  id: string;
-  name: string;
+export interface GridLayout {
+  rows: number;
+  columns: number;
+}
+export interface GridStyle {
   publisher: Publisher;
-  heading: string;
   headingVisible: boolean;
   headingFont: string;
   cellFont: string;
-  rows: number;
-  columns: number;
   gap: number;
   background: string;
+}
+export interface GridContent {
+  id: string;
+  name: string;
+  heading: string;
   cells: Cell[];
   overflow: OverflowCell[];
 }
+export interface Board extends GridLayout, GridStyle, GridContent {}
 export interface Workspace {
   version: 1;
   assets: Asset[];
@@ -47,6 +52,12 @@ export interface ExportSettings {
   format: ImageFormat;
   resolution: number;
   quality: number;
+}
+export interface EditorSettings {
+  version: 1;
+  layout: GridLayout;
+  style: GridStyle;
+  exportSettings: ExportSettings;
 }
 export const publishers = {
   none: { color: "transparent", caption: "#202325", text: "#d8f36a" },
@@ -110,20 +121,87 @@ export const makeWorkspace = (): Workspace => ({
 
 export function resetWorkspace(workspace: Workspace): Workspace {
   const defaults = makeWorkspace();
-  const resized = resizeBoard(
-    workspace.grid,
-    defaults.grid.rows,
-    defaults.grid.columns,
+  const configured = applyEditorSettings(
+    workspace,
+    getEditorSettings(defaults),
   );
   return {
-    ...defaults,
-    assets: workspace.assets,
+    ...configured,
     grid: {
-      ...defaults.grid,
-      id: workspace.grid.id,
-      cells: resized.cells,
-      overflow: resized.overflow,
+      ...configured.grid,
+      name: defaults.grid.name,
+      heading: defaults.grid.heading,
     },
+  };
+}
+
+const layoutSchema = z.strictObject({
+  rows: z.number().int().min(1).max(gridLimit),
+  columns: z.number().int().min(1).max(gridLimit),
+});
+const styleSchema = z.strictObject({
+  publisher: z.enum(["none", "dc", "marvel"]),
+  headingVisible: z.boolean(),
+  headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+  cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+  gap: z.number().min(0).max(40),
+  background: z.string().regex(/^#[0-9a-f]{6}$/i),
+});
+const exportSettingsSchema = z.strictObject({
+  format: z.enum(["image/png", "image/jpeg", "image/webp"]),
+  resolution: z.union([
+    z.literal(150),
+    z.literal(300),
+    z.literal(600),
+    z.literal(1200),
+    z.literal(1800),
+  ]),
+  quality: z.number().int().min(50).max(100),
+});
+export const editorSettingsSchema = z.strictObject({
+  version: z.literal(1),
+  layout: layoutSchema,
+  style: styleSchema,
+  exportSettings: exportSettingsSchema,
+});
+
+export function getEditorSettings(workspace: Workspace): EditorSettings {
+  const { grid, exportSettings } = workspace;
+  return editorSettingsSchema.parse({
+    version: 1,
+    layout: { rows: grid.rows, columns: grid.columns },
+    style: {
+      publisher: grid.publisher,
+      headingVisible: grid.headingVisible,
+      headingFont: grid.headingFont,
+      cellFont: grid.cellFont,
+      gap: grid.gap,
+      background: grid.background,
+    },
+    exportSettings: {
+      format: exportSettings.format,
+      resolution: exportSettings.resolution,
+      quality: exportSettings.quality,
+    },
+  });
+}
+
+export function applyEditorSettings(
+  workspace: Workspace,
+  input: unknown,
+): Workspace {
+  const settings = editorSettingsSchema.parse(input);
+  return {
+    ...workspace,
+    grid: {
+      ...resizeBoard(
+        workspace.grid,
+        settings.layout.rows,
+        settings.layout.columns,
+      ),
+      ...settings.style,
+    },
+    exportSettings: settings.exportSettings,
   };
 }
 
@@ -150,17 +228,11 @@ export const workspaceSchema = z
       }),
     ),
     grid: z.strictObject({
+      ...layoutSchema.shape,
+      ...styleSchema.shape,
       id: z.uuid(),
       name: z.string().max(70),
-      publisher: z.enum(["none", "dc", "marvel"]),
       heading: z.string().max(120),
-      headingVisible: z.boolean(),
-      headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
-      cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
-      rows: z.number().int().min(1).max(gridLimit),
-      columns: z.number().int().min(1).max(gridLimit),
-      gap: z.number().min(0).max(40),
-      background: z.string().regex(/^#[0-9a-f]{6}$/i),
       cells: z.array(cellSchema).max(gridLimit * gridLimit),
       overflow: z
         .array(
@@ -172,17 +244,7 @@ export const workspaceSchema = z
         )
         .max(gridLimit * gridLimit),
     }),
-    exportSettings: z.strictObject({
-      format: z.enum(["image/png", "image/jpeg", "image/webp"]),
-      resolution: z.union([
-        z.literal(150),
-        z.literal(300),
-        z.literal(600),
-        z.literal(1200),
-        z.literal(1800),
-      ]),
-      quality: z.number().int().min(50).max(100),
-    }),
+    exportSettings: exportSettingsSchema,
   })
   .superRefine(({ assets, grid }, context) => {
     const assetIds = new Set(assets.map((asset) => asset.id));

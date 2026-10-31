@@ -34,6 +34,8 @@ Completed work and the ordered development backlog are in [docs/roadmap.md](docs
 
 The image-library Load example icon opens a DC/Marvel preset selector. Use example deliberately replaces the current grid; Cancel leaves it unchanged, and existing library uploads are retained. Repeat loads reuse matching library images. Neither the example module nor its images are requested by a fresh workspace until applied. Defaults use Manrope and do not infer comic branding from the grid name or uploaded images.
 
+The model separates layout/style/export configuration from local cell content and media. Its strict settings-only representation excludes images, font files, URLs/paths, placements, IDs, grid names, headings, and captions. Applying settings validates before changing the grid and preserves local content, including removed-cell recovery. Reset uses this shared path, with an explicit reset of the grid name and banner text. This is a client-side boundary, not account sync; future backend ownership and validation remain required.
+
 ## Deploy To GitHub Pages
 
 1. Push the project to the GitHub repository's `main` branch. The repository is already initialized with an `origin` remote.
@@ -47,7 +49,7 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 ## Project Structure
 
 - [src/App.tsx](src/App.tsx): typed React editor UI, controls, and import/download interactions.
-- [src/model.ts](src/model.ts): versioned single-grid schema, defaults/reset, strict saved-document validation, and coordinate-preserving resizing.
+- [src/model.ts](src/model.ts): versioned single-grid/settings schemas, settings extraction/application, defaults/reset, strict saved-document validation, and coordinate-preserving resizing.
 - [src/demo/comics.ts](src/demo/comics.ts): lazily loaded single-grid example presets, including the unresolved source/rights record.
 - [src/export.ts](src/export.ts): typed canvas sizing, image rendering, and export generation.
 - `src/components/ui/`: typed Headless UI/Motion buttons, switches, accordion, action menu, and modal.
@@ -55,6 +57,7 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 - `styles.css`: existing responsive canvas/editor styling and incremental Tailwind utilities.
 - `public/assets/`: local fonts, images, and redistribution notices.
 - [tests/editor.spec.mjs](tests/editor.spec.mjs): Node-side production-build browser regression checks.
+- [tests/model.spec.mjs](tests/model.spec.mjs): in-memory TypeScript model checks for allowlisted settings, invalid-input rejection, and local-content preservation.
 - [vite.config.mjs](vite.config.mjs) and [playwright.config.mjs](playwright.config.mjs): directly executed ESM tooling configuration.
 - `.github/workflows/deploy.yml`: test and GitHub Pages deployment workflow.
 
