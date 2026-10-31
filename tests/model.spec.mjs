@@ -141,6 +141,33 @@ test("settings boundary rejects unknown fields, media and invalid configuration 
   }
 });
 
+test("saved theme profiles reject private content and remain detached settings", () => {
+  const workspace = localWorkspace();
+  workspace.themeSettings = {
+    Superhero: {
+      ...model.getEditorSettings(workspace).style,
+      template: "Superhero",
+    },
+  };
+  const settings = model.getEditorSettings(workspace);
+  expect(model.editorSettingsSchema.safeParse(settings).success).toBe(true);
+  expect(JSON.stringify(settings.themeSettings)).not.toContain("Private");
+  settings.themeSettings.Superhero.gap = 20;
+  expect(workspace.themeSettings.Superhero.gap).toBe(12);
+  for (const profile of [
+    { ...settings.themeSettings.Superhero, heading: workspace.grid.heading },
+    { ...settings.themeSettings.Superhero, assets: workspace.assets },
+    {
+      ...settings.themeSettings.Superhero,
+      headingFont: "data:font/woff2;base64,private",
+    },
+  ]) {
+    const invalid = { ...settings, themeSettings: { Superhero: profile } };
+    expect(model.editorSettingsSchema.safeParse(invalid).success).toBe(false);
+    expect(() => model.applyEditorSettings(workspace, invalid)).toThrow();
+  }
+});
+
 test("settings boundary applies configuration while preserving local content and recoverable coordinates", () => {
   const workspace = localWorkspace();
   const original = structuredClone(workspace);
@@ -401,6 +428,42 @@ test("document batch imports and example replacement retain latest media and pre
   expect(replaced.grid.name).toBe("Example");
   expect(model.workspaceSchema.safeParse(replaced).success).toBe(true);
   expect(workspace.assets).toEqual([]);
+});
+
+test("direct image deletion clears visible and removed references without erasing captions", () => {
+  const workspace = localWorkspace();
+  workspace.grid.cells[0] = {
+    ...workspace.grid.cells[0],
+    assetId: workspace.assets[0].id,
+    title: "Keep visible caption",
+  };
+  const reduced = model.documentReducer(
+    workspace,
+    model.createResizeCommand(workspace.grid.id, 3, 3),
+  );
+  const original = structuredClone(reduced);
+  const deleted = model.documentReducer(reduced, {
+    type: "assets/delete",
+    assetIds: [workspace.assets[0].id],
+  });
+  expect(deleted.assets).toEqual([]);
+  expect(deleted.grid.cells[0]).toMatchObject({
+    assetId: null,
+    title: "Keep visible caption",
+  });
+  expect(
+    deleted.grid.overflow.find(
+      (entry) => entry.cell.id === workspace.grid.cells[15].id,
+    ).cell,
+  ).toMatchObject({ assetId: null, title: "Private caption" });
+  expect(model.workspaceSchema.safeParse(deleted).success).toBe(true);
+  expect(reduced).toEqual(original);
+  expect(
+    model.documentReducer(deleted, {
+      type: "assets/delete",
+      assetIds: [workspace.assets[0].id],
+    }),
+  ).toBe(deleted);
 });
 
 test("trash cleanup protects live and overflow references and restores image identity", () => {

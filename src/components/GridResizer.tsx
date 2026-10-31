@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Minus, Plus, Undo2 } from "lucide-react";
+import { Minus, Plus, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { gridLimit, type Asset, type OverflowCell } from "../model";
 import { Button } from "./ui/controls";
@@ -99,7 +99,7 @@ export function RemovedCells({
         {occupied.map((entry) => {
           const asset = assets.find((item) => item.id === entry.cell.assetId);
           const title = entry.cell.title || asset?.title || "Untitled cell";
-          const label = `Swap with selected cell: ${title}`;
+          const label = `Restore cell: ${title}`;
           return (
             <Button
               key={entry.cell.id}
@@ -118,7 +118,7 @@ export function RemovedCells({
               <span className="tw:min-w-0 tw:flex-1 tw:break-words tw:text-left">
                 {title}
               </span>
-              <ArrowLeftRight aria-hidden="true" />
+              <Undo2 aria-hidden="true" />
             </Button>
           );
         })}

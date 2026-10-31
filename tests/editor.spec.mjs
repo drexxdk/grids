@@ -76,19 +76,23 @@ async function localDatabase(page, operation = "read", document = null) {
 }
 
 async function savedWorkspace(page) {
-  await expect(page.locator("#save-status")).toHaveText("Saved locally");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved in this browser",
+  );
   return (await localDatabase(page)).document;
 }
 
 async function reloadWorkspace(page) {
-  await expect(page.locator("#save-status")).toHaveText("Saved locally");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved in this browser",
+  );
   await page.reload();
   await expect(page.locator("#board-grid")).toBeVisible();
 }
 
 async function downloadBoard(page) {
   const promise = page.waitForEvent("download");
-  await page.locator("#export-board").click();
+  await page.locator("#export-grid-header").click();
   return promise;
 }
 
@@ -105,10 +109,717 @@ async function useComicExample(page, publisher = "dc") {
     .getByRole("button", { name: "Use example", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator("#canvas-title")).toHaveText(
-    publisher === "dc" ? "DC Characters" : "Marvel Characters",
-  );
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.name)
+    .toBe(publisher === "dc" ? "DC Characters" : "Marvel Characters");
 }
+
+async function selectTheme(page, name) {
+  await page.locator("#theme-selector").click();
+  await page.getByRole("option", { name, exact: true }).click();
+}
+
+async function selectField(page, id, value) {
+  await page.locator(`#${id}`).click();
+  await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
+}
+
+test("theme selector remembers separate settings across switching and reload", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#theme-selector").click();
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
+    "Clean",
+    "Editorial",
+    "Superhero",
+    "Custom",
+  ]);
+  await page.getByRole("option", { name: "Superhero", exact: true }).click();
+  await expect(page.locator("#heading-font")).toHaveCount(1);
+  await expect(page.locator(".settings-panel")).not.toContainText("Aa");
+  await page.locator(".cell-heading").first().fill("Keep caption");
+  await page.getByRole("button", { name: "Marvel", exact: true }).click();
+  await selectField(page, "heading-font", "Manrope");
+  await page.locator("#gap").fill("19");
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.headingFont)
+    .toBe("Manrope");
+  expect((await savedWorkspace(page)).grid.template).toBe("Superhero");
+  await selectTheme(page, "Editorial");
+  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
+  await selectField(page, "heading-font", "Boogaloo");
+  await page.locator("#background").fill("#334455");
+  await selectTheme(page, "Superhero");
+  await expect(page.locator("#heading-font")).toHaveText("Manrope");
+  await expect(page.locator("#gap")).toHaveValue("19");
+  await expect(
+    page.getByRole("button", { name: "Marvel", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await selectTheme(page, "Editorial");
+  await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.background)
+    .toBe("#334455");
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep caption",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("theme-settings-desktop.png"),
+  });
+  await reloadWorkspace(page);
+  await expect(page.locator("#theme-selector")).toHaveText("Editorial");
+  await expect(page.locator("#background")).toHaveValue("#334455");
+  await selectTheme(page, "Superhero");
+  await expect(page.locator("#gap")).toHaveValue("19");
+  await selectTheme(page, "Custom");
+  await page.locator("#background").fill("#556677");
+  await selectTheme(page, "Clean");
+  await expect(page.locator("#gap")).toHaveValue("12");
+  await selectTheme(page, "Custom");
+  await expect(page.locator("#background")).toHaveValue("#556677");
+  const settings = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("grids-settings-v1")),
+  );
+  expect(JSON.stringify(settings.themeSettings)).not.toContain("Keep caption");
+  await expect(
+    page.getByRole("button", { name: "Export grid", exact: true }),
+  ).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: testInfo.outputPath("theme-settings-mobile.png"),
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("editable hex color and Headless UI settings dropdowns synchronize and persist", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await expect(page.locator(".settings-panel select")).toHaveCount(0);
+  const hex = page.getByRole("textbox", {
+    name: "Background hex value",
+    exact: true,
+  });
+  const picker = page.getByLabel("Background color picker", { exact: true });
+  const pickerBox = await picker.boundingBox();
+  expect(pickerBox.width).toBeGreaterThanOrEqual(64);
+  expect(pickerBox.height).toBeGreaterThanOrEqual(44);
+  expect((await hex.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  await expect(hex).toHaveCSS("border-top-width", "0px");
+  await hex.click();
+  await expect(hex).toBeFocused();
+  await hex.fill("112233");
+  await hex.press("Enter");
+  await expect(hex).toHaveValue("#112233");
+  await expect(picker).toHaveValue("#112233");
+  await hex.fill("#zzzzzz");
+  await expect(picker).toHaveValue("#112233");
+  await hex.press("Tab");
+  await expect(hex).toHaveValue("#112233");
+  await hex.fill("#12");
+  await hex.press("Escape");
+  await expect(hex).toHaveValue("#112233");
+  await picker.fill("#aabbcc");
+  await expect(hex).toHaveValue("#AABBCC");
+  await page.locator("#heading-font").click();
+  await page.getByRole("listbox").press("End");
+  await page.getByRole("listbox").press("Enter");
+  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
+  await selectField(page, "cell-font", "Boogaloo");
+  await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
+  await page.locator("#heading-font").click();
+  await page.screenshot({
+    path: testInfo.outputPath("color-dropdowns-desktop.png"),
+  });
+  await page.getByRole("listbox").press("Escape");
+  await page.getByRole("tab", { name: "Export", exact: true }).click();
+  await expect(page.locator(".settings-panel select")).toHaveCount(0);
+  await selectField(page, "format", "image/webp");
+  await selectField(page, "resolution", "300");
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.exportSettings)
+    .toMatchObject({ format: "image/webp", resolution: 300 });
+  await reloadWorkspace(page);
+  await expect(hex).toHaveValue("#AABBCC");
+  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
+  await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page.locator("#heading-font").click();
+  const menuBox = await page.getByRole("listbox").boundingBox();
+  expect(menuBox.x).toBeGreaterThanOrEqual(12);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(378);
+  await page.screenshot({
+    path: testInfo.outputPath("color-dropdowns-mobile.png"),
+  });
+  await page.getByRole("listbox").press("Escape");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("bottom drawer stays horizontally fixed through modal open and close", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("./");
+  await page
+    .locator("#upload")
+    .setInputFiles({
+      name: "stable.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+      ),
+    });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const drawer = page.locator("[data-editor-drawer]");
+  const before = await drawer.boundingBox();
+  const assertStable = async () => {
+    const current = await drawer.boundingBox();
+    expect(Math.abs(current.x - before.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(current.width - before.width)).toBeLessThanOrEqual(1);
+  };
+  await page
+    .getByRole("button", { name: "Add image to cell 1", exact: true })
+    .click();
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await expect(picker).toBeVisible();
+  await assertStable();
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await assertStable();
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Local storage", exact: true })
+    .click();
+  const storage = page.getByRole("dialog", {
+    name: "Local storage",
+    exact: true,
+  });
+  await expect(storage).toBeVisible();
+  await assertStable();
+  await storage.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(storage).toHaveCount(0);
+  await assertStable();
+});
+
+test("mobile image drawer expands tools and restores desktop sidebars", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.goto("http://localhost:5840/tier-list/");
+  const drawer = page.locator("[data-editor-drawer]");
+  const expand = page.getByRole("button", {
+    name: "Expand tools",
+    exact: true,
+  });
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "Load example", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Add or drop images", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Clean up images", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: "Grid settings", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Add images", exact: true }).tap();
+  await (
+    await chooser
+  ).setFiles(
+    ["gallery-1.svg", "gallery-2.svg", "gallery-3.svg"].map((name) => ({
+      name,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(drawer.locator(".asset")).toHaveCount(3);
+  await expect(page.locator("#upload")).toHaveCount(1);
+  await expect(drawer.locator("#asset-library")).toHaveCSS("display", "flex");
+  const compactBox = await drawer.boundingBox();
+  expect(compactBox.y).toBeGreaterThan(844 / 2);
+  expect(compactBox.y + compactBox.height).toBeLessThanOrEqual(845);
+  await page.screenshot({
+    path: testInfo.outputPath("image-drawer-collapsed-mobile.png"),
+  });
+  await page
+    .getByRole("button", { name: "Add image to cell 2", exact: true })
+    .tap();
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await picker
+    .getByRole("button", { name: "Use gallery 2", exact: true })
+    .tap();
+  await expect(picker).toHaveCount(0);
+  await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
+  await expand.tap();
+  const collapse = page.getByRole("button", {
+    name: "Collapse tools",
+    exact: true,
+  });
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("complementary", { name: "Grid settings", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input,textarea"),
+    ),
+  ).toBe(false);
+  await expect(
+    drawer.getByRole("button", { name: "Load example", exact: true }),
+  ).toBeVisible();
+  await selectField(page, "heading-font", "Boogaloo");
+  await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
+  await page.screenshot({
+    path: testInfo.outputPath("image-drawer-expanded-mobile.png"),
+  });
+  await collapse.tap();
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("complementary", { name: "Grid settings", exact: true }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 820, height: 900 });
+  await expect(drawer).toBeVisible();
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await page.screenshot({
+    path: testInfo.outputPath("image-drawer-tablet.png"),
+  });
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await expect(drawer).toHaveCount(0);
+  await expect(page.locator(".workspace-toolbar")).toHaveCount(0);
+  const settings = page.getByRole("complementary", {
+    name: "Grid settings",
+    exact: true,
+  });
+  await expect(
+    settings.getByRole("button", { name: "Reset grid settings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Local storage", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
+  await expect(page.locator("#upload")).toHaveCount(1);
+  await expect(page.locator(".asset")).toHaveCount(3);
+  await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("image-drawer-desktop-sidebars.png"),
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await context.close();
+});
+
+test("cell toolbar overlays the image and never selects a cell", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "overlay.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="96"><rect width="192" height="96" fill="#40b4aa"/><rect width="96" height="96" fill="#e74264"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const image = page.locator(".cell-image-button").first();
+  await page.locator(".asset").dragTo(image);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await page.mouse.move(3, 3);
+  await image.hover();
+  const tools = page.getByRole("group", { name: "Cell tools", exact: true });
+  await expect(tools).toBeVisible();
+  const picture = await image.boundingBox();
+  const toolbar = await tools.boundingBox();
+  expect(toolbar.x).toBeGreaterThanOrEqual(picture.x - 1);
+  expect(toolbar.y).toBeGreaterThanOrEqual(picture.y - 1);
+  expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+    picture.x + picture.width + 1,
+  );
+  expect(toolbar.y + toolbar.height).toBeLessThanOrEqual(
+    picture.y + picture.height + 1,
+  );
+  await expect(
+    tools.getByRole("button", { name: "Edit heading", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(
+      ".grid-cell.selected, .cell-badge, #asset-count, #board-summary, .canvas-heading",
+    ),
+  ).toHaveCount(0);
+  await tools.getByRole("button", { name: "Fill image", exact: true }).click();
+  await expect(
+    tools.getByRole("button", { name: "Fill image", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    tools.getByRole("button", { name: "Fit image", exact: true }),
+  ).toBeVisible();
+  await expect(tools.locator("button:disabled")).toHaveCount(0);
+  await expect(
+    tools.getByRole("button", { name: "Clear cell", exact: true }),
+  ).toHaveCSS(
+    "background-color",
+    /^(?:rgba\(0, 0, 0, 0\.6\)|oklab\(0 0 0 \/ 0\.6\))$/,
+  );
+  await expect(
+    tools.getByRole("button", { name: "Clear cell", exact: true }),
+  ).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(tools.locator("div").first()).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  const clear = await tools
+    .getByRole("button", { name: "Clear cell", exact: true })
+    .boundingBox();
+  expect(clear.y - picture.y).toBeLessThanOrEqual(4);
+  expect(picture.x + picture.width - clear.x - clear.width).toBeLessThanOrEqual(
+    4,
+  );
+  await expect(page.locator(".grid-cell img")).toHaveCSS("object-fit", "cover");
+  await page.screenshot({
+    path: testInfo.outputPath("cell-overlay-desktop.png"),
+  });
+  await page.locator(".cell-heading").first().fill("Inline caption");
+  await expect(tools).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.cells[0].title)
+    .toBe("Inline caption");
+});
+
+test("touch cell overlays target the tapped image without autofocus", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.goto("http://localhost:5840/tier-list/");
+  await page.locator("#upload").setInputFiles({
+    name: "touch.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const image = page.locator(".cell-image-button").nth(2);
+  await image.tap();
+  const tools = page.getByRole("group", { name: "Cell tools", exact: true });
+  await expect(tools).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input, textarea"),
+    ),
+  ).toBe(false);
+  const picker = page.getByRole("dialog", { name: "Choose image" });
+  await picker.getByRole("button", { name: "Use touch", exact: true }).tap();
+  await expect(picker).toHaveCount(0);
+  await expect(page.locator(".grid-cell").nth(2).locator("img")).toHaveCount(1);
+  await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
+    0,
+  );
+  await image.tap();
+  await expect(tools).toBeVisible();
+  const picture = await image.boundingBox();
+  const toolbar = await tools.boundingBox();
+  expect(toolbar.x).toBeGreaterThanOrEqual(picture.x - 1);
+  expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+    picture.x + picture.width + 1,
+  );
+  expect(toolbar.y + toolbar.height).toBeLessThanOrEqual(
+    picture.y + picture.height + 1,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("cell-overlay-mobile.png"),
+  });
+  await context.close();
+});
+
+test("empty cells and image library accept direct uploads and file drops", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const placeholder = page.getByRole("button", {
+    name: "Add image to cell 5",
+    exact: true,
+  });
+  await placeholder.hover();
+  await expect(
+    page.getByRole("group", { name: "Cell tools", exact: true }),
+  ).toHaveCount(0);
+  const chooser = page.waitForEvent("filechooser");
+  await placeholder.click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "direct.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".grid-cell").nth(4).locator("img")).toHaveCount(1);
+  await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
+    0,
+  );
+  const transfer = await page.evaluateHandle(() => {
+    const files = new DataTransfer();
+    files.items.add(
+      new File(
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#e74264"/></svg>',
+        ],
+        "dropped.svg",
+        { type: "image/svg+xml" },
+      ),
+    );
+    return files;
+  });
+  const library = page.getByRole("complementary", {
+    name: "Image library drop zone",
+    exact: true,
+  });
+  await expect(
+    library.getByRole("button", { name: "Add images", exact: true }),
+  ).toBeVisible();
+  await library.dispatchEvent("dragover", { dataTransfer: transfer });
+  await expect(library).toHaveCSS("outline-width", "2px");
+  await library.dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  const cell = page.locator(".grid-cell").nth(1);
+  await cell.dispatchEvent("dragover", { dataTransfer: transfer });
+  await expect(cell).toHaveClass(/drag-over/);
+  await cell.dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(cell.locator("img")).toHaveCount(1);
+  await expect(cell).not.toHaveClass(/drag-over/);
+  await expect(page.locator(".asset")).toHaveCount(3);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .toBe(3);
+  await page.screenshot({
+    path: testInfo.outputPath("direct-upload-drop-zones.png"),
+  });
+});
+
+test("reset retains images and direct library deletion removes files without confirmation", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const addImages = page.getByRole("button", {
+    name: "Add images",
+    exact: true,
+  });
+  expect((await addImages.boundingBox()).height).toBeGreaterThanOrEqual(140);
+  await expect(page.locator("#asset-library > :first-child")).toHaveAttribute(
+    "aria-label",
+    "Add images",
+  );
+  await expect(
+    page.getByRole("group", { name: "Image category", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Grid actions", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Rename grid", exact: true }),
+  ).toHaveCount(0);
+  await page.locator("#upload").setInputFiles(
+    ["used.svg", "unused.svg"].map((name) => ({
+      name,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(
+    page.getByRole("group", { name: "Image category", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .locator(".asset")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await page.locator(".cell-heading").first().fill("Keep this caption");
+  await page.locator("#gap").fill("22");
+  await page
+    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .click();
+  const reset = page.getByRole("dialog", {
+    name: "Reset grid settings",
+    exact: true,
+  });
+  await expect(reset).toContainText(
+    "Library images, cell captions and placements are kept.",
+  );
+  await reset.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(reset).toHaveCount(0);
+  await expect(page.locator("#gap")).toHaveValue("22");
+  await page
+    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .click();
+  await reset
+    .getByRole("button", { name: "Reset settings", exact: true })
+    .click();
+  await expect(reset).toHaveCount(0);
+  await expect(page.locator("#gap")).toHaveValue("12");
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep this caption",
+  );
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.cells[0].title)
+    .toBe("Keep this caption");
+  await savedWorkspace(page);
+  const tileBox = await addImages.boundingBox();
+  expect(Math.abs(tileBox.width - tileBox.height)).toBeLessThanOrEqual(1);
+  await page
+    .getByRole("button", { name: "Image options: used", exact: true })
+    .hover();
+  await page.screenshot({
+    path: testInfo.outputPath("library-delete-hover-desktop.png"),
+  });
+  await page.getByRole("button", { name: "Delete used", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .toBe(1);
+  expect((await localDatabase(page)).images).toHaveLength(1);
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep this caption",
+  );
+  await page
+    .getByRole("button", { name: "Clear all images", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .toBe(0);
+  expect((await localDatabase(page)).images).toHaveLength(0);
+  await expect(addImages).toBeFocused();
+  await expect(page.locator(".asset")).toHaveCount(0);
+  expect((await addImages.boundingBox()).height).toBeGreaterThanOrEqual(140);
+  await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("clear-reset-library-cleanup-desktop.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: testInfo.outputPath("clear-reset-library-cleanup-mobile.png"),
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("mobile library taps reveal delete and upload remains the first tile", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.goto("http://localhost:5840/tier-list/");
+  const add = page.getByRole("button", { name: "Add images", exact: true });
+  expect((await add.boundingBox()).height).toBeGreaterThanOrEqual(140);
+  const chooser = page.waitForEvent("filechooser");
+  await add.tap();
+  await (
+    await chooser
+  ).setFiles(
+    ["first.svg", "second.svg"].map((name) => ({
+      name,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(page.locator("#asset-library > :first-child")).toHaveAttribute(
+    "aria-label",
+    "Add images",
+  );
+  const addBox = await add.boundingBox();
+  expect(Math.abs(addBox.width - addBox.height)).toBeLessThanOrEqual(1);
+  await expect(
+    page.getByRole("button", { name: "Delete first", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Image options: first", exact: true })
+    .tap();
+  await expect(
+    page.getByRole("button", { name: "Delete first", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input,textarea"),
+    ),
+  ).toBe(false);
+  await page.screenshot({
+    path: testInfo.outputPath("library-delete-tap-mobile.png"),
+  });
+  await page.getByRole("button", { name: "Delete first", exact: true }).tap();
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Clear all images", exact: true })
+    .tap();
+  await expect(page.locator(".asset")).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .toBe(0);
+  expect((await localDatabase(page)).images).toHaveLength(0);
+  await page.screenshot({
+    path: testInfo.outputPath("library-empty-placeholder-mobile.png"),
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await context.close();
+});
 
 test("multi-tab notifications preserve local edits and require confirmed reload", async ({
   page,

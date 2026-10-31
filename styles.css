@@ -122,7 +122,7 @@ button {
 }
 button:disabled {
   opacity: 0.5;
-  cursor: wait;
+  cursor: default;
 }
 button:focus-visible,
 a:focus-visible,
@@ -212,7 +212,7 @@ h2 {
   min-height: 42px;
   background: transparent;
 }
-.button:hover {
+.button:not(:disabled):hover {
   border-color: var(--accent);
 }
 .primary {
@@ -283,6 +283,14 @@ h2 {
 }
 .filter-tabs button.active {
   background: #353b2b;
+  color: var(--accent);
+}
+.filter-tabs button:not(:disabled):hover {
+  background: var(--line);
+  color: var(--text);
+}
+.filter-tabs button.active:not(:disabled):hover {
+  background: #414936;
   color: var(--accent);
 }
 .asset-library {
@@ -399,7 +407,7 @@ h2 {
   flex-shrink: 0;
   color: var(--muted);
 }
-.icon-button:hover {
+.icon-button:not(:disabled):hover {
   background: #303536;
   color: var(--text);
 }
@@ -672,7 +680,7 @@ output {
   color: var(--muted);
   font-size: 10px;
 }
-.text-button:hover {
+.text-button:not(:disabled):hover {
   color: var(--text);
 }
 .text-button svg {

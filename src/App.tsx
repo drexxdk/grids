@@ -11,26 +11,25 @@ import {
 import {
   PanelsTopLeft,
   Download,
-  Plus,
   HardDrive,
   Type,
   ImagePlus,
-  Scan,
-  Crop,
   Trash2,
-  Pencil,
-  RotateCcw,
   RefreshCw,
   Images,
 } from "lucide-react";
+import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import {
-  Accordion,
-  ActionMenu,
   Button,
+  ColorField,
+  SelectField,
   Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer, RemovedCells } from "./components/GridResizer";
+import { GridCell } from "./components/GridCell";
+import { EditorLayout } from "./components/EditorLayout";
+import { LibraryImage } from "./components/LibraryImage";
 import {
   fontOptions,
   gridLimit,
@@ -39,15 +38,16 @@ import {
   createResizeCommand,
   documentReducer,
   publishers,
-  referencedAssetIds,
+  getEditorSettings,
   type Asset,
   type Board,
-  type CellPatch,
   type GridPatch,
   type ImageFormat,
   type OverflowCell,
   type ExportSettings,
   type Publisher,
+  type GridStyle,
+  type TemplateName,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
 import {
@@ -65,8 +65,22 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function BoardHeading({ board }: { board: Board }) {
+function BoardHeading({
+  board,
+  editing,
+  onEdit,
+  onChange,
+}: {
+  board: Board;
+  editing: boolean;
+  onEdit: (editing: boolean) => void;
+  onChange: (heading: string) => void;
+}) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) input.current?.focus();
+  }, [editing]);
   useLayoutEffect(() => {
     const heading = headingRef.current;
     if (!heading || !heading.parentElement) return;
@@ -87,17 +101,93 @@ function BoardHeading({ board }: { board: Board }) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [board.heading, board.headingFont, board.headingVisible, board.columns]);
+  }, [
+    board.heading,
+    board.headingFont,
+    board.headingVisible,
+    board.columns,
+    editing,
+  ]);
   return (
     <h2
       ref={headingRef}
       className="board-export-heading"
-      hidden={board.headingVisible === false || !board.heading.trim()}
+      hidden={
+        board.headingVisible === false || (!board.heading.trim() && !editing)
+      }
     >
-      <span className="board-heading-text">{board.heading}</span>
+      {editing ? (
+        <input
+          ref={input}
+          aria-label="Grid heading"
+          maxLength={120}
+          value={board.heading}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => onEdit(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === "Escape") {
+              event.preventDefault();
+              onEdit(false);
+            }
+          }}
+          style={{
+            font: "inherit",
+            color: "inherit",
+            background: "transparent",
+            border: 0,
+            textAlign: "center",
+            width: "100%",
+            padding: 0,
+          }}
+        />
+      ) : (
+        <button
+          className="board-heading-text tw:border-0 tw:bg-transparent tw:p-0 tw:text-inherit tw:[font:inherit] tw:cursor-text"
+          aria-label="Edit grid heading"
+          onClick={() => onEdit(true)}
+        >
+          {board.heading}
+        </button>
+      )}
     </h2>
   );
 }
+
+const templates = [
+  {
+    name: "Clean",
+    style: {
+      headingVisible: true,
+      headingFont: "Manrope",
+      cellFont: "Manrope",
+      background: "#17191b",
+      gap: 12,
+      publisher: "none" as const,
+    },
+  },
+  {
+    name: "Editorial",
+    style: {
+      headingVisible: true,
+      headingFont: "Bebas Neue",
+      cellFont: "Manrope",
+      background: "#292e2c",
+      gap: 8,
+      publisher: "none" as const,
+    },
+  },
+  {
+    name: "Superhero",
+    style: {
+      headingVisible: true,
+      headingFont: "Bangers",
+      cellFont: "Boogaloo",
+      background: "#17191b",
+      gap: 12,
+      publisher: "dc" as const,
+    },
+  },
+] satisfies { name: TemplateName; style: GridStyle }[];
 
 export default function App() {
   const [workspace, dispatchDocument] = useReducer(
@@ -115,19 +205,9 @@ export default function App() {
   const [canSave, setCanSave] = useState(false);
   const storageButton = useRef<HTMLButtonElement>(null);
   const [storageOpen, setStorageOpen] = useState(false);
-  const [emptyTrashSelection, setEmptyTrashSelection] = useState<
-    string[] | null
-  >(null);
   const activeAssets = workspace.assets.filter(
     (asset) => asset.trashedAt === undefined,
   );
-  const trashAssets = workspace.assets.filter(
-    (asset) => asset.trashedAt !== undefined,
-  );
-  const referencedImages = referencedAssetIds(workspace);
-  const unusedAssetIds = activeAssets
-    .filter((asset) => !referencedImages.has(asset.id))
-    .map((asset) => asset.id);
   const [storageInfo, setStorageInfo] = useState<
     | (BrowserStorageStatus & {
         images: { count: number; bytes: number } | null;
@@ -135,8 +215,14 @@ export default function App() {
     | null
   >(null);
   const [requestingPersistence, setRequestingPersistence] = useState(false);
-  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  const [headingEditing, setHeadingEditing] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(0);
+  const [imageTarget, setImageTarget] = useState<string | null>(null);
+  const imageReturnFocus = useRef<HTMLButtonElement>(null);
+  const uploadTarget = useRef<string | null>(null);
+  const addImagesButton = useRef<HTMLButtonElement>(null);
   const [filter, setFilter] = useState("All");
+  const [libraryDragOver, setLibraryDragOver] = useState(false);
   const [toast, setToast] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved locally");
   const { format, resolution, quality } = workspace.exportSettings;
@@ -148,21 +234,23 @@ export default function App() {
   const [examplePublisher, setExamplePublisher] = useState<Publisher>("dc");
   const exampleButton = useRef<HTMLButtonElement>(null);
   const replaceUpload = useRef<HTMLInputElement>(null);
-  const boardActions = useRef<HTMLButtonElement>(null);
-  const renameInput = useRef<HTMLInputElement>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [draftName, setDraftName] = useState("");
+  const resetButton = useRef<HTMLButtonElement>(null);
+  const [resetOpen, setResetOpen] = useState(false);
   const [resizeHistory, setResizeHistory] = useState<
-    { boardId: string; rows: number; columns: number; selectedCellId: string }[]
+    { boardId: string; rows: number; columns: number }[]
   >([]);
   const board = workspace.grid;
-  const selectedCell = Math.max(
-    0,
-    board.cells.findIndex((item) => item.id === selectedCellId),
+  const imageCategories = [
+    ...new Set(activeAssets.map((asset) => asset.category)),
+  ];
+  const matchedTemplate = templates.find((template) =>
+    Object.entries(template.style).every(([key, value]) =>
+      key === "publisher" && template.name === "Superhero"
+        ? board.publisher !== "none"
+        : board[key as keyof Board] === value,
+    ),
   );
-  const setSelectedCell = (index: number) =>
-    setSelectedCellId(board.cells[index]?.id ?? null);
-  const cell = board.cells[selectedCell];
+  const selectedTemplate = board.template ?? matchedTemplate?.name ?? "Custom";
   const resizeUndo = resizeHistory
     .slice()
     .reverse()
@@ -302,21 +390,13 @@ export default function App() {
     );
     setRequestingPersistence(false);
   };
-  const trashUnused = () => {
-    dispatchDocument({
-      type: "assets/trash-unused",
-      assetIds: unusedAssetIds,
-      trashedAt: Date.now(),
-    });
+  const deleteImages = (assetIds: string[]) => {
+    localStore.current?.scheduleImageDeletion(assetIds);
+    dispatchDocument({ type: "assets/delete", assetIds });
     setFilter("All");
-    setToast("Unused images moved to trash.");
-  };
-  const purgeTrash = () => {
-    if (!emptyTrashSelection || !localStore.current || !canSave) return;
-    localStore.current.scheduleImageDeletion(emptyTrashSelection);
-    dispatchDocument({ type: "assets/purge", assetIds: emptyTrashSelection });
-    setEmptyTrashSelection(null);
-    setToast("Trash removal queued.");
+    requestAnimationFrame(() =>
+      addImagesButton.current?.focus({ preventScroll: true }),
+    );
   };
   useEffect(() => {
     if (!toast) return;
@@ -325,21 +405,13 @@ export default function App() {
   }, [toast]);
   const patchBoard = (patch: GridPatch) =>
     dispatchDocument({ type: "grid/patch", gridId: board.id, patch });
-  const patchCell = (patch: CellPatch) =>
-    dispatchDocument({
-      type: "cell/patch",
-      gridId: board.id,
-      cellId: cell.id,
-      patch,
-    });
-  const placeAsset = (id: string, index: number) => {
+  const placeAsset = (id: string, cellId: string) => {
     dispatchDocument({
       type: "cell/place",
       gridId: board.id,
-      cellId: board.cells[index].id,
+      cellId,
       assetId: id,
     });
-    setSelectedCell(index);
   };
   const resize = (key: "rows" | "columns", input: number) => {
     const value = Math.max(1, Math.min(gridLimit, Math.round(input) || 1));
@@ -352,13 +424,9 @@ export default function App() {
         boardId: board.id,
         rows: board.rows,
         columns: board.columns,
-        selectedCellId: cell.id,
       },
     ]);
     dispatchDocument(createResizeCommand(board.id, rows, columns));
-    const row = Math.min(Math.floor(selectedCell / board.columns), rows - 1);
-    const column = Math.min(selectedCell % board.columns, columns - 1);
-    setSelectedCellId(board.cells[row * board.columns + column].id);
   };
   const undoResize = () => {
     if (!resizeUndo) return;
@@ -368,25 +436,27 @@ export default function App() {
     setResizeHistory((current) =>
       current.filter((entry) => entry !== resizeUndo),
     );
-    setSelectedCellId(resizeUndo.selectedCellId);
   };
   const recoverCell = (entry: OverflowCell) => {
-    dispatchDocument({
-      type: "cell/recover",
-      gridId: board.id,
-      cellId: cell.id,
-      overflowCellId: entry.cell.id,
-    });
+    setResizeHistory((current) => [
+      ...current,
+      { boardId: board.id, rows: board.rows, columns: board.columns },
+    ]);
+    dispatchDocument(
+      createResizeCommand(
+        board.id,
+        Math.max(board.rows, entry.row + 1),
+        Math.max(board.columns, entry.column + 1),
+      ),
+    );
   };
   const importFiles = async (
     files: FileList | null,
-    targetIndex: number | null = null,
+    targetCellId: string | null = null,
   ) => {
     const store = localStore.current;
     if (!store) return;
     const targetId = board.id;
-    const targetCellId =
-      targetIndex === null ? null : board.cells[targetIndex]?.id;
     const assets: Asset[] = [];
     for (const file of Array.from(files ?? [])) {
       if (!file.type.startsWith("image/")) {
@@ -425,7 +495,7 @@ export default function App() {
     const sourceIndex = event.dataTransfer.getData(
       "application/x-gridroom-cell",
     );
-    if (assetId) placeAsset(assetId, index);
+    if (assetId) placeAsset(assetId, board.cells[index].id);
     else if (sourceIndex !== "") {
       let dragged: { boardId?: string; cellId?: string } | null;
       try {
@@ -448,11 +518,9 @@ export default function App() {
           sourceCellId: board.cells[source].id,
           targetCellId: board.cells[index].id,
         });
-        setSelectedCell(index);
       }
     } else if (event.dataTransfer.files.length) {
-      setSelectedCell(index);
-      importFiles(event.dataTransfer.files, index);
+      importFiles(event.dataTransfer.files, board.cells[index].id);
     }
   };
   const exportGrid = async () => {
@@ -502,7 +570,7 @@ export default function App() {
   };
   const upload = async (
     event: ChangeEvent<HTMLInputElement>,
-    target: number | null = null,
+    target: string | null = null,
   ) => {
     const input = event.currentTarget;
     await importFiles(input.files, target);
@@ -511,8 +579,10 @@ export default function App() {
   const resetDefaults = () => {
     dispatchDocument(createResetCommand());
     setResizeHistory([]);
-    setSelectedCellId(null);
+    setImageTarget(null);
     setFilter("All");
+    setSettingsTab(0);
+    setResetOpen(false);
     setToast("Defaults restored. Images kept.");
   };
   const loadExample = async () => {
@@ -527,7 +597,7 @@ export default function App() {
         assets: example.assets,
       });
       setResizeHistory([]);
-      setSelectedCellId(null);
+      setImageTarget(null);
       setFilter("All");
       setToast("Example loaded.");
       setExampleOpen(false);
@@ -556,11 +626,19 @@ export default function App() {
           <span className="brand-mark">
             <PanelsTopLeft />
           </span>
-          Grids<span className="brand-tag">IMAGE BOARDS</span>
+          Grids
         </a>
         <div className="header-actions">
-          <span id="save-status" className="save-status">
-            {saveStatus}
+          <span
+            id="save-status"
+            className="save-status"
+            title="Your grid is kept when you reload or reopen this page in the same browser. It is not synced to other devices."
+          >
+            {saveStatus === "Saved locally"
+              ? "Saved in this browser"
+              : saveStatus === "Saving locally"
+                ? "Saving changes..."
+                : saveStatus}
           </span>
           <button
             id="export-grid-header"
@@ -573,27 +651,92 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="app-layout">
-        <aside className="asset-panel">
-          <div className="section-heading">
-            <h2>Image library</h2>
-            <span id="asset-count" className="count">
-              {activeAssets.length}
-            </span>
-            <Button
-              ref={exampleButton}
-              variant="icon"
-              aria-label="Load example"
-              title="Load example: Legacy comics"
-              disabled={loadingExample}
-              onClick={() => setExampleOpen(true)}
-            >
-              <Images aria-hidden="true" />
-            </Button>
-          </div>
-          <label className="upload-button" htmlFor="upload">
-            <Plus />
-            Add images
+      <main className="app-layout tw:max-[900px]:block! tw:max-[900px]:pb-[280px]">
+        <EditorLayout>
+          <aside
+            className={`asset-panel ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
+            aria-label="Image library drop zone"
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setLibraryDragOver(true);
+              }
+            }}
+            onDragLeave={(event) => {
+              if (
+                !(event.relatedTarget instanceof Node) ||
+                !event.currentTarget.contains(event.relatedTarget)
+              )
+                setLibraryDragOver(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setLibraryDragOver(false);
+              if (event.dataTransfer.files.length)
+                void importFiles(event.dataTransfer.files);
+            }}
+          >
+            <div className="section-heading">
+              <h2>Image library</h2>
+              <Button
+                ref={exampleButton}
+                variant="icon"
+                aria-label="Load example"
+                title="Load example: Legacy comics"
+                disabled={loadingExample}
+                onClick={() => setExampleOpen(true)}
+              >
+                <Images aria-hidden="true" />
+              </Button>
+            </div>
+            {imageCategories.length > 1 && (
+              <div
+                className="filter-tabs"
+                role="group"
+                aria-label="Image category"
+              >
+                {["All", ...imageCategories].map((category) => (
+                  <button
+                    key={category}
+                    className={filter === category ? "active" : ""}
+                    data-filter={category}
+                    onClick={() => setFilter(category)}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div id="asset-library" className="asset-library">
+              <button
+                ref={addImagesButton}
+                type="button"
+                aria-label="Add images"
+                title="Add or drop images"
+                className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-sm tw:border tw:border-dashed tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:enabled:hover:border-(--accent) ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                onClick={() => document.getElementById("upload")?.click()}
+              >
+                <ImagePlus aria-hidden="true" />
+                <span className="tw:text-[11px]">Add images</span>
+                <span className="tw:text-[9px]">Drop here</span>
+              </button>
+              {activeAssets
+                .filter(
+                  (asset) =>
+                    imageCategories.length < 2 ||
+                    filter === "All" ||
+                    asset.category === filter,
+                )
+                .map((asset) => (
+                  <LibraryImage
+                    key={asset.id}
+                    asset={asset}
+                    disabled={loadingExample}
+                    onDelete={() => deleteImages([asset.id])}
+                  />
+                ))}
+            </div>
             <input
               id="upload"
               type="file"
@@ -602,489 +745,360 @@ export default function App() {
               hidden
               onChange={(event) => upload(event)}
             />
-          </label>
-          <div className="filter-tabs" role="group" aria-label="Image category">
-            {[
-              "All",
-              ...new Set(activeAssets.map((asset) => asset.category)),
-            ].map((category) => (
-              <button
-                key={category}
-                className={filter === category ? "active" : ""}
-                data-filter={category}
-                onClick={() => setFilter(category)}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          <div id="asset-library" className="asset-library">
-            {activeAssets
-              .filter((asset) => filter === "All" || asset.category === filter)
-              .map((asset) => (
-                <button
-                  key={asset.id}
-                  className="asset"
-                  title={`Place ${asset.title} in selected cell`}
-                  draggable
-                  onClick={() => placeAsset(asset.id, selectedCell)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData(
-                      "application/x-gridroom-asset",
-                      asset.id,
-                    );
-                    event.dataTransfer.effectAllowed = "copy";
-                  }}
-                >
-                  <img src={asset.src} alt={asset.title} draggable={false} />
-                  <span className="asset-name">{asset.title}</span>
-                  <span className="asset-category">{asset.category}</span>
-                </button>
-              ))}
-          </div>
-          <div className="library-footer">
-            <span className="status-dot" />
-            <span>Local workspace</span>
-            <HardDrive />
-          </div>
-        </aside>
-        <section className="workspace" aria-label="Grid editor">
-          <div className="workspace-toolbar">
-            <ActionMenu
-              buttonRef={boardActions}
-              actions={[
-                {
-                  label: "Rename grid",
-                  icon: Pencil,
-                  onSelect: () => {
-                    setDraftName(board.name);
-                    setRenaming(board.id);
-                  },
-                },
-                {
-                  label: "Download image",
-                  icon: Download,
-                  onSelect: exportGrid,
-                  disabled: exporting,
-                },
-              ]}
-            />
-            <Button
-              variant="icon"
-              title="Reset to Defaults"
-              aria-label="Reset to Defaults"
-              onClick={resetDefaults}
-            >
-              <RotateCcw aria-hidden="true" />
-            </Button>
-            <Button
-              ref={storageButton}
-              variant="icon"
-              aria-label="Local storage"
-              title="Local storage"
-              onClick={() => {
-                setStorageInfo(null);
-                setStorageOpen(true);
-              }}
-            >
-              <HardDrive aria-hidden="true" />
-            </Button>
-          </div>
-          {conflict && (
-            <div
-              role="alert"
-              className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:p-4"
-            >
-              <p className="tw:m-0 tw:min-w-0 tw:text-sm">
-                Another tab saved a newer grid. This tab is not saving.
-              </p>
-              <Button ref={reloadButton} onClick={() => setReloadOpen(true)}>
-                <RefreshCw aria-hidden="true" />
-                Reload saved grid
-              </Button>
-            </div>
-          )}
-          <div className="canvas-area">
-            <div className="canvas-heading">
-              <div>
-                <span className="eyebrow">THE CANVAS</span>
-                <h1 id="canvas-title">{board.name}</h1>
-              </div>
-              <span id="board-summary" className="canvas-meta">
-                {board.columns} × {board.rows} /{" "}
-                {
-                  board.cells
-                    .slice(0, board.rows * board.columns)
-                    .filter((item) => item.assetId).length
-                }{" "}
-                images
-              </span>
-            </div>
-            <GridResizer
-              rows={board.rows}
-              columns={board.columns}
-              onResize={resize}
-              onUndo={resizeUndo ? undoResize : undefined}
-            >
-              <div
-                id="board-grid"
-                className="board-grid"
-                aria-label="Image grid"
-                style={
-                  {
-                    "--columns": board.columns,
-                    "--gap": `${board.gap}px`,
-                    "--board-bg": board.background,
-                    "--publisher-color": palette.color,
-                    "--publisher-text": palette.text,
-                    "--caption-color": palette.caption,
-                    "--heading-font": `"${board.headingFont}"`,
-                    "--cell-font": `"${board.cellFont}"`,
-                  } as CSSProperties
+            {workspace.assets.length > 0 && (
+              <Button
+                className="tw:mt-2 tw:min-h-[44px] tw:w-full"
+                disabled={loadingExample}
+                onClick={() =>
+                  deleteImages(workspace.assets.map((asset) => asset.id))
                 }
               >
-                <BoardHeading board={board} />
-                {board.cells
-                  .slice(0, board.rows * board.columns)
-                  .map((item, index) => {
-                    const asset = workspace.assets.find(
-                      (asset) => asset.id === item.assetId,
-                    );
-                    return (
-                      <div
-                        key={item.id}
-                        className={`grid-cell${selectedCell === index ? " selected" : ""}`}
-                        data-index={index}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          event.currentTarget.classList.add("drag-over");
-                        }}
-                        onDragLeave={(event) => {
-                          if (
-                            !(event.relatedTarget instanceof Node) ||
-                            !event.currentTarget.contains(event.relatedTarget)
-                          )
-                            event.currentTarget.classList.remove("drag-over");
-                        }}
-                        onDrop={(event) => drop(event, index)}
-                      >
-                        <button
-                          className="cell-image-button"
-                          aria-label={`Select cell ${index + 1}${item.title ? `: ${item.title}` : ""}`}
-                          draggable={Boolean(asset)}
-                          onClick={() => setSelectedCell(index)}
-                          onDoubleClick={() => {
-                            setSelectedCell(index);
-                            replaceUpload.current?.click();
-                          }}
-                          onDragStart={(event) => {
-                            event.dataTransfer.setData(
-                              "application/x-gridroom-cell",
-                              JSON.stringify({
-                                boardId: board.id,
-                                cellId: item.id,
-                              }),
-                            );
-                            event.dataTransfer.effectAllowed = "move";
-                          }}
-                        >
-                          {asset ? (
-                            <img
-                              src={asset.src}
-                              alt={item.title}
-                              style={{ objectFit: item.fit }}
-                              draggable={false}
-                            />
-                          ) : (
-                            <span className="empty-cell">
-                              <ImagePlus />
-                              <span>Add image</span>
-                            </span>
-                          )}
-                          <span className="cell-badge">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                        </button>
-                        <textarea
-                          className="cell-heading"
-                          rows={1}
-                          maxLength={120}
-                          value={item.title}
-                          placeholder="ADD HEADING"
-                          aria-label={`Heading for cell ${index + 1}`}
-                          onFocus={() => setSelectedCell(index)}
-                          onChange={(event) => {
-                            const title = event.target.value;
+                <Trash2 aria-hidden="true" />
+                Clear all images
+              </Button>
+            )}
+          </aside>
+          <section className="workspace" aria-label="Grid editor">
+            {conflict && (
+              <div
+                role="alert"
+                className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:p-4"
+              >
+                <p className="tw:m-0 tw:min-w-0 tw:text-sm">
+                  Another tab saved a newer grid. This tab is not saving.
+                </p>
+                <Button ref={reloadButton} onClick={() => setReloadOpen(true)}>
+                  <RefreshCw aria-hidden="true" />
+                  Reload saved grid
+                </Button>
+              </div>
+            )}
+            <div className="canvas-area">
+              {(!board.heading.trim() || !board.headingVisible) &&
+                !headingEditing && (
+                  <Button
+                    className="tw:mb-3 tw:border-0 tw:bg-transparent tw:text-(--muted)"
+                    onClick={() => {
+                      patchBoard({ headingVisible: true });
+                      setHeadingEditing(true);
+                    }}
+                  >
+                    <Type aria-hidden="true" />
+                    Add heading
+                  </Button>
+                )}
+              <GridResizer
+                rows={board.rows}
+                columns={board.columns}
+                onResize={resize}
+                onUndo={resizeUndo ? undoResize : undefined}
+              >
+                <div
+                  id="board-grid"
+                  className="board-grid"
+                  aria-label="Image grid"
+                  style={
+                    {
+                      "--columns": board.columns,
+                      "--gap": `${board.gap}px`,
+                      "--board-bg": board.background,
+                      "--publisher-color": palette.color,
+                      "--publisher-text": palette.text,
+                      "--caption-color": palette.caption,
+                      "--heading-font": `"${board.headingFont}"`,
+                      "--cell-font": `"${board.cellFont}"`,
+                    } as CSSProperties
+                  }
+                >
+                  <BoardHeading
+                    board={board}
+                    editing={headingEditing}
+                    onEdit={setHeadingEditing}
+                    onChange={(heading) => patchBoard({ heading })}
+                  />
+                  {board.cells
+                    .slice(0, board.rows * board.columns)
+                    .map((item, index) => {
+                      const asset = workspace.assets.find(
+                        (asset) => asset.id === item.assetId,
+                      );
+                      return (
+                        <GridCell
+                          key={item.id}
+                          cell={item}
+                          asset={asset}
+                          canChoose={activeAssets.length > 0}
+                          index={index}
+                          gridId={board.id}
+                          onPatch={(patch) =>
                             dispatchDocument({
                               type: "cell/patch",
                               gridId: board.id,
                               cellId: item.id,
-                              patch: { title },
-                            });
+                              patch,
+                            })
+                          }
+                          onClear={() =>
+                            dispatchDocument({
+                              type: "cell/clear",
+                              gridId: board.id,
+                              cellId: item.id,
+                            })
+                          }
+                          onChoose={(trigger) => {
+                            imageReturnFocus.current = trigger;
+                            setImageTarget(item.id);
                           }}
+                          onUpload={() => {
+                            uploadTarget.current = item.id;
+                            replaceUpload.current?.click();
+                          }}
+                          onDrop={(event) => drop(event, index)}
                         />
-                      </div>
-                    );
-                  })}
-              </div>
-            </GridResizer>
-            <div className="canvas-footer">
-              <span>
-                <Type />
-                <span id="font-summary">
-                  {`${board.headingFont} / ${board.cellFont}`.toUpperCase()}
-                </span>
-              </span>
-              <span id="canvas-dimensions">
-                {size.width} × {size.height} px
-              </span>
-            </div>
-            <RemovedCells
-              entries={board.overflow}
-              assets={workspace.assets}
-              onRecover={recoverCell}
-            />
-          </div>
-        </section>
-        <aside className="settings-panel">
-          <Accordion title="Grid settings">
-            <label className="field-label" htmlFor="board-name">
-              Grid name
-            </label>
-            <input
-              id="board-name"
-              maxLength={70}
-              value={board.name}
-              onChange={(event) => patchBoard({ name: event.target.value })}
-            />
-            <label className="field-label" htmlFor="image-heading">
-              Image heading
-            </label>
-            <Toggle
-              label="Show heading"
-              checked={board.headingVisible !== false}
-              onChange={(headingVisible) => patchBoard({ headingVisible })}
-            />
-            <input
-              id="image-heading"
-              maxLength={120}
-              placeholder="Heading"
-              value={board.heading}
-              onChange={(event) => patchBoard({ heading: event.target.value })}
-            />
-            <label className="field-label" htmlFor="publisher">
-              Publisher
-            </label>
-            <select
-              id="publisher"
-              value={board.publisher}
-              onChange={(event) =>
-                patchBoard({
-                  publisher: event.target.value as Board["publisher"],
-                })
-              }
-            >
-              <option value="none">None</option>
-              <option value="dc">DC</option>
-              <option value="marvel">Marvel</option>
-            </select>
-            <label className="field-label" htmlFor="heading-font">
-              Heading font
-            </label>
-            <select
-              id="heading-font"
-              value={board.headingFont}
-              onChange={(event) =>
-                patchBoard({ headingFont: event.target.value })
-              }
-            >
-              {fontOptions.map((font) => (
-                <option key={font}>{font}</option>
-              ))}
-            </select>
-            <label className="field-label" htmlFor="cell-font">
-              Cell font
-            </label>
-            <select
-              id="cell-font"
-              value={board.cellFont}
-              onChange={(event) => patchBoard({ cellFont: event.target.value })}
-            >
-              {fontOptions.map((font) => (
-                <option key={font}>{font}</option>
-              ))}
-            </select>
-            <div className="field-pair">
-              {(["rows", "columns"] as const).map((key) => (
-                <label key={key}>
-                  {key === "rows" ? "Rows" : "Columns"}
-                  <output id={key} className="tw:block tw:py-2">
-                    {board[key]}
-                  </output>
-                </label>
-              ))}
-            </div>
-            <label className="field-label" htmlFor="gap">
-              Grid spacing <output id="gap-value">{board.gap} px</output>
-            </label>
-            <input
-              id="gap"
-              type="range"
-              min="0"
-              max="40"
-              value={board.gap}
-              onChange={(event) =>
-                patchBoard({ gap: Number(event.target.value) })
-              }
-            />
-            <label className="field-label" htmlFor="background">
-              Background
-            </label>
-            <div className="color-field">
-              <input
-                id="background"
-                type="color"
-                value={board.background}
-                onChange={(event) =>
-                  patchBoard({ background: event.target.value })
-                }
+                      );
+                    })}
+                </div>
+              </GridResizer>
+              <RemovedCells
+                entries={board.overflow}
+                assets={workspace.assets}
+                onRecover={recoverCell}
               />
-              <span id="background-value">
-                {board.background.toUpperCase()}
-              </span>
             </div>
-          </Accordion>
-          <section className="settings-section">
-            <div className="section-heading">
-              <span className="eyebrow">SELECTED CELL</span>
-              <span id="cell-number" className="count">
-                {String(selectedCell + 1).padStart(2, "0")}
-              </span>
-            </div>
-            <label className="field-label" htmlFor="cell-title">
-              Heading
-            </label>
-            <textarea
-              id="cell-title"
-              rows={2}
-              maxLength={120}
-              value={cell.title}
-              onChange={(event) => patchCell({ title: event.target.value })}
-            />
-            <span className="field-label">Image fit</span>
-            <div className="segmented" role="group" aria-label="Image fit">
-              <button
-                id="fit-contain"
-                aria-pressed={cell.fit === "contain"}
-                onClick={() => patchCell({ fit: "contain" })}
-              >
-                <Scan />
-                Fit
-              </button>
-              <button
-                id="fit-cover"
-                aria-pressed={cell.fit === "cover"}
-                onClick={() => patchCell({ fit: "cover" })}
-              >
-                <Crop />
-                Fill
-              </button>
-            </div>
-            <div className="cell-actions">
-              <button
-                id="replace-image"
-                className="text-button"
-                onClick={() => replaceUpload.current?.click()}
-              >
-                <ImagePlus />
-                Replace
-              </button>
-              <button
-                id="remove-image"
-                className="icon-button"
-                title="Clear selected cell"
-                aria-label="Clear selected cell"
-                onClick={() =>
-                  dispatchDocument({
-                    type: "cell/clear",
-                    gridId: board.id,
-                    cellId: cell.id,
-                  })
-                }
-              >
-                <Trash2 />
-              </button>
-            </div>
-            <input
-              ref={replaceUpload}
-              id="replace-upload"
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(event) => upload(event, selectedCell)}
-            />
           </section>
-          <section className="settings-section export-section">
-            <span className="eyebrow">EXPORT</span>
-            <label className="field-label" htmlFor="format">
-              File format
-            </label>
-            <select
-              id="format"
-              value={format}
-              onChange={(event) =>
-                patchExport({ format: event.target.value as ImageFormat })
-              }
-            >
-              <option value="image/png">PNG</option>
-              <option value="image/jpeg">JPEG</option>
-              <option value="image/webp">WebP</option>
-            </select>
-            <label className="field-label" htmlFor="resolution">
-              Resolution
-            </label>
-            <select
-              id="resolution"
-              value={resolution}
-              onChange={(event) =>
-                patchExport({ resolution: Number(event.target.value) })
-              }
-            >
-              <option value="150">150 px / image</option>
-              <option value="300">300 px / image</option>
-              <option value="600">600 px / image</option>
-              <option value="1200">1200 px / image</option>
-              <option value="1800">1800 px / image</option>
-            </select>
-            <label className="field-label quality-label" htmlFor="quality">
-              Quality <output id="quality-value">{quality}%</output>
-            </label>
-            <input
-              id="quality"
-              type="range"
-              min="50"
-              max="100"
-              value={quality}
-              disabled={format === "image/png"}
-              onChange={(event) =>
-                patchExport({ quality: Number(event.target.value) })
-              }
-            />
-            <button
-              id="export-board"
-              className="button primary"
-              disabled={exporting}
-              onClick={exportGrid}
-            >
-              <Download />
-              Export grid
-            </button>
-          </section>
-        </aside>
+          <aside
+            className="settings-panel tw:block!"
+            aria-label="Grid settings"
+          >
+            <div className="tw:flex tw:flex-wrap tw:gap-2 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3">
+              <Button
+                ref={resetButton}
+                title="Restore default grid settings; keep library images and cell captions"
+                onClick={() => setResetOpen(true)}
+              >
+                <PanelsTopLeft aria-hidden="true" />
+                Reset grid settings
+              </Button>
+              <Button
+                aria-label="Local storage"
+                onClick={(event) => {
+                  storageButton.current = event.currentTarget;
+                  setStorageInfo(null);
+                  setStorageOpen(true);
+                }}
+              >
+                <HardDrive aria-hidden="true" />
+                Local storage
+              </Button>
+            </div>
+            <TabGroup selectedIndex={settingsTab} onChange={setSettingsTab}>
+              <TabList className="tw:flex tw:gap-1 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3">
+                {["Templates", "Export"].map((label) => (
+                  <Tab
+                    key={label}
+                    className="tw:min-h-[44px] tw:border-0 tw:bg-transparent tw:px-2 tw:text-xs tw:text-(--muted) tw:data-selected:bg-(--bg) tw:data-selected:text-(--text) tw:enabled:hover:bg-(--line) tw:enabled:hover:text-(--text) tw:transition-colors"
+                  >
+                    {label}
+                  </Tab>
+                ))}
+              </TabList>
+              <TabPanels>
+                <TabPanel className="tw:py-5">
+                  <SelectField
+                    id="theme-selector"
+                    label="Theme"
+                    value={selectedTemplate}
+                    options={[
+                      ...templates.map((item) => item.name),
+                      "Custom",
+                    ].map((name) => ({ value: name, label: name }))}
+                    onChange={(name) => {
+                      const template = name as TemplateName;
+                      dispatchDocument({
+                        type: "grid/template",
+                        gridId: board.id,
+                        template,
+                        previousTemplate: selectedTemplate,
+                        defaults:
+                          templates.find((item) => item.name === template)
+                            ?.style ?? getEditorSettings(workspace).style,
+                      });
+                    }}
+                  />
+                  {selectedTemplate === "Superhero" && (
+                    <div>
+                      <span className="field-label">Sub-theme</span>
+                      <div
+                        className="segmented"
+                        role="group"
+                        aria-label="Superhero sub-theme"
+                      >
+                        {(["dc", "marvel"] as const).map((publisher) => (
+                          <button
+                            key={publisher}
+                            aria-pressed={board.publisher === publisher}
+                            onClick={() => patchBoard({ publisher })}
+                          >
+                            {publisher === "dc" ? "DC" : "Marvel"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <Toggle
+                    label="Show heading"
+                    checked={board.headingVisible !== false}
+                    onChange={(headingVisible) =>
+                      patchBoard({ headingVisible })
+                    }
+                  />
+                  <SelectField
+                    id="heading-font"
+                    label="Heading font"
+                    value={board.headingFont}
+                    options={fontOptions.map((font) => ({
+                      value: font,
+                      label: font,
+                    }))}
+                    onChange={(headingFont) => patchBoard({ headingFont })}
+                  />
+                  <SelectField
+                    id="cell-font"
+                    label="Cell font"
+                    value={board.cellFont}
+                    options={fontOptions.map((font) => ({
+                      value: font,
+                      label: font,
+                    }))}
+                    onChange={(cellFont) => patchBoard({ cellFont })}
+                  />
+                  <label className="field-label" htmlFor="gap">
+                    Grid spacing <output id="gap-value">{board.gap} px</output>
+                  </label>
+                  <input
+                    id="gap"
+                    type="range"
+                    min="0"
+                    max="40"
+                    value={board.gap}
+                    onChange={(event) =>
+                      patchBoard({ gap: Number(event.target.value) })
+                    }
+                  />
+                  <ColorField
+                    id="background"
+                    label="Background"
+                    value={board.background}
+                    onChange={(background) => patchBoard({ background })}
+                  />
+                </TabPanel>
+                <TabPanel className="settings-section export-section">
+                  <SelectField
+                    id="format"
+                    label="File format"
+                    value={format}
+                    options={[
+                      { value: "image/png", label: "PNG" },
+                      { value: "image/jpeg", label: "JPEG" },
+                      { value: "image/webp", label: "WebP" },
+                    ]}
+                    onChange={(format) =>
+                      patchExport({ format: format as ImageFormat })
+                    }
+                  />
+                  <SelectField
+                    id="resolution"
+                    label="Resolution"
+                    value={String(resolution)}
+                    options={[150, 300, 600, 1200, 1800].map((size) => ({
+                      value: String(size),
+                      label: `${size} px / image`,
+                    }))}
+                    onChange={(resolution) =>
+                      patchExport({ resolution: Number(resolution) })
+                    }
+                  />
+                  <label
+                    className="field-label quality-label"
+                    htmlFor="quality"
+                  >
+                    Quality <output id="quality-value">{quality}%</output>
+                  </label>
+                  <input
+                    id="quality"
+                    type="range"
+                    min="50"
+                    max="100"
+                    value={quality}
+                    disabled={format === "image/png"}
+                    onChange={(event) =>
+                      patchExport({ quality: Number(event.target.value) })
+                    }
+                  />
+                  <p className="tw:text-xs tw:text-(--muted)">
+                    {size.width} × {size.height} px
+                  </p>
+                </TabPanel>
+              </TabPanels>
+            </TabGroup>
+          </aside>
+        </EditorLayout>
       </main>
       <div id="toast" className="toast" role="status" hidden={!toast}>
         {toast}
       </div>
+      <input
+        ref={replaceUpload}
+        id="replace-upload"
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => upload(event, uploadTarget.current)}
+      />
+      <Modal
+        open={imageTarget !== null}
+        onClose={() => setImageTarget(null)}
+        title="Choose image"
+        returnFocus={imageReturnFocus}
+      >
+        <div className="tw:grid tw:grid-cols-3 tw:gap-3">
+          {activeAssets.map((asset) => (
+            <button
+              key={asset.id}
+              className="tw:min-w-0 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left"
+              aria-label={`Use ${asset.title}`}
+              onClick={() => {
+                if (imageTarget) placeAsset(asset.id, imageTarget);
+                setImageTarget(null);
+              }}
+            >
+              <img
+                src={asset.src}
+                alt=""
+                className="tw:aspect-square tw:w-full tw:object-contain"
+              />
+              <span className="tw:block tw:break-words tw:text-xs">
+                {asset.title}
+              </span>
+            </button>
+          ))}
+        </div>
+        {activeAssets.length === 0 && <p>No images yet.</p>}
+        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
+          <Button onClick={() => setImageTarget(null)}>Cancel</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              uploadTarget.current = imageTarget;
+              setImageTarget(null);
+              replaceUpload.current?.click();
+            }}
+          >
+            <ImagePlus aria-hidden="true" />
+            Upload image
+          </Button>
+        </div>
+      </Modal>
       <Modal
         open={reloadOpen}
         onClose={() => setReloadOpen(false)}
@@ -1111,223 +1125,101 @@ export default function App() {
       </Modal>
       <Modal
         open={storageOpen}
-        onClose={() => {
-          setEmptyTrashSelection(null);
-          setStorageOpen(false);
-        }}
+        onClose={() => setStorageOpen(false)}
         title="Local storage"
         returnFocus={storageButton}
       >
-        {emptyTrashSelection !== null ? (
-          <>
-            <p>Permanently delete selected images?</p>
-            <p>Selected images: {emptyTrashSelection.length}</p>
-            <p>This cannot be undone.</p>
-            <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-              <Button onClick={() => setEmptyTrashSelection(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!canSave || saveStatus === "Saving locally"}
-                onClick={purgeTrash}
-              >
-                <Trash2 aria-hidden="true" />
-                Delete permanently
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div aria-busy={storageInfo === null}>
-              {storageInfo === null ? (
-                <p role="status">Checking storage...</p>
-              ) : (
-                <>
-                  <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
-                    <dt>Stored images</dt>
-                    <dd className="tw:m-0 tw:text-right">
-                      {storageInfo.images?.count ?? "Unavailable"}
-                    </dd>
-                    <dt>Image data</dt>
-                    <dd className="tw:m-0 tw:text-right">
-                      {formatBytes(storageInfo.images?.bytes)}
-                    </dd>
-                    <dt>Browser usage</dt>
-                    <dd className="tw:m-0 tw:text-right">
-                      {formatBytes(storageInfo.usage)}
-                    </dd>
-                    <dt>Browser quota</dt>
-                    <dd className="tw:m-0 tw:text-right">
-                      {formatBytes(storageInfo.quota)}
-                    </dd>
-                    <dt>Persistence</dt>
-                    <dd className="tw:m-0 tw:text-right">
-                      {storageInfo.persisted === true
-                        ? "Persistent"
-                        : storageInfo.persisted === false
-                          ? "Best-effort"
-                          : "Unavailable"}
-                    </dd>
-                  </dl>
-                  {storageInfo.quota !== null &&
-                    storageInfo.quota > 0 &&
-                    storageInfo.usage !== null && (
-                      <progress
-                        aria-label="Browser storage usage"
-                        value={Math.min(storageInfo.usage, storageInfo.quota)}
-                        max={storageInfo.quota}
-                        className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
-                      />
-                    )}
-                </>
-              )}
-            </div>
-            <div className="tw:mt-5 tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:pt-4">
-              <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
-                <h3 className="tw:m-0 tw:text-sm">Image cleanup</h3>
-                <Button
-                  disabled={
-                    !canSave ||
-                    loadingExample ||
-                    unusedAssetIds.length === 0 ||
-                    saveStatus === "Saving locally"
-                  }
-                  onClick={trashUnused}
-                >
-                  <Trash2 aria-hidden="true" />
-                  Move unused images to trash
-                </Button>
-              </div>
-              <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
-                <h3 className="tw:m-0 tw:text-sm">
-                  Trash ({trashAssets.length})
-                </h3>
-                <Button
-                  disabled={
-                    !canSave ||
-                    loadingExample ||
-                    trashAssets.length === 0 ||
-                    saveStatus === "Saving locally"
-                  }
-                  onClick={() =>
-                    setEmptyTrashSelection(trashAssets.map((asset) => asset.id))
-                  }
-                >
-                  <Trash2 aria-hidden="true" />
-                  Empty trash
-                </Button>
-              </div>
-              {trashAssets.length === 0 ? (
-                <p className="tw:mb-0 tw:text-sm">Trash is empty.</p>
-              ) : (
-                <ul className="tw:mb-0 tw:grid tw:list-none tw:gap-2 tw:pl-0">
-                  {trashAssets.map((asset) => (
-                    <li
-                      key={asset.id}
-                      className="tw:flex tw:min-w-0 tw:items-center tw:gap-2"
-                    >
-                      <img
-                        src={asset.src}
-                        alt=""
-                        className="tw:size-[44px] tw:shrink-0 tw:object-contain"
-                      />
-                      <span className="tw:min-w-0 tw:flex-1 tw:break-all tw:text-sm">
-                        {asset.title}
-                      </span>
-                      <Button
-                        variant="icon"
-                        aria-label={`Restore ${asset.title}`}
-                        title={`Restore ${asset.title}`}
-                        disabled={!canSave || saveStatus === "Saving locally"}
-                        onClick={() =>
-                          dispatchDocument({
-                            type: "assets/restore",
-                            assetIds: [asset.id],
-                          })
-                        }
-                      >
-                        <RotateCcw aria-hidden="true" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-              <Button
-                onClick={() => {
-                  setEmptyTrashSelection(null);
-                  setStorageOpen(false);
-                }}
-              >
-                Close
-              </Button>
-              <Button
-                variant="primary"
-                onClick={requestPersistence}
-                disabled={
-                  requestingPersistence ||
-                  !storageInfo?.canRequestPersistence ||
-                  storageInfo.persisted === true
-                }
-              >
-                <HardDrive aria-hidden="true" />
-                {requestingPersistence
-                  ? "Requesting..."
-                  : "Request persistent storage"}
-              </Button>
-            </div>
-          </>
-        )}
-      </Modal>
-      <Modal
-        open={renaming !== null}
-        onClose={() => setRenaming(null)}
-        title="Rename grid"
-        initialFocus={renameInput}
-        returnFocus={boardActions}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const name = draftName.trim();
-            if (!name) return;
-            if (renaming !== null)
-              dispatchDocument({
-                type: "grid/patch",
-                gridId: renaming,
-                patch: { name },
-              });
-            setRenaming(null);
-          }}
-        >
-          <label
-            htmlFor="rename-board-name"
-            className="tw:mb-2 tw:block tw:text-sm tw:font-semibold"
-          >
-            Grid name
-          </label>
-          <input
-            ref={renameInput}
-            id="rename-board-name"
-            value={draftName}
-            maxLength={70}
-            required
-            onChange={(event) => setDraftName(event.target.value)}
-            className="tw:box-border tw:w-full tw:rounded-md tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--bg)] tw:px-3 tw:py-2 tw:text-[var(--text)]"
-          />
-          <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
-            <Button onClick={() => setRenaming(null)}>Cancel</Button>
+        <>
+          <div aria-busy={storageInfo === null}>
+            {storageInfo === null ? (
+              <p role="status">Checking storage...</p>
+            ) : (
+              <>
+                <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
+                  <dt>Stored images</dt>
+                  <dd className="tw:m-0 tw:text-right">
+                    {storageInfo.images?.count ?? "Unavailable"}
+                  </dd>
+                  <dt>Image data</dt>
+                  <dd className="tw:m-0 tw:text-right">
+                    {formatBytes(storageInfo.images?.bytes)}
+                  </dd>
+                  <dt>Browser usage</dt>
+                  <dd className="tw:m-0 tw:text-right">
+                    {formatBytes(storageInfo.usage)}
+                  </dd>
+                  <dt>Browser quota</dt>
+                  <dd className="tw:m-0 tw:text-right">
+                    {formatBytes(storageInfo.quota)}
+                  </dd>
+                  <dt>Persistence</dt>
+                  <dd className="tw:m-0 tw:text-right">
+                    {storageInfo.persisted === true
+                      ? "Persistent"
+                      : storageInfo.persisted === false
+                        ? "Best-effort"
+                        : "Unavailable"}
+                  </dd>
+                </dl>
+                {storageInfo.quota !== null &&
+                  storageInfo.quota > 0 &&
+                  storageInfo.usage !== null && (
+                    <progress
+                      aria-label="Browser storage usage"
+                      value={Math.min(storageInfo.usage, storageInfo.quota)}
+                      max={storageInfo.quota}
+                      className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
+                    />
+                  )}
+              </>
+            )}
+          </div>
+          <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
             <Button
-              type="submit"
-              variant="primary"
-              disabled={!draftName.trim()}
+              onClick={() => {
+                setStorageOpen(false);
+              }}
             >
-              Save
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              onClick={requestPersistence}
+              disabled={
+                requestingPersistence ||
+                !storageInfo?.canRequestPersistence ||
+                storageInfo.persisted === true
+              }
+            >
+              <HardDrive aria-hidden="true" />
+              {requestingPersistence
+                ? "Requesting..."
+                : "Request persistent storage"}
             </Button>
           </div>
-        </form>
+        </>
+      </Modal>
+      <Modal
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        title="Reset grid settings"
+        returnFocus={resetButton}
+      >
+        <p>
+          Restore the default 3x3 layout, styling and export settings, and clear
+          the banner heading?
+        </p>
+        <p>
+          Library images, cell captions and placements are kept. Cells outside
+          3x3 remain recoverable.
+        </p>
+        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
+          <Button onClick={() => setResetOpen(false)}>Cancel</Button>
+          <Button variant="primary" onClick={resetDefaults}>
+            <PanelsTopLeft aria-hidden="true" />
+            Reset settings
+          </Button>
+        </div>
       </Modal>
       <Modal
         open={exampleOpen}

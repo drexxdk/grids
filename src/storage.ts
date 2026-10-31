@@ -66,6 +66,7 @@ const localDocumentSchema = z.strictObject({
   revision: z.uuid(),
   grid: workspaceSchema.shape.grid,
   exportSettings: workspaceSchema.shape.exportSettings,
+  themeSettings: workspaceSchema.shape.themeSettings,
   assets: z.array(workspaceSchema.shape.assets.element.omit({ src: true })),
 });
 type LocalDocument = z.infer<typeof localDocumentSchema>;
@@ -189,6 +190,9 @@ export class LocalWorkspaceStore {
     const placeholder: Workspace = {
       version: 1,
       grid: document.grid,
+      ...(document.themeSettings
+        ? { themeSettings: document.themeSettings }
+        : {}),
       exportSettings: document.exportSettings,
       assets: document.assets.map((asset) => ({ ...asset, src: "pending" })),
     };
@@ -261,6 +265,9 @@ export class LocalWorkspaceStore {
     const document = localDocumentSchema.parse({
       id: "guest",
       version: workspace.version,
+      ...(workspace.themeSettings
+        ? { themeSettings: workspace.themeSettings }
+        : {}),
       revision: crypto.randomUUID(),
       grid: workspace.grid,
       exportSettings: workspace.exportSettings,

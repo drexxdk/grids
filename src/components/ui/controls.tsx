@@ -2,6 +2,11 @@ import {
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
+  Listbox,
+  ListboxButton,
+  ListboxLabel,
+  ListboxOption,
+  ListboxOptions,
   Menu,
   MenuButton,
   MenuItem,
@@ -19,7 +24,14 @@ import {
   type HTMLMotionProps,
   type Transition,
 } from "motion/react";
-import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from "react";
 
 export function MotionDiv({
   motionTransition,
@@ -32,15 +44,15 @@ export function MotionDiv({
 }
 
 const buttonStyles = cva(
-  "tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-md tw:border tw:border-solid tw:px-3 tw:py-2 tw:font-semibold tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)] tw:disabled:cursor-not-allowed tw:disabled:opacity-50",
+  "tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-md tw:border tw:border-solid tw:px-3 tw:py-2 tw:font-semibold tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)] tw:disabled:cursor-default tw:disabled:opacity-50",
   {
     variants: {
       variant: {
         secondary:
-          "tw:border-[var(--line)] tw:bg-transparent tw:text-[var(--text)] tw:hover:border-[var(--accent)]",
+          "tw:border-[var(--line)] tw:bg-transparent tw:text-[var(--text)] tw:enabled:hover:border-[var(--accent)]",
         primary:
-          "tw:border-[var(--accent)] tw:bg-[var(--accent)] tw:text-[#19200d]",
-        icon: "tw:size-[44px] tw:shrink-0 tw:border-[var(--line)] tw:bg-transparent tw:p-0 tw:hover:border-[var(--accent)]",
+          "tw:border-[var(--accent)] tw:bg-[var(--accent)] tw:text-[#19200d] tw:enabled:hover:brightness-110",
+        icon: "tw:size-[44px] tw:shrink-0 tw:border-[var(--line)] tw:bg-transparent tw:p-0 tw:enabled:hover:border-[var(--accent)]",
       },
     },
     defaultVariants: { variant: "secondary" },
@@ -62,6 +74,113 @@ export function Button({
       className={buttonStyles({ variant, className })}
       {...props}
     />
+  );
+}
+
+export function SelectField({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Listbox value={value} onChange={onChange}>
+      <ListboxLabel className="field-label">{label}</ListboxLabel>
+      <ListboxButton
+        id={id}
+        className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:enabled:hover:border-(--accent)"
+      >
+        <span className="tw:min-w-0 tw:break-words">
+          {options.find((option) => option.value === value)?.label ?? value}
+        </span>
+        <ChevronDown aria-hidden="true" className="tw:size-4 tw:shrink-0" />
+      </ListboxButton>
+      <ListboxOptions
+        anchor="bottom"
+        modal={false}
+        className="tw:z-50 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]"
+      >
+        {options.map((option) => (
+          <ListboxOption
+            key={option.value}
+            value={option.value}
+            data-value={option.value}
+            className="tw:min-h-[44px] tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
+          >
+            {option.label}
+          </ListboxOption>
+        ))}
+      </ListboxOptions>
+    </Listbox>
+  );
+}
+
+export function ColorField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value.toUpperCase());
+  useEffect(() => setDraft(value.toUpperCase()), [value]);
+  const normalize = (text: string) =>
+    /^#?[a-f\d]{6}$/i.test(text)
+      ? `#${text.replace(/^#/, "").toLowerCase()}`
+      : null;
+  return (
+    <>
+      <label className="field-label" htmlFor={`${id}-value`}>
+        {label}
+      </label>
+      <div className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:focus-within:border-(--accent)">
+        <input
+          id={id}
+          type="color"
+          value={value}
+          aria-label={`${label} color picker`}
+          title={`${label} color picker`}
+          className="tw:h-[44px] tw:w-[64px] tw:shrink-0 tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-1"
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <input
+          id={`${id}-value`}
+          type="text"
+          aria-label={`${label} hex value`}
+          value={draft}
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={7}
+          className="tw:h-[44px]! tw:w-full tw:min-w-0 tw:flex-1 tw:rounded-none! tw:border-0! tw:bg-transparent! tw:px-2 tw:text-(--text) tw:outline-none"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            const color = normalize(event.target.value);
+            if (color) onChange(color);
+          }}
+          onBlur={() => setDraft(value.toUpperCase())}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setDraft(value.toUpperCase());
+              event.currentTarget.blur();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </div>
+    </>
   );
 }
 
@@ -143,6 +262,62 @@ export function Accordion({
           <AnimatePresence initial={false}>
             {open && <AccordionPanel key="panel">{children}</AccordionPanel>}
           </AnimatePresence>
+        </>
+      )}
+    </Disclosure>
+  );
+}
+
+export function TemplateAccordion({
+  title,
+  selected,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  selected: boolean;
+  expanded: boolean;
+  onToggle: (expanded: boolean) => void;
+  children: ReactNode;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const open = trigger.current?.getAttribute("aria-expanded") === "true";
+    if (open !== expanded) trigger.current?.click();
+  }, [expanded]);
+  return (
+    <Disclosure
+      as="section"
+      defaultOpen={expanded}
+      className="tw:border-0 tw:border-b tw:border-solid tw:border-(--line)"
+    >
+      {({ open }) => (
+        <>
+          <DisclosureButton
+            ref={trigger}
+            aria-pressed={selected}
+            onClick={() => {
+              const next =
+                trigger.current?.getAttribute("aria-expanded") !== "true";
+              if (next !== expanded) onToggle(next);
+            }}
+            className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:py-3 tw:text-left tw:text-sm tw:aria-pressed:text-(--accent) tw:enabled:hover:bg-(--line) tw:transition-colors"
+          >
+            <span>{title}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className={clsx(
+                "tw:size-4 tw:transition-transform",
+                open && "tw:rotate-180",
+              )}
+            />
+          </DisclosureButton>
+          {open && expanded && (
+            <DisclosurePanel className="tw:px-2 tw:pb-4">
+              {children}
+            </DisclosurePanel>
+          )}
         </>
       )}
     </Disclosure>

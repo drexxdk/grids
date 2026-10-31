@@ -3,6 +3,7 @@ import { z } from "zod";
 export const fontOptions = ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"];
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
+export type TemplateName = "Clean" | "Editorial" | "Superhero" | "Custom";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
 export interface Asset {
   id: string;
@@ -28,6 +29,7 @@ export interface GridLayout {
   columns: number;
 }
 export interface GridStyle {
+  template?: TemplateName;
   publisher: Publisher;
   headingVisible: boolean;
   headingFont: string;
@@ -48,6 +50,7 @@ export interface Workspace {
   assets: Asset[];
   grid: Board;
   exportSettings: ExportSettings;
+  themeSettings?: Partial<Record<TemplateName, GridStyle>>;
 }
 export interface ExportSettings {
   format: ImageFormat;
@@ -59,6 +62,7 @@ export interface EditorSettings {
   layout: GridLayout;
   style: GridStyle;
   exportSettings: ExportSettings;
+  themeSettings?: Partial<Record<TemplateName, GridStyle>>;
 }
 export type GridPatch = Partial<
   GridStyle & Pick<GridContent, "name" | "heading">
@@ -69,7 +73,15 @@ export type DocumentCommand =
   | { type: "assets/trash-unused"; assetIds: string[]; trashedAt: number }
   | { type: "assets/restore"; assetIds: string[] }
   | { type: "assets/purge"; assetIds: string[] }
+  | { type: "assets/delete"; assetIds: string[] }
   | { type: "grid/patch"; gridId: string; patch: GridPatch }
+  | {
+      type: "grid/template";
+      gridId: string;
+      template: TemplateName;
+      previousTemplate: TemplateName;
+      defaults: GridStyle;
+    }
   | { type: "export/patch"; patch: Partial<ExportSettings> }
   | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
   | { type: "cell/clear"; gridId: string; cellId: string }
@@ -176,8 +188,10 @@ export function resetWorkspace(
   );
   return {
     ...configured,
+    themeSettings: defaults.themeSettings,
     grid: {
       ...configured.grid,
+      template: defaults.grid.template,
       name: defaults.grid.name,
       heading: defaults.grid.heading,
     },
@@ -189,6 +203,7 @@ const layoutSchema = z.strictObject({
   columns: z.number().int().min(1).max(gridLimit),
 });
 const styleSchema = z.strictObject({
+  template: z.enum(["Clean", "Editorial", "Superhero", "Custom"]).optional(),
   publisher: z.enum(["none", "dc", "marvel"]),
   headingVisible: z.boolean(),
   headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
@@ -211,6 +226,12 @@ export const editorSettingsSchema = z.strictObject({
   version: z.literal(1),
   layout: layoutSchema,
   style: styleSchema,
+  themeSettings: z
+    .partialRecord(
+      z.enum(["Clean", "Editorial", "Superhero", "Custom"]),
+      styleSchema,
+    )
+    .optional(),
   exportSettings: exportSettingsSchema,
 });
 
@@ -218,8 +239,12 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
   const { grid, exportSettings } = workspace;
   return editorSettingsSchema.parse({
     version: 1,
+    ...(workspace.themeSettings
+      ? { themeSettings: workspace.themeSettings }
+      : {}),
     layout: { rows: grid.rows, columns: grid.columns },
     style: {
+      ...(grid.template ? { template: grid.template } : {}),
       publisher: grid.publisher,
       headingVisible: grid.headingVisible,
       headingFont: grid.headingFont,
@@ -243,6 +268,7 @@ export function applyEditorSettings(
   const settings = editorSettingsSchema.parse(input);
   return {
     ...workspace,
+    themeSettings: settings.themeSettings,
     grid: {
       ...resizeBoard(
         workspace.grid,
@@ -269,6 +295,7 @@ const coordinate = z
   .max(gridLimit - 1);
 export const workspaceSchema = z
   .strictObject({
+    themeSettings: editorSettingsSchema.shape.themeSettings,
     version: z.literal(1),
     assets: z.array(
       z.strictObject({
@@ -435,8 +462,45 @@ export function documentReducer(
         ),
       };
     }
+    case "assets/delete": {
+      const ids = new Set(command.assetIds);
+      if (!workspace.assets.some((asset) => ids.has(asset.id)))
+        return workspace;
+      const clearImage = (cell: Cell) =>
+        cell.assetId && ids.has(cell.assetId)
+          ? { ...cell, assetId: null }
+          : cell;
+      return {
+        ...workspace,
+        assets: workspace.assets.filter((asset) => !ids.has(asset.id)),
+        grid: {
+          ...grid,
+          cells: grid.cells.map(clearImage),
+          overflow: grid.overflow.map((entry) => ({
+            ...entry,
+            cell: clearImage(entry.cell),
+          })),
+        },
+      };
+    }
     case "workspace/restore":
       return command.workspace;
+    case "grid/template": {
+      if (grid.id !== command.gridId) return workspace;
+      const previousTemplate = grid.template ?? command.previousTemplate;
+      if (previousTemplate === command.template && grid.template)
+        return workspace;
+      const themeSettings = {
+        ...workspace.themeSettings,
+        [previousTemplate]: getEditorSettings(workspace).style,
+      };
+      const style = themeSettings[command.template] ?? command.defaults;
+      return {
+        ...workspace,
+        themeSettings,
+        grid: { ...grid, ...style, template: command.template },
+      };
+    }
     case "grid/patch":
       return withGrid({ ...grid, ...command.patch });
     case "export/patch":
