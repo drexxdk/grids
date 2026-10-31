@@ -33,6 +33,8 @@ export function Modal({
   initialFocus,
   returnFocus,
   children,
+  fullscreen = false,
+  onExited,
 }: {
   open: boolean;
   onClose: () => void;
@@ -40,6 +42,8 @@ export function Modal({
   initialFocus?: RefObject<HTMLElement | null>;
   returnFocus: RefObject<HTMLButtonElement | null>;
   children: ReactNode;
+  fullscreen?: boolean;
+  onExited?: () => void;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const reduced = useReducedMotion();
@@ -50,7 +54,10 @@ export function Modal({
 
   return (
     <AnimatePresence
-      onExitComplete={() => returnFocus.current?.focus({ preventScroll: true })}
+      onExitComplete={() => {
+        returnFocus.current?.focus({ preventScroll: true });
+        onExited?.();
+      }}
     >
       {open && (
         <Dialog
@@ -69,12 +76,20 @@ export function Modal({
           <DialogBackdrop className="tw:fixed tw:inset-0 tw:bg-black/60" />
           <div
             data-modal-scroll
-            className="tw:fixed tw:inset-0 tw:overflow-y-auto tw:overscroll-contain tw:p-4"
+            className={`tw:fixed tw:inset-0 tw:overflow-y-auto tw:overscroll-contain ${fullscreen ? "" : "tw:p-4"}`}
           >
             <div className="tw:flex tw:min-h-full tw:items-center tw:justify-center">
-              <DialogPanel className="tw:w-full tw:max-w-md tw:rounded-lg tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-5 tw:shadow-xl">
+              <DialogPanel
+                className={
+                  fullscreen
+                    ? "tw:flex tw:h-dvh tw:w-full tw:flex-col tw:bg-(--panel)"
+                    : "tw:w-full tw:max-w-md tw:rounded-lg tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-5 tw:shadow-xl"
+                }
+              >
                 <InitialTouchFocus target={closeButton} enabled={touch} />
-                <div className="tw:mb-4 tw:flex tw:items-center tw:justify-between tw:gap-3">
+                <div
+                  className={`tw:flex tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 ${fullscreen ? "tw:p-3 tw:pt-[max(12px,env(safe-area-inset-top))]" : "tw:mb-4"}`}
+                >
                   <DialogTitle className="tw:text-lg tw:font-semibold">
                     {title}
                   </DialogTitle>

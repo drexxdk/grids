@@ -261,6 +261,574 @@ test("header export combines settings and downloads on desktop and mobile", asyn
   await expect(trigger).toBeFocused();
 });
 
+test("fullscreen visual cropping preserves originals and matches preview and export", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60000);
+  await page.goto("./");
+  const original = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="200" height="200" fill="#ff0000"/><rect x="200" width="200" height="200" fill="#00ff00"/><rect x="400" width="200" height="200" fill="#0000ff"/></svg>',
+  );
+  await page.locator("#upload").setInputFiles({
+    name: "wide.svg",
+    mimeType: "image/svg+xml",
+    buffer: original,
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const image = page.locator(".cell-image-button").first();
+  await page.locator(".asset").dragTo(image);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await page.locator(".cell-heading").first().fill("Keep this caption");
+  const identity = (await savedWorkspace(page)).grid.cells[0];
+  async function sample(bytes, x = 0.5, y = 0.5) {
+    return page.evaluate(
+      async ({ bytes, x, y }) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        const color = [
+          ...context.getImageData(
+            Math.floor(bitmap.width * x),
+            Math.floor(bitmap.height * y),
+            1,
+            1,
+          ).data,
+        ];
+        bitmap.close();
+        return color;
+      },
+      { bytes: [...bytes], x, y },
+    );
+  }
+  await page.mouse.move(0, 0);
+  expect(await sample(await image.screenshot())).toEqual([0, 255, 0, 255]);
+  await expect(
+    page.getByRole("button", { name: /^(Fit|Fill) image$/ }),
+  ).toHaveCount(0);
+  const dialog = page.getByRole("dialog", { name: "Crop image", exact: true });
+  async function openCrop() {
+    await image.hover({ position: { x: 5, y: 5 } });
+    await page.getByRole("button", { name: "Crop image", exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCSS("opacity", "1");
+    await expect(
+      dialog.getByRole("button", { name: "Apply crop", exact: true }),
+    ).toBeEnabled();
+    const bounds = await dialog.boundingBox();
+    const viewport = page.viewportSize();
+    expect(bounds.x).toBeCloseTo(0, 0);
+    expect(bounds.y).toBeCloseTo(0, 0);
+    expect(bounds.width).toBeGreaterThan(viewport.width - 20);
+    expect(bounds.height).toBeGreaterThan(viewport.height - 2);
+    expect(
+      await page.evaluate(() =>
+        document.activeElement?.matches("input,textarea"),
+      ),
+    ).toBe(false);
+  }
+  await openCrop();
+  const cropWindow = dialog.locator(".crop-window");
+  const initialWindow = await cropWindow.boundingBox();
+  expect(initialWindow.width / initialWindow.height).toBeCloseTo(1, 2);
+  await dialog.getByRole("button", { name: "Toggle crop guides" }).click();
+  await dialog.locator("#crop-zoom").fill("2");
+  const preview = dialog.getByLabel("Crop preview", { exact: true });
+  const windowBounds = await cropWindow.boundingBox();
+  const centerY = windowBounds.y + windowBounds.height / 2;
+  await page.mouse.move(windowBounds.x + windowBounds.width / 2, centerY);
+  await page.mouse.down();
+  await page.mouse.move(16, centerY, { steps: 12 });
+  await page.mouse.up();
+  await preview.press("ArrowRight");
+  expect(await sample(await cropWindow.screenshot())).toEqual([0, 0, 255, 255]);
+  await page.screenshot({
+    path: testInfo.outputPath("crop-editor-desktop.png"),
+  });
+  await dialog.getByRole("button", { name: "Apply crop", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(image).toBeFocused();
+  await expect
+    .poll(
+      async () => (await localDatabase(page)).document?.grid.cells[0].crop?.x,
+    )
+    .toBeGreaterThan(0.6);
+  const saved = await savedWorkspace(page);
+  const applied = saved.grid.cells[0].crop;
+  expect(saved.grid.cells[0]).toMatchObject({
+    id: identity.id,
+    assetId: identity.assetId,
+    title: "Keep this caption",
+  });
+  expect(await sample(await image.screenshot())).toEqual([0, 0, 255, 255]);
+  const readOriginal = () =>
+    page.evaluate(
+      (assetId) =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("grids-client-v1");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const database = request.result;
+            const transaction = database.transaction("images", "readonly");
+            const record = transaction.objectStore("images").get(assetId);
+            record.onsuccess = async () =>
+              resolve([
+                ...new Uint8Array(await record.result.blob.arrayBuffer()),
+              ]);
+            record.onerror = () => reject(record.error);
+            transaction.oncomplete = () => database.close();
+          };
+        }),
+      identity.assetId,
+    );
+  expect(await readOriginal()).toEqual([...original]);
+  await openCrop();
+  await expect
+    .poll(async () => Number(await dialog.locator("#crop-zoom").inputValue()))
+    .toBeCloseTo(2, 1);
+  expect(await sample(await cropWindow.screenshot())).toEqual([0, 0, 255, 255]);
+  await dialog.locator("#crop-zoom").fill("3");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(image).toBeFocused();
+  expect((await savedWorkspace(page)).grid.cells[0].crop).toEqual(applied);
+  await reloadWorkspace(page);
+  expect((await savedWorkspace(page)).grid.cells[0].crop).toEqual(applied);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep this caption",
+  );
+  expect(await sample(await image.screenshot())).toEqual([0, 0, 255, 255]);
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  const download = await downloadBoard(page);
+  const exported = await readFile(await download.path());
+  expect(await sample(exported, 78 / 462, 78 / 540)).toEqual([0, 0, 255, 255]);
+  await page
+    .locator(".asset")
+    .dragTo(page.locator(".cell-image-button").nth(1));
+  await expect(page.locator(".grid-cell img")).toHaveCount(2);
+  expect(
+    await sample(await page.locator(".cell-image-button").nth(1).screenshot()),
+  ).toEqual([0, 255, 0, 255]);
+  await page
+    .getByRole("button", { name: "Landscape images", exact: true })
+    .click();
+  await openCrop();
+  await dialog.getByRole("button", { name: "Apply crop", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const landscapeCrop = (await savedWorkspace(page)).grid.cells[0].crop;
+  expect(landscapeCrop.width).toBeCloseTo(applied.width, 6);
+  expect(landscapeCrop.height).toBeCloseTo((applied.height * 3) / 4, 6);
+  await page
+    .getByRole("button", { name: "Square images", exact: true })
+    .click();
+  await openCrop();
+  await dialog.getByRole("button", { name: "Reset crop" }).click();
+  await expect(dialog.locator("#crop-zoom")).toHaveValue("1");
+  expect(await sample(await cropWindow.screenshot())).toEqual([0, 255, 0, 255]);
+  await dialog.getByRole("button", { name: "Apply crop", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await sample(await image.screenshot())).toEqual([0, 255, 0, 255]);
+  expect(await readOriginal()).toEqual([...original]);
+  expect(
+    JSON.stringify(
+      await page.evaluate(() =>
+        JSON.parse(localStorage.getItem("grids-settings-v1")),
+      ),
+    ),
+  ).not.toContain('"crop"');
+});
+
+test("touch crop editor fills the viewport and keeps portrait controls usable", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.goto(testInfo.project.use.baseURL);
+  await page.locator("#upload").setInputFiles({
+    name: "touch crop.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="200" height="200" fill="#ff0000"/><rect x="200" width="200" height="200" fill="#00ff00"/><rect x="400" width="200" height="200" fill="#0000ff"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Portrait images", exact: true })
+    .tap();
+  const image = page.locator(".cell-image-button").first();
+  await image.tap();
+  await page
+    .getByRole("dialog", { name: "Choose image" })
+    .getByRole("button", { name: "Use touch crop", exact: true })
+    .tap();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await image.tap();
+  await page.getByRole("button", { name: "Crop image", exact: true }).tap();
+  const dialog = page.getByRole("dialog", { name: "Crop image", exact: true });
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await expect(
+    dialog.getByRole("button", { name: "Apply crop", exact: true }),
+  ).toBeEnabled();
+  const bounds = await dialog.boundingBox();
+  expect(bounds).toMatchObject({ x: 0, y: 0, height: 844 });
+  expect(bounds.width).toBeGreaterThanOrEqual(370);
+  const cropWindow = dialog.locator(".crop-window");
+  const cropBounds = await cropWindow.boundingBox();
+  expect(cropBounds.width / cropBounds.height).toBeCloseTo(3 / 4, 2);
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input,textarea"),
+    ),
+  ).toBe(false);
+  for (const name of [
+    "Toggle crop guides",
+    "Reset crop",
+    "Cancel",
+    "Apply crop",
+  ]) {
+    const button = dialog.getByRole("button", { name, exact: true });
+    await expect(button).toBeVisible();
+    const rectangle = await button.boundingBox();
+    expect(rectangle.height).toBeGreaterThanOrEqual(44);
+    expect(rectangle.width).toBeGreaterThanOrEqual(44);
+    expect(rectangle.x).toBeGreaterThanOrEqual(0);
+    expect(rectangle.x + rectangle.width).toBeLessThanOrEqual(390);
+    expect(rectangle.y + rectangle.height).toBeLessThanOrEqual(844);
+  }
+  await dialog.getByRole("button", { name: "Toggle crop guides" }).tap();
+  await dialog.locator("#crop-zoom").fill("2");
+  const session = await context.newCDPSession(page);
+  const y = cropBounds.y + cropBounds.height / 2;
+  const x = cropBounds.x + cropBounds.width / 2;
+  const before = await dialog
+    .locator("img")
+    .evaluate((element) => element.style.transform);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x, y }],
+  });
+  for (let step = 1; step <= 12; step++)
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: x + ((4 - x) * step) / 12, y }],
+    });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect
+    .poll(() =>
+      dialog.locator("img").evaluate((element) => element.style.transform),
+    )
+    .not.toBe(before);
+  await page.screenshot({
+    path: testInfo.outputPath("crop-editor-mobile.png"),
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Apply crop", exact: true }).tap();
+  await expect(dialog).toHaveCount(0);
+  await expect(image).toBeFocused();
+  await expect
+    .poll(
+      async () => (await localDatabase(page)).document?.grid.cells[0].crop?.x,
+    )
+    .toBeGreaterThan(0.6);
+  await image.tap();
+  await page.getByRole("button", { name: "Crop image", exact: true }).tap();
+  await expect(dialog.locator("#crop-zoom")).toHaveValue("2");
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).tap();
+  await expect(dialog).toHaveCount(0);
+  await expect(image).toBeFocused();
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input,textarea"),
+    ),
+  ).toBe(false);
+  await session.detach();
+  await context.close();
+});
+
+test("appearance toolbar preserves content and matches exported ratios and captions", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60000);
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "solid.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#4064c8"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const image = page.locator(".cell-image-button").first();
+  const caption = page.locator(".cell-heading").first();
+  await page.locator(".asset").dragTo(image);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await image.hover();
+  await caption.fill("");
+  const identity = (await savedWorkspace(page)).grid.cells[0];
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
+  async function pixels(imageHeight, placement, alignment = "bottom") {
+    const captionHeight = 26;
+    const captionTop =
+      placement === "above"
+        ? 0
+        : placement === "below"
+          ? imageHeight
+          : alignment === "top"
+            ? 0
+            : alignment === "middle"
+              ? Math.round((imageHeight - captionHeight) / 2)
+              : imageHeight - captionHeight;
+    const imageTop = placement === "above" ? captionHeight : 0;
+    const download = await downloadBoard(page);
+    const bytes = await readFile(await download.path());
+    const result = await page.evaluate(
+      async ({ bytes, captionTop, imageTop, imageHeight, alignment }) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        const color = (y) => [...context.getImageData(13, y, 1, 1).data];
+        const result = {
+          width: bitmap.width,
+          height: bitmap.height,
+          caption: color(3 + captionTop + 3),
+          image: color(
+            3 +
+              imageTop +
+              Math.round(imageHeight * (alignment === "middle" ? 0.3 : 0.5)),
+          ),
+        };
+        bitmap.close();
+        return result;
+      },
+      { bytes: [...bytes], captionTop, imageTop, imageHeight, alignment },
+    );
+    expect(result.width).toBe(462);
+    expect(result.height).toBe(
+      3 * (imageHeight + (placement === "overlay" ? 0 : captionHeight)) + 12,
+    );
+    expect(result.image).toEqual([64, 100, 200, 255]);
+    return result.caption;
+  }
+  for (const [aspect, ratio, imageHeight] of [
+    ["Portrait", 3 / 4, 200],
+    ["Landscape", 4 / 3, 113],
+    ["Square", 1, 150],
+  ]) {
+    await toolbar
+      .getByRole("button", { name: `${aspect} images`, exact: true })
+      .click();
+    await expect(
+      toolbar.getByRole("button", { name: `${aspect} images`, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    for (const placement of ["above", "below", "overlay"]) {
+      await toolbar
+        .getByRole("button", {
+          name:
+            placement === "overlay"
+              ? "Text on image"
+              : `Text ${placement} image`,
+          exact: true,
+        })
+        .click();
+      const bounds = await image.boundingBox();
+      expect(Math.abs(bounds.width / bounds.height - ratio)).toBeLessThan(
+        0.015,
+      );
+      const field = await caption.boundingBox();
+      if (placement === "above")
+        expect(field.y + field.height).toBeCloseTo(bounds.y, 0);
+      if (placement === "below")
+        expect(field.y).toBeCloseTo(bounds.y + bounds.height, 0);
+      if (placement !== "overlay") {
+        await expect(
+          toolbar.getByRole("group", { name: "Caption alignment" }),
+        ).toHaveCount(0);
+        expect(await pixels(imageHeight, placement)).toEqual([32, 35, 37, 255]);
+        continue;
+      }
+      await toolbar
+        .getByRole("button", { name: "Text overlay settings" })
+        .click();
+      await expect(
+        page.getByRole("textbox", {
+          name: "Overlay color hex value",
+          exact: true,
+        }),
+      ).not.toBeFocused();
+      await page
+        .getByRole("textbox", { name: "Overlay color hex value", exact: true })
+        .fill("#00ff00");
+      await page.locator("#caption-opacity").fill("50");
+      await page.locator("#caption-opacity").press("Escape");
+      for (const alignment of ["top", "middle", "bottom"]) {
+        await toolbar
+          .getByRole("button", { name: `Text at ${alignment}`, exact: true })
+          .click();
+        const imageBounds = await image.boundingBox();
+        const captionBounds = await caption.boundingBox();
+        const expected =
+          alignment === "top"
+            ? imageBounds.y
+            : alignment === "middle"
+              ? imageBounds.y + (imageBounds.height - captionBounds.height) / 2
+              : imageBounds.y + imageBounds.height - captionBounds.height;
+        expect(captionBounds.y).toBeCloseTo(expected, 0);
+        await image.hover({
+          position: {
+            x: 5,
+            y: alignment === "top" ? imageBounds.height * 0.6 : 5,
+          },
+        });
+        const toolBounds = await page
+          .getByRole("group", { name: "Cell tools", exact: true })
+          .locator("button")
+          .evaluateAll((buttons) =>
+            buttons.map((button) => {
+              const rect = button.getBoundingClientRect();
+              return { top: rect.top, bottom: rect.bottom };
+            }),
+          );
+        expect(toolBounds).toHaveLength(3);
+        for (const rect of toolBounds)
+          expect(
+            rect.bottom <= captionBounds.y + 1 ||
+              rect.top >= captionBounds.y + captionBounds.height - 1,
+          ).toBe(true);
+        await page.mouse.move(0, 0);
+        const pixel = await pixels(imageHeight, "overlay", alignment);
+        expect(Math.abs(pixel[0] - 32)).toBeLessThanOrEqual(1);
+        expect(Math.abs(pixel[1] - 178)).toBeLessThanOrEqual(1);
+        expect(Math.abs(pixel[2] - 100)).toBeLessThanOrEqual(1);
+        expect(pixel[3]).toBe(255);
+      }
+    }
+  }
+  for (const [opacity, expected] of [
+    [0, [64, 100, 200, 255]],
+    [100, [0, 255, 0, 255]],
+  ]) {
+    await toolbar
+      .getByRole("button", { name: "Text overlay settings" })
+      .click();
+    await page.locator("#caption-opacity").fill(String(opacity));
+    await page.locator("#caption-opacity").press("Escape");
+    expect(await pixels(150, "overlay")).toEqual(expected);
+  }
+  await caption.fill("A surprisingly long caption that remains editable");
+  await expect
+    .poll(() =>
+      caption.evaluate((field) => field.scrollHeight <= field.clientHeight + 1),
+    )
+    .toBe(true);
+  await page.mouse.move(0, 0);
+  await page.screenshot({
+    path: testInfo.outputPath("appearance-desktop.png"),
+  });
+  await reloadWorkspace(page);
+  await expect(caption).toHaveValue(
+    "A surprisingly long caption that remains editable",
+  );
+  const saved = await savedWorkspace(page);
+  expect(saved.grid.cells[0]).toMatchObject({
+    id: identity.id,
+    assetId: identity.assetId,
+    fit: "cover",
+  });
+  expect(saved.grid).toMatchObject({
+    imageAspect: "square",
+    captionPlacement: "overlay",
+    captionAlignment: "bottom",
+    captionOverlayColor: "#00ff00",
+    captionOverlayOpacity: 100,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      toolbar.evaluate((element) =>
+        [...element.querySelectorAll("button")].every((button) => {
+          const rect = button.getBoundingClientRect();
+          return (
+            rect.x >= 0 &&
+            rect.right <= innerWidth &&
+            rect.width >= 44 &&
+            rect.height >= 44
+          );
+        }),
+      ),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await toolbar.getByRole("button", { name: "Text overlay settings" }).click();
+  const color = page.getByRole("textbox", {
+    name: "Overlay color hex value",
+    exact: true,
+  });
+  await expect(color).toBeVisible();
+  await expect(color).not.toBeFocused();
+  const colorBounds = await color.boundingBox();
+  expect(colorBounds.x).toBeGreaterThanOrEqual(0);
+  expect(colorBounds.x + colorBounds.width).toBeLessThanOrEqual(390);
+  await page.locator("#caption-opacity").press("Escape");
+  await toolbar
+    .getByRole("button", { name: "Landscape images", exact: true })
+    .click();
+  await toolbar
+    .getByRole("button", { name: "Text at middle", exact: true })
+    .click();
+  await image.hover({ position: { x: 5, y: 5 } });
+  await expect(
+    page.getByRole("group", { name: "Cell tools", exact: true }),
+  ).toBeVisible();
+  const mobileCaption = await caption.boundingBox();
+  const mobileTools = await page
+    .getByRole("group", { name: "Cell tools", exact: true })
+    .locator("button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom };
+      }),
+    );
+  expect(mobileTools).toHaveLength(3);
+  for (const rect of mobileTools)
+    expect(
+      rect.bottom <= mobileCaption.y + 1 ||
+        rect.top >= mobileCaption.y + mobileCaption.height - 1,
+    ).toBe(true);
+  await caption.click();
+  await page.screenshot({ path: testInfo.outputPath("appearance-mobile.png") });
+});
+
 test("editable hex color and Headless UI settings dropdowns synchronize and persist", async ({
   page,
 }, testInfo) => {
@@ -499,6 +1067,23 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
     exact: true,
   });
   await expect(expand).toHaveAttribute("aria-expanded", "false");
+  const sources = drawer.getByRole("tablist", {
+    name: "Image source",
+    exact: true,
+  });
+  await expect(sources.getByRole("tab")).toHaveText(["Imported", "Online"]);
+  await expect(sources).toHaveCSS("border-radius", "4px");
+  await expect(sources).toHaveCSS("border-bottom-style", "solid");
+  await expect(sources.getByRole("tab").first()).toHaveCSS(
+    "border-right-style",
+    "solid",
+  );
+  await expect(
+    sources.getByRole("tab", { name: "Online", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    drawer.getByRole("button", { name: "Clear all images", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Load example", exact: true }),
   ).toHaveCount(0);
@@ -529,6 +1114,46 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
   await expect(page.locator("#upload")).toHaveCount(1);
   await expect(drawer.locator("#asset-library")).toHaveCSS("display", "flex");
   const compactBox = await drawer.boundingBox();
+  const assertUploadTileSize = async () => {
+    const upload = page.locator("[data-upload-tile]");
+    const uploadBox = await upload.boundingBox();
+    const imageBox = await page
+      .locator("#asset-library [data-library-thumbnail]")
+      .first()
+      .boundingBox();
+    expect(uploadBox.width).toBeCloseTo(imageBox.width, 1);
+    expect(uploadBox.height).toBeCloseTo(imageBox.height, 1);
+    await page.mouse.move(0, 0);
+    await expect(upload).toHaveCSS("border-top-style", "dotted");
+    await expect(upload).toHaveCSS("border-top-color", "rgb(48, 51, 53)");
+  };
+  await assertUploadTileSize();
+  expect(compactBox.height).toBeLessThanOrEqual(152);
+  const strip = drawer.locator("#asset-library");
+  const clearance = await strip.evaluate((element) => {
+    const strip = element.getBoundingClientRect();
+    const image = element
+      .querySelector("[data-library-thumbnail]")
+      .getBoundingClientRect();
+    return {
+      top: image.top - strip.top,
+      bottom: strip.top + element.clientHeight - image.bottom,
+      stripBottom: strip.bottom,
+      drawerBottom: element
+        .closest("[data-editor-drawer]")
+        .getBoundingClientRect().bottom,
+    };
+  });
+  expect(clearance.top).toBeGreaterThanOrEqual(1.5);
+  expect(clearance.bottom).toBeGreaterThanOrEqual(1.5);
+  expect(
+    Math.abs(clearance.stripBottom - clearance.drawerBottom),
+  ).toBeLessThanOrEqual(1);
+  const sourceBox = await sources.boundingBox();
+  const toggleBox = await expand.boundingBox();
+  expect(Math.abs(sourceBox.y - toggleBox.y)).toBeLessThanOrEqual(1);
+  await expect(drawer.locator(".asset-name").first()).toBeHidden();
+  await expect(drawer.locator(".asset-category").first()).toBeHidden();
   expect(compactBox.y).toBeGreaterThan(844 / 2);
   expect(compactBox.y + compactBox.height).toBeLessThanOrEqual(845);
   await page.screenshot({
@@ -552,6 +1177,11 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
     exact: true,
   });
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await assertUploadTileSize();
+  await expect(
+    drawer.getByRole("button", { name: "Clear all images", exact: true }),
+  ).toBeVisible();
+  await expect(drawer.locator(".asset-name").first()).toBeVisible();
   await expect(
     page.getByRole("complementary", { name: "Grid settings", exact: true }),
   ).toBeVisible();
@@ -601,6 +1231,7 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
   await expect(page.locator("#upload")).toHaveCount(1);
   await expect(page.locator(".asset")).toHaveCount(3);
   await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
+  await assertUploadTileSize();
   await page.screenshot({
     path: testInfo.outputPath("image-drawer-desktop-sidebars.png"),
   });
@@ -642,7 +1273,7 @@ test("cell toolbar overlays the image and never selects a cell", async ({
   await image.hover();
   const tools = page.getByRole("group", { name: "Cell tools", exact: true });
   await expect(tools).toBeVisible();
-  for (const name of ["Replace image", "Fill image", "Clear cell"]) {
+  for (const name of ["Replace image", "Crop image", "Clear cell"]) {
     const button = tools.getByRole("button", { name, exact: true });
     const before = await button.boundingBox();
     await button.hover();
@@ -668,17 +1299,18 @@ test("cell toolbar overlays the image and never selects a cell", async ({
       ".grid-cell.selected, .cell-badge, #asset-count, #board-summary, .canvas-heading",
     ),
   ).toHaveCount(0);
-  await tools.getByRole("button", { name: "Fill image", exact: true }).click();
+  await tools.getByRole("button", { name: "Crop image", exact: true }).click();
+  const cropDialog = page.getByRole("dialog", {
+    name: "Crop image",
+    exact: true,
+  });
+  await expect(cropDialog).toBeVisible();
+  await cropDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(cropDialog).toHaveCount(0);
+  await expect(image).toBeFocused();
   await expect(
-    tools.getByRole("button", { name: "Fill image", exact: true }),
+    page.getByRole("button", { name: /^(Fit|Fill) image$/ }),
   ).toHaveCount(0);
-  await expect(
-    tools.getByRole("button", { name: "Fit image", exact: true }),
-  ).toBeVisible();
-  await tools.getByRole("button", { name: "Fit image", exact: true }).hover();
-  await expect(
-    tools.getByRole("button", { name: "Fit image", exact: true }),
-  ).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
   await image.hover();
   await expect(tools.locator("button:disabled")).toHaveCount(0);
   await expect(
@@ -761,6 +1393,130 @@ test("touch cell overlays target the tapped image without autofocus", async ({
     path: testInfo.outputPath("cell-overlay-mobile.png"),
   });
   await context.close();
+});
+
+test("image source tabs fit narrow panels without category filters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("./");
+  await useComicExample(page, "marvel");
+  await page.locator("#upload").setInputFiles({
+    name: "imported.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(9);
+  const tabs = page.getByRole("tablist", { name: "Image source", exact: true });
+  await expect(tabs.getByRole("tab")).toHaveText(["Imported", "Online"]);
+  await expect(
+    tabs.getByRole("tab", { name: "Imported", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    tabs.getByRole("tab", { name: "Online", exact: true }),
+  ).toBeDisabled();
+  const assertContained = async () => {
+    await expect
+      .poll(() =>
+        tabs.evaluate((element) => {
+          const panel = element.getBoundingClientRect();
+          return [...element.querySelectorAll('[role="tab"]')].every((tab) => {
+            const bounds = tab.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(tab);
+            return (
+              bounds.left >= panel.left - 1 &&
+              bounds.right <= panel.right + 1 &&
+              bounds.bottom <= panel.bottom + 1 &&
+              range.getBoundingClientRect().right <= bounds.right + 1
+            );
+          });
+        }),
+      )
+      .toBe(true);
+  };
+  await assertContained();
+  await tabs.getByRole("tab", { name: "Imported", exact: true }).click();
+  await expect(page.locator(".asset")).toHaveCount(9);
+  const document = await savedWorkspace(page);
+  document.assets.find((asset) => asset.category === "Imported").category =
+    "ExtraordinarilyLongImportedCategory";
+  await localDatabase(page, "write", document);
+  await page.reload();
+  await expect(tabs).toBeVisible();
+  await assertContained();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertContained();
+  const thumbnail = page
+    .locator("#asset-library [data-library-thumbnail]")
+    .first();
+  await thumbnail.hover({ position: { x: 5, y: 50 } });
+  await expect(thumbnail).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
+  const imageButton = page.locator("#asset-library .asset").first();
+  await imageButton.click({ position: { x: 5, y: 50 } });
+  await expect(imageButton).toBeFocused();
+  await expect(imageButton).toHaveCSS("outline-style", "none");
+  await expect(thumbnail).toHaveCSS("box-shadow", "none");
+  await page.keyboard.press("Tab");
+  const keyboardFocus = page.locator("#asset-library .asset").nth(1);
+  await expect(keyboardFocus).toBeFocused();
+  await expect(keyboardFocus).toHaveCSS("outline-style", "none");
+  const keyboardThumbnail = keyboardFocus.locator("[data-library-thumbnail]");
+  await expect(keyboardThumbnail).toHaveCSS("outline-style", "solid");
+  await expect(keyboardThumbnail).toHaveCSS("outline-width", "2px");
+  await expect(keyboardThumbnail).toHaveCSS("outline-offset", "-2px");
+  const focusStyle = (element) => {
+    const style = getComputedStyle(element);
+    return {
+      outline: style.outline,
+      offset: style.outlineOffset,
+      radius: style.borderRadius,
+    };
+  };
+  const imageFocusStyle = await keyboardThumbnail.evaluate(focusStyle);
+  const uploadFocus = page.locator("[data-upload-tile]");
+  await imageButton.press("Escape");
+  await imageButton.press("Shift+Tab");
+  await expect(uploadFocus).toBeFocused();
+  await expect(uploadFocus).toHaveCSS("outline-style", "solid");
+  expect(await uploadFocus.evaluate(focusStyle)).toEqual(imageFocusStyle);
+  await expect(uploadFocus).toHaveCSS("border-top-style", "solid");
+  for (const width of [390, 714, 820]) {
+    await page.setViewportSize({ width, height: 844 });
+    const drawer = page.locator("[data-editor-drawer]");
+    await expect(drawer).toHaveCSS("overflow-x", "hidden");
+    await expect
+      .poll(() =>
+        drawer.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      )
+      .toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  const desktopImage = page.locator("#asset-library .asset").first();
+  await expect(desktopImage.locator(".asset-name")).toBeVisible();
+  await desktopImage.locator(".asset-name").hover();
+  await expect(desktopImage).toHaveCSS("outline-style", "none");
+  await expect(desktopImage.locator("[data-library-thumbnail]")).toHaveCSS(
+    "border-top-color",
+    "rgb(48, 51, 53)",
+  );
+  await desktopImage.press("Escape");
+  await desktopImage.press("Tab");
+  const desktopFocus = page.locator("#asset-library .asset").nth(1);
+  await expect(desktopFocus).toBeFocused();
+  await expect(desktopFocus).toHaveCSS("outline-style", "none");
+  expect(
+    await desktopFocus.locator("[data-library-thumbnail]").evaluate(focusStyle),
+  ).toEqual(imageFocusStyle);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("example loading is available only on localhost", async ({ page }) => {

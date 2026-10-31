@@ -16,7 +16,10 @@ export function LibraryImage({
   const trigger = useRef<HTMLButtonElement>(null);
   const dragging = useRef(false);
   return (
-    <Popover className="tw:relative tw:min-w-0 tw:max-[900px]:w-[82px] tw:max-[900px]:shrink-0">
+    <Popover
+      data-library-image
+      className="tw:relative tw:min-w-0 tw:max-[900px]:w-[82px] tw:max-[900px]:shrink-0"
+    >
       {({ open, close }) => (
         <div
           onPointerEnter={(event) => {
@@ -34,7 +37,7 @@ export function LibraryImage({
         >
           <PopoverButton
             ref={trigger}
-            className="asset tw:w-full!"
+            className="asset tw:block tw:w-full! tw:outline-none! tw:focus-visible:[&_[data-library-thumbnail]]:[outline:2px_solid_var(--accent)]! tw:focus-visible:[&_[data-library-thumbnail]]:[outline-offset:-2px]!"
             aria-label={`Image options: ${asset.title}`}
             title={asset.title}
             draggable
@@ -52,7 +55,17 @@ export function LibraryImage({
               close();
             }}
           >
-            <img src={asset.src} alt={asset.title} draggable={false} />
+            <span
+              data-library-thumbnail
+              className="tw:relative tw:block tw:aspect-square tw:w-full tw:rounded-[4px] tw:border tw:border-solid tw:border-(--line) tw:hover:border-(--accent)"
+            >
+              <img
+                className="tw:absolute tw:inset-0 tw:h-full tw:rounded-[3px]! tw:border-0!"
+                src={asset.src}
+                alt={asset.title}
+                draggable={false}
+              />
+            </span>
             <span className="asset-name">{asset.title}</span>
             <span className="asset-category">{asset.category}</span>
           </PopoverButton>

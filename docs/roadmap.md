@@ -16,7 +16,7 @@ This is a new project with no users or real data. Prototype schemas, storage key
 
 The single-grid model, guest autosave/reset, and selectable examples are implemented. Provider sign-in and database settings remain planned; the current app is browser-only.
 
-Current limits: image blobs and the local grid snapshot use IndexedDB; localStorage holds a settings-only cache. Uploaded-font/thumbnail storage remains pending. Revision checks prevent stale multi-tab writes; conflict warnings require confirmed reload rather than automatic merging. Saves are automatic and debounced, with no storage-management dialog or persistence request; browser storage is not permanent backup. Library removal has no confirmation or trash UI and preserves canvas images. Undo is session-only and limited to resizing. Provider sign-in/database settings, general undo/redo, ratios, themes, custom font uploads, cropping, search, and project archives are unfinished. Canvas caps do not guarantee device memory safety. Pages build/workflow compatibility is checked, not a live deployment certification. Prototype storage is not a compatibility requirement.
+Current limits: image blobs and the local grid snapshot use IndexedDB; localStorage holds a settings-only cache. Uploaded-font/thumbnail storage remains pending. Revision checks prevent stale multi-tab writes; conflict warnings require confirmed reload rather than automatic merging. Saves are automatic and debounced, with no storage-management dialog or persistence request; browser storage is not permanent backup. Library removal has no confirmation or trash UI and preserves canvas images. Undo is session-only and limited to resizing. Portrait/landscape/square tiles, caption appearance and nondestructive per-cell fullscreen cropping are implemented; additional ratios, advanced transforms and crop history remain unfinished alongside provider sign-in/database settings, general undo/redo, custom font uploads, search, and project archives. Canvas caps do not guarantee device memory safety. Pages build/workflow compatibility is checked, not a live deployment certification. Prototype storage is not a compatibility requirement.
 
 ## Development Order
 
@@ -61,7 +61,8 @@ Exit criteria: Google/Discord/Facebook sign-in and user-owned settings persisten
 
 Depends on stable IDs/schema and client storage from step 1; rendering itself does not require sign-in.
 
-- [ ] One numeric composition path for accessible DOM preview and canvas export: cell rectangles, heading/caption/footer blocks, line breaks, styles, crops, clips, and transforms.
+- [x] Top appearance toolbar with portrait 3:4, landscape 4:3 and square 1:1 tiles; editable captions above/below/on-image, top/middle/bottom overlay alignment, color and opacity. Shared tile/caption rectangles drive DOM preview and actual exports; preserve content, remember theme settings and reset to square/below.
+- [ ] Extend the shared numeric composition path to heading/footer blocks, exact line breaks, crops, clips and transforms.
 - [ ] Independent grid layout, image-cell ratio, and final export dimensions. Changing one never silently changes the others or stretches the composition to force an outer ratio.
 - [ ] Uniform board ratios: 1:1, 2:3, 3:4, 4:5, 3:2, 4:3, 16:9, 9:16, validated custom ratios. Preserve originals/focal points; mixed/spanning tiles come later.
 - [ ] Independent horizontal/vertical gaps, outer padding, border width/color, corner treatment, heading/caption sizing.
@@ -83,7 +84,7 @@ Depends on shared composition/text from step 3. Account persistence stores style
 - [ ] Licensed sans/serif/condensed/display/monospaced fonts; local WOFF2/WOFF/TTF/OTF uploads where FontFace decodes them; persisted blobs/metadata and unique internal family IDs.
 - [ ] FontFace loading, selector samples/weights/styles/error states, and required-face readiness before text measurement/preview/export. Identify missing-font fallback decisions.
 - [ ] Heading/subtitle/caption/label fonts and per-cell overrides; weight/style, size/auto-fit, line-height, alignment, letter spacing, case, color, outline, shadow.
-- [ ] Captions below/above/overlay-top/overlay-bottom/hidden; multiline/long words/accented/CJK/RTL text with honest glyph/fallback limits. Accessible labels stay separate from decorative text.
+- [ ] Extend above/below/top-middle-bottom overlay captions with a hidden mode and verified multiline/long-word/accented/CJK/RTL behavior with honest glyph/fallback limits. Accessible labels stay separate from decorative text.
 - [ ] Font notices and permission-aware embedding/sharing. Google Fonts browsing is optional later; review licenses/subset sizes and prefer approved self-hosting.
 
 Exit criteria: custom fonts survive reload/export and later project round-trip; editor/output themes stay independent; style precedence is predictable and accessible.
@@ -92,8 +93,9 @@ Exit criteria: custom fonts survive reload/export and later project round-trip; 
 
 Depends on stored originals, history, and shared image transforms.
 
-- [ ] Maintained crop library such as react-easy-crop with validated normalized coordinates. Touch/keyboard pan, zoom slider/stepper, rotation, horizontal/vertical flip, center/reset, ratio lock, guides, live target preview.
-- [ ] Apply is one undoable action; Cancel changes nothing. Per-cell normalized crops/focal points/transforms preserve originals and independent crops of reused media; deterministic clamping and Keep Composition/Reset Crop on ratio changes.
+- [x] Always-full tiles and fullscreen react-easy-crop editing with validated normalized per-cell crops, mouse/touch/keyboard pan, zoom slider, guides and centered reset. Apply saves only crop metadata; Cancel leaves the saved crop unchanged. Reopen/reload retain independent crops of reused media; original blob bytes remain unchanged. Shared source rectangles match preview/export and adapt crops to the current tile ratio. Restore edited-cell focus after dialog exit, with no touch text autofocus.
+- [ ] Zoom stepper, rotation, horizontal/vertical flip, custom ratio lock and advanced focal-point/transforms.
+- [ ] Make crop Apply one undoable action through general history; explicit Keep Composition/Reset Crop choices on ratio changes.
 - [ ] Copy/reset/apply-to-selection transforms subject to source permissions; explain disabled crop/rotation/filter/overlay actions.
 - [ ] Clipboard images where supported, verified mobile photo selection, cancellable ordered batch imports with progress/per-file failures retaining successful imports.
 - [ ] Real decode/type/file-size/pixel validation. Initial proposals: 20 MB/file and 40 MP, subject to benchmarks. JPEG/PNG/WebP first; AVIF decode-dependent, animation first-frame, HEIC conversion separately evaluated. Reject SVG or use vetted sanitization/rasterization; never inject uploaded markup or execute external resources.
@@ -101,7 +103,8 @@ Depends on stored originals, history, and shared image transforms.
 - [ ] Referenced-media Replace/Clear choices and undo/media-retention policy. Preserve direct per-image and clear-all library deletion without confirmations; define how history behaves after files are explicitly deleted.
 - [ ] HTTPS image URL imports, not arbitrary webpage scraping; explain URL/CORS/provider failures and retain upload fallback.
 - [ ] Desktop compact single-grid/undo/reset/ratio/template/appearance/export toolbar with account/settings access, central grid, left library, contextual Layout/Appearance/Typography/Cell inspector. No board tabs/manager. Library views: Uploads/Search/Collections/Examples; domain filters belong in Search.
-- [ ] Mobile board-first experience with deliberately opened library/inspector sheets, no input autofocus. Headless UI Listbox/Combobox/TabGroup/sheets where applicable; shared Motion/reduced motion; feature-scoped Tailwind migration.
+- [x] Compact mobile image drawer: Imported/Online source row alongside Expand tools, image-only 64px thumbnails when collapsed, and Clear all images only when expanded. Online is disabled pending providers; no category filters. Retain touch placement, settings access, no input autofocus, safe-area spacing and desktop restoration.
+- [ ] Extend the mobile board-first experience with contextual library/inspector sheets, no input autofocus. Headless UI Listbox/Combobox/TabGroup/sheets where applicable; shared Motion/reduced motion; feature-scoped Tailwind migration.
 - [ ] Full keyboard/touch move/swap/selection alternatives to dragging. Named Lucide tools, swatches, segmented modes, switches/numeric controls, accessible progress/focus/contrast, 44px touch targets. If localized, single plural-aware count messages using Chatter's i18next/ICU approach.
 
 Exit criteria: independent crops survive reload/undo and match exported pixels; originals remain unchanged; batch failures recover; keyboard/touch editing and mobile sheets work.

@@ -19,6 +19,42 @@ export interface Cell {
   assetId: string | null;
   title: string;
   fit: "contain" | "cover";
+  crop?: ImageCrop;
+}
+export interface ImageCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export function sourceRectangle(
+  crop: ImageCrop | undefined,
+  imageWidth: number,
+  imageHeight: number,
+  aspect: number,
+) {
+  const area = crop
+    ? {
+        x: crop.x * imageWidth,
+        y: crop.y * imageHeight,
+        width: crop.width * imageWidth,
+        height: crop.height * imageHeight,
+      }
+    : { x: 0, y: 0, width: imageWidth, height: imageHeight };
+  const width = Math.min(area.width, area.height * aspect);
+  const height = width / aspect;
+  return {
+    x: Math.max(
+      0,
+      Math.min(imageWidth - width, area.x + (area.width - width) / 2),
+    ),
+    y: Math.max(
+      0,
+      Math.min(imageHeight - height, area.y + (area.height - height) / 2),
+    ),
+    width,
+    height,
+  };
 }
 export interface OverflowCell {
   row: number;
@@ -37,6 +73,40 @@ export interface GridStyle {
   cellFont: string;
   gap: number;
   background: string;
+  imageAspect?: "portrait" | "landscape" | "square";
+  captionPlacement?: "above" | "below" | "overlay";
+  captionAlignment?: "top" | "middle" | "bottom";
+  captionOverlayColor?: string;
+  captionOverlayOpacity?: number;
+}
+export function cellGeometry(style: GridStyle, width: number) {
+  const aspectRatio =
+    style.imageAspect === "portrait"
+      ? 3 / 4
+      : style.imageAspect === "landscape"
+        ? 4 / 3
+        : 1;
+  const imageHeight = Math.round(width / aspectRatio);
+  const captionHeight = Math.round(width * 0.17);
+  const placement = style.captionPlacement ?? "below";
+  const captionTop =
+    placement === "above"
+      ? 0
+      : placement === "below"
+        ? imageHeight
+        : style.captionAlignment === "top"
+          ? 0
+          : style.captionAlignment === "middle"
+            ? Math.round((imageHeight - captionHeight) / 2)
+            : imageHeight - captionHeight;
+  return {
+    aspectRatio,
+    imageHeight,
+    captionHeight,
+    captionTop,
+    imageTop: placement === "above" ? captionHeight : 0,
+    height: imageHeight + (placement === "overlay" ? 0 : captionHeight),
+  };
 }
 export interface GridContent {
   id: string;
@@ -85,6 +155,13 @@ export type DocumentCommand =
     }
   | { type: "export/patch"; patch: Partial<ExportSettings> }
   | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
+  | {
+      type: "cell/crop";
+      gridId: string;
+      cellId: string;
+      assetId: string;
+      crop: ImageCrop | undefined;
+    }
   | { type: "cell/clear"; gridId: string; cellId: string }
   | { type: "cell/place"; gridId: string; cellId: string; assetId: string }
   | {
@@ -126,7 +203,7 @@ export const makeCell = (asset: Asset | null = null): Cell => ({
   id: crypto.randomUUID(),
   assetId: asset?.id ?? null,
   title: asset?.title.slice(0, 120) ?? "",
-  fit: "contain",
+  fit: "cover",
 });
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   id: crypto.randomUUID(),
@@ -211,6 +288,14 @@ const styleSchema = z.strictObject({
   cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
   gap: z.number().min(0).max(40),
   background: z.string().regex(/^#[0-9a-f]{6}$/i),
+  imageAspect: z.enum(["portrait", "landscape", "square"]).optional(),
+  captionPlacement: z.enum(["above", "below", "overlay"]).optional(),
+  captionAlignment: z.enum(["top", "middle", "bottom"]).optional(),
+  captionOverlayColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  captionOverlayOpacity: z.number().min(0).max(100).optional(),
 });
 const exportSettingsSchema = z.strictObject({
   format: z.enum(["image/png", "image/jpeg", "image/webp"]),
@@ -252,6 +337,21 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       cellFont: grid.cellFont,
       gap: grid.gap,
       background: grid.background,
+      ...(grid.imageAspect !== undefined
+        ? { imageAspect: grid.imageAspect }
+        : {}),
+      ...(grid.captionPlacement !== undefined
+        ? { captionPlacement: grid.captionPlacement }
+        : {}),
+      ...(grid.captionAlignment !== undefined
+        ? { captionAlignment: grid.captionAlignment }
+        : {}),
+      ...(grid.captionOverlayColor !== undefined
+        ? { captionOverlayColor: grid.captionOverlayColor }
+        : {}),
+      ...(grid.captionOverlayOpacity !== undefined
+        ? { captionOverlayOpacity: grid.captionOverlayOpacity }
+        : {}),
     },
     exportSettings: {
       format: exportSettings.format,
@@ -259,6 +359,18 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       quality: exportSettings.quality,
     },
   });
+}
+
+function applyGridStyle(grid: Board, style: GridStyle): Board {
+  return {
+    ...grid,
+    imageAspect: style.imageAspect,
+    captionPlacement: style.captionPlacement,
+    captionAlignment: style.captionAlignment,
+    captionOverlayColor: style.captionOverlayColor,
+    captionOverlayOpacity: style.captionOverlayOpacity,
+    ...style,
+  };
 }
 
 export function applyEditorSettings(
@@ -270,24 +382,36 @@ export function applyEditorSettings(
   return {
     ...workspace,
     themeSettings: settings.themeSettings,
-    grid: {
-      ...resizeBoard(
+    grid: applyGridStyle(
+      resizeBoard(
         workspace.grid,
         settings.layout.rows,
         settings.layout.columns,
         createCell,
       ),
-      ...settings.style,
-    },
+      settings.style,
+    ),
     exportSettings: settings.exportSettings,
   };
 }
 
+export const cropSchema = z
+  .strictObject({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().positive().max(1),
+    height: z.number().positive().max(1),
+  })
+  .refine(
+    (crop) =>
+      crop.x + crop.width <= 1.000001 && crop.y + crop.height <= 1.000001,
+  );
 const cellSchema = z.strictObject({
   id: z.uuid(),
   assetId: z.uuid().nullable(),
   title: z.string().max(120),
   fit: z.enum(["contain", "cover"]),
+  crop: cropSchema.optional(),
 });
 const coordinate = z
   .number()
@@ -497,7 +621,7 @@ export function documentReducer(
       return {
         ...workspace,
         themeSettings,
-        grid: { ...grid, ...style, template: command.template },
+        grid: { ...applyGridStyle(grid, style), template: command.template },
       };
     }
     case "grid/patch":
@@ -512,12 +636,27 @@ export function documentReducer(
         ...cell,
         ...command.patch,
       }));
+    case "cell/crop": {
+      const target = grid.cells.find((cell) => cell.id === command.cellId);
+      if (!target || target.assetId !== command.assetId) return workspace;
+      if (
+        command.crop !== undefined &&
+        !cropSchema.safeParse(command.crop).success
+      )
+        return workspace;
+      return updateCell(command.cellId, (cell) => ({
+        ...cell,
+        fit: "cover",
+        crop: command.crop,
+      }));
+    }
     case "cell/clear":
       return updateCell(command.cellId, (cell) => ({
         ...cell,
         assetId: null,
         title: "",
-        fit: "contain",
+        fit: "cover",
+        crop: undefined,
       }));
     case "cell/place": {
       const asset = workspace.assets.find(
@@ -529,7 +668,8 @@ export function documentReducer(
             ...cell,
             assetId: asset.id,
             title: asset.title.slice(0, 120),
-            fit: "contain",
+            fit: "cover",
+            crop: undefined,
           }))
         : workspace;
     }
@@ -603,7 +743,8 @@ export function documentReducer(
                   ...cell,
                   assetId: asset.id,
                   title: asset.title.slice(0, 120),
-                  fit: "contain",
+                  fit: "cover",
+                  crop: undefined,
                 }
               : cell;
           }),

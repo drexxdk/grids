@@ -1,15 +1,33 @@
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { Crop, ImagePlus, Scan, Trash2 } from "lucide-react";
-import { useRef, type DragEvent } from "react";
-import type { Asset, Cell, CellPatch } from "../model";
+import { Crop, ImagePlus, Trash2 } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
+import {
+  cellGeometry,
+  sourceRectangle,
+  type ImageCrop,
+  type Asset,
+  type Cell,
+  type CellPatch,
+  type GridStyle,
+} from "../model";
+import { fitTitle } from "../export";
 import { Button } from "./ui/controls";
+import { CropEditor } from "./CropEditor";
 
 export function GridCell({
   cell,
   asset,
   index,
   gridId,
+  gridStyle,
   onPatch,
+  onCrop,
   onClear,
   onChoose,
   onUpload,
@@ -20,7 +38,9 @@ export function GridCell({
   asset?: Asset;
   index: number;
   gridId: string;
+  gridStyle: GridStyle;
   onPatch: (patch: CellPatch) => void;
+  onCrop: (crop: ImageCrop, assetId: string) => void;
   onClear: () => void;
   onChoose: (trigger: HTMLButtonElement) => void;
   onUpload: () => void;
@@ -28,9 +48,67 @@ export function GridCell({
   canChoose: boolean;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
+  const caption = useRef<HTMLTextAreaElement>(null);
+  const [cropTarget, setCropTarget] = useState<string | null>(null);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (cropTarget && cropTarget !== asset?.id) setCropTarget(null);
+  }, [asset?.id, cropTarget]);
+  const geometry = cellGeometry(gridStyle, 600);
+  const cropRectangle =
+    cell.crop && imageSize.width && imageSize.height
+      ? sourceRectangle(
+          cell.crop,
+          imageSize.width,
+          imageSize.height,
+          geometry.aspectRatio,
+        )
+      : null;
+  const overlay = gridStyle.captionPlacement === "overlay";
+  const alignment = gridStyle.captionAlignment ?? "bottom";
+  const freeImageHeight =
+    geometry.imageHeight - (overlay ? geometry.captionHeight : 0);
+  const toolSpace =
+    overlay && alignment === "middle" ? freeImageHeight / 2 : freeImageHeight;
+  const overlayColor = `${gridStyle.captionOverlayColor ?? "#000000"}${Math.round(
+    ((gridStyle.captionOverlayOpacity ?? 60) / 100) * 255,
+  )
+    .toString(16)
+    .padStart(2, "0")}`;
+  useLayoutEffect(() => {
+    const field = caption.current;
+    if (!field) return;
+    let disposed = false;
+    const fit = () => {
+      if (disposed) return;
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return;
+      context.letterSpacing = "0.5px";
+      const { fontSize, lines } = fitTitle(
+        context,
+        cell.title || "Heading",
+        gridStyle.cellFont,
+        field.clientWidth * 0.11,
+        field.clientWidth * 0.92,
+        field.clientHeight * 0.82,
+      );
+      field.style.fontSize = `${fontSize}px`;
+      field.style.paddingTop =
+        field.style.paddingBottom = `${Math.max(0, (field.clientHeight - lines.length * fontSize * 1.05) / 2)}px`;
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(field);
+    void document.fonts.ready.then(fit);
+    fit();
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [cell.title, gridStyle.cellFont, geometry.height, geometry.captionTop]);
   return (
     <Popover
-      className="grid-cell"
+      className="grid-cell tw:relative"
+      style={{ aspectRatio: `600 / ${geometry.height}` }}
       data-index={index}
       onDragOver={(event) => {
         event.preventDefault();
@@ -48,7 +126,14 @@ export function GridCell({
       {({ open, close }) => (
         <>
           <div
-            className="tw:relative tw:overflow-hidden tw:@container"
+            className="tw:absolute tw:inset-x-0 tw:overflow-hidden tw:@container"
+            style={
+              {
+                top: `${(geometry.imageTop / geometry.height) * 100}%`,
+                height: `${(geometry.imageHeight / geometry.height) * 100}%`,
+                "--cell-tool-space": `calc(${(toolSpace / 600) * 100}cqw - 4px)`,
+              } as React.CSSProperties
+            }
             onPointerEnter={(event) => {
               if (
                 event.pointerType === "mouse" &&
@@ -67,6 +152,7 @@ export function GridCell({
               <PopoverButton
                 ref={trigger}
                 className="cell-image-button"
+                style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                 aria-label={`Cell options ${index + 1}${cell.title ? `: ${cell.title}` : ""}`}
                 draggable={Boolean(asset)}
                 onDragStart={(event) => {
@@ -81,7 +167,24 @@ export function GridCell({
                 <img
                   src={asset.src}
                   alt={cell.title || asset.title}
-                  style={{ objectFit: cell.fit }}
+                  onLoad={(event) =>
+                    setImageSize({
+                      width: event.currentTarget.naturalWidth,
+                      height: event.currentTarget.naturalHeight,
+                    })
+                  }
+                  style={
+                    cropRectangle
+                      ? {
+                          position: "absolute",
+                          width: `${(imageSize.width / cropRectangle.width) * 100}%`,
+                          height: `${(imageSize.height / cropRectangle.height) * 100}%`,
+                          left: `${(-cropRectangle.x / cropRectangle.width) * 100}%`,
+                          top: `${(-cropRectangle.y / cropRectangle.height) * 100}%`,
+                          objectFit: "cover",
+                        }
+                      : { objectFit: "cover" }
+                  }
                   draggable={false}
                 />
               </PopoverButton>
@@ -90,6 +193,7 @@ export function GridCell({
                 ref={trigger}
                 type="button"
                 className="cell-image-button tw:border! tw:border-dashed! tw:border-(--line)! tw:enabled:hover:border-(--accent)! tw:enabled:hover:bg-(--panel)!"
+                style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                 aria-label={`Add image to cell ${index + 1}`}
                 title="Add or drop an image"
                 onClick={() => {
@@ -97,12 +201,31 @@ export function GridCell({
                   else onUpload();
                 }}
               >
-                <span className="empty-cell tw:gap-[4px]! tw:[&_svg]:size-[min(24px,50cqw)]">
+                <span
+                  className="empty-cell tw:absolute tw:inset-x-0 tw:gap-[4px]! tw:[&_svg]:size-[min(24px,50cqw,90cqh)]!"
+                  style={{
+                    containerType: "size",
+                    top: `${overlay && alignment === "top" ? (geometry.captionHeight / geometry.imageHeight) * 100 : 0}%`,
+                    height: `${(toolSpace / geometry.imageHeight) * 100}%`,
+                  }}
+                >
                   <ImagePlus aria-hidden="true" />
-                  <span className="tw:hidden tw:@min-[64px]:block">
+                  <span
+                    className={
+                      overlay && alignment === "middle"
+                        ? "tw:hidden"
+                        : "tw:hidden tw:@min-[64px]:block"
+                    }
+                  >
                     Add image
                   </span>
-                  <span className="tw:hidden tw:text-[9px] tw:@min-[64px]:block">
+                  <span
+                    className={
+                      overlay && alignment === "middle"
+                        ? "tw:hidden"
+                        : "tw:hidden tw:text-[9px] tw:@min-[120px]:block"
+                    }
+                  >
                     Drop here
                   </span>
                 </span>
@@ -114,10 +237,19 @@ export function GridCell({
                 aria-label="Cell tools"
                 className="tw:pointer-events-none tw:absolute tw:inset-0 tw:z-10"
               >
-                <div className="tw:pointer-events-auto tw:absolute tw:inset-x-0 tw:bottom-0 tw:flex tw:flex-wrap tw:justify-center tw:gap-[2px] tw:p-[2px]">
+                <div
+                  className="tw:pointer-events-auto tw:absolute tw:inset-x-0 tw:bottom-0 tw:flex tw:flex-wrap tw:justify-center tw:gap-[2px] tw:p-[2px]"
+                  style={{
+                    bottom:
+                      overlay &&
+                      (gridStyle.captionAlignment ?? "bottom") === "bottom"
+                        ? `${(geometry.captionHeight / geometry.imageHeight) * 100}%`
+                        : undefined,
+                  }}
+                >
                   <Button
                     variant="icon"
-                    className="tw:size-[clamp(24px,25cqw,44px)]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[16px]"
+                    className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                     aria-label={asset ? "Replace image" : "Choose image"}
                     title={asset ? "Replace image" : "Choose image"}
                     onClick={() => {
@@ -127,34 +259,30 @@ export function GridCell({
                   >
                     <ImagePlus aria-hidden="true" />
                   </Button>
-                  {asset && cell.fit === "cover" && (
-                    <Button
-                      variant="icon"
-                      className="tw:size-[clamp(24px,25cqw,44px)]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[16px]"
-                      aria-label="Fit image"
-                      title="Fit image"
-                      onClick={() => onPatch({ fit: "contain" })}
-                    >
-                      <Scan aria-hidden="true" />
-                    </Button>
-                  )}
-                  {asset && cell.fit === "contain" && (
-                    <Button
-                      variant="icon"
-                      className="tw:size-[clamp(24px,25cqw,44px)]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[16px]"
-                      aria-label="Fill image"
-                      title="Fill image"
-                      onClick={() => onPatch({ fit: "cover" })}
-                    >
-                      <Crop aria-hidden="true" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="icon"
+                    className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                    aria-label="Crop image"
+                    title="Crop image"
+                    onClick={() => {
+                      close();
+                      setCropTarget(asset.id);
+                    }}
+                  >
+                    <Crop aria-hidden="true" />
+                  </Button>
                 </div>
                 {(asset || cell.title) && (
                   <Button
                     variant="icon"
-                    className="tw:pointer-events-auto tw:absolute tw:top-[2px] tw:right-[2px] tw:size-[clamp(24px,25cqw,44px)]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[16px]"
+                    className="tw:pointer-events-auto tw:absolute tw:top-[2px] tw:right-[2px] tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                     aria-label="Clear cell"
+                    style={{
+                      top:
+                        overlay && gridStyle.captionAlignment === "top"
+                          ? `${(geometry.captionHeight / geometry.imageHeight) * 100}%`
+                          : undefined,
+                    }}
                     title="Clear cell"
                     onClick={() => {
                       close();
@@ -168,7 +296,15 @@ export function GridCell({
             )}
           </div>
           <textarea
-            className="cell-heading tw:placeholder:text-transparent tw:hover:placeholder:text-(--muted) tw:focus:placeholder:text-(--muted)"
+            ref={caption}
+            className="cell-heading tw:absolute tw:inset-x-0 tw:z-20 tw:min-h-0! tw:[field-sizing:fixed]! tw:placeholder:text-transparent tw:hover:placeholder:text-(--muted) tw:focus:placeholder:text-(--muted)"
+            style={{
+              top: `${(geometry.captionTop / geometry.height) * 100}%`,
+              height: `${(geometry.captionHeight / geometry.height) * 100}%`,
+              paddingLeft: "4%",
+              paddingRight: "4%",
+              background: overlay ? overlayColor : undefined,
+            }}
             rows={1}
             maxLength={120}
             value={cell.title}
@@ -176,6 +312,16 @@ export function GridCell({
             aria-label={`Heading for cell ${index + 1}`}
             onChange={(event) => onPatch({ title: event.target.value })}
           />
+          {asset && cropTarget === asset.id && (
+            <CropEditor
+              asset={asset}
+              aspect={geometry.aspectRatio}
+              initialCrop={cell.crop}
+              returnFocus={trigger}
+              onClose={() => setCropTarget(null)}
+              onApply={(crop) => onCrop(crop, asset.id)}
+            />
+          )}
         </>
       )}
     </Popover>

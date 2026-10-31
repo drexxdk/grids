@@ -50,6 +50,157 @@ function localWorkspace() {
   return workspace;
 }
 
+test("visual crops preserve originals and share full-box source rectangles", () => {
+  const workspace = localWorkspace();
+  const cell = workspace.grid.cells[15];
+  const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
+  const command = {
+    type: "cell/crop",
+    gridId: workspace.grid.id,
+    cellId: cell.id,
+    assetId: cell.assetId,
+    crop,
+  };
+  const cropped = model.documentReducer(workspace, command);
+  expect(cropped.grid.cells[15].crop).toEqual(crop);
+  expect(cropped.assets).toBe(workspace.assets);
+  expect(workspace.grid.cells[15].crop).toBeUndefined();
+  expect(model.workspaceSchema.safeParse(cropped).success).toBe(true);
+  expect(JSON.stringify(model.getEditorSettings(cropped))).not.toContain(
+    '"crop"',
+  );
+  expect(model.sourceRectangle(undefined, 400, 200, 1)).toEqual({
+    x: 100,
+    y: 0,
+    width: 200,
+    height: 200,
+  });
+  expect(model.sourceRectangle(crop, 400, 200, 1)).toEqual({
+    x: 200,
+    y: 0,
+    width: 200,
+    height: 200,
+  });
+  expect(model.sourceRectangle(crop, 400, 200, 3 / 4)).toEqual({
+    x: 225,
+    y: 0,
+    width: 150,
+    height: 200,
+  });
+  expect(
+    model.documentReducer(cropped, {
+      ...command,
+      assetId: crypto.randomUUID(),
+    }),
+  ).toBe(cropped);
+  expect(
+    model.documentReducer(cropped, {
+      ...command,
+      crop: { ...crop, width: 0.8 },
+    }),
+  ).toBe(cropped);
+  const replaced = model.documentReducer(cropped, {
+    type: "cell/place",
+    gridId: workspace.grid.id,
+    cellId: cell.id,
+    assetId: cell.assetId,
+  });
+  expect(replaced.grid.cells[15].crop).toBeUndefined();
+  const uploaded = model.documentReducer(cropped, {
+    type: "assets/import",
+    gridId: workspace.grid.id,
+    cellId: cell.id,
+    assets: [{ ...workspace.assets[0], id: crypto.randomUUID() }],
+  });
+  expect(uploaded.grid.cells[15].crop).toBeUndefined();
+  const swapped = model.documentReducer(cropped, {
+    type: "cell/swap",
+    gridId: workspace.grid.id,
+    sourceCellId: cell.id,
+    targetCellId: workspace.grid.cells[0].id,
+  });
+  expect(swapped.grid.cells[0].crop).toEqual(crop);
+});
+
+test("grid appearance settings roundtrip and share cell geometry", () => {
+  const workspace = localWorkspace();
+  Object.assign(workspace.grid, {
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    captionAlignment: "middle",
+    captionOverlayColor: "#123456",
+    captionOverlayOpacity: 40,
+  });
+  const settings = model.getEditorSettings(workspace);
+  expect(settings.style).toMatchObject({
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    captionAlignment: "middle",
+    captionOverlayColor: "#123456",
+    captionOverlayOpacity: 40,
+  });
+  const restored = model.applyEditorSettings(model.makeWorkspace(), settings);
+  expect(model.getEditorSettings(restored)).toEqual(settings);
+  expect(model.workspaceSchema.safeParse(workspace).success).toBe(true);
+  expect(model.cellGeometry(workspace.grid, 600)).toMatchObject({
+    imageHeight: 800,
+    captionHeight: 102,
+    captionTop: 349,
+    height: 800,
+  });
+  expect(
+    model.cellGeometry(
+      {
+        ...workspace.grid,
+        imageAspect: "landscape",
+        captionPlacement: "above",
+      },
+      600,
+    ),
+  ).toMatchObject({
+    imageHeight: 450,
+    imageTop: 102,
+    captionTop: 0,
+    height: 552,
+  });
+  expect(
+    model.cellGeometry(
+      { ...workspace.grid, imageAspect: "square", captionPlacement: "below" },
+      600,
+    ),
+  ).toMatchObject({ imageHeight: 600, captionTop: 600, height: 702 });
+  expect(
+    model.editorSettingsSchema.safeParse({
+      ...settings,
+      style: { ...settings.style, captionOverlayOpacity: 101 },
+    }).success,
+  ).toBe(false);
+  const defaults = model.getEditorSettings(model.makeWorkspace()).style;
+  const reset = model.resetWorkspace(workspace);
+  expect(model.getEditorSettings(reset).style).toEqual(defaults);
+  expect(reset.assets).toEqual(workspace.assets);
+  const switched = model.documentReducer(workspace, {
+    type: "grid/template",
+    gridId: workspace.grid.id,
+    previousTemplate: "Clean",
+    template: "Editorial",
+    defaults,
+  });
+  expect(switched.grid.imageAspect).toBeUndefined();
+  expect(switched.grid.captionPlacement).toBeUndefined();
+  const returned = model.documentReducer(switched, {
+    type: "grid/template",
+    gridId: workspace.grid.id,
+    previousTemplate: "Editorial",
+    template: workspace.grid.template ?? "Clean",
+    defaults,
+  });
+  expect(model.getEditorSettings(returned).style).toEqual({
+    ...settings.style,
+    template: "Clean",
+  });
+});
+
 test("settings boundary extracts only allowlisted configuration and detached values", () => {
   const workspace = localWorkspace();
   const settings = model.getEditorSettings(workspace);

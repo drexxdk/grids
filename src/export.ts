@@ -1,8 +1,16 @@
-import { publishers, type Asset, type Board, type ImageFormat } from "./model";
+import {
+  cellGeometry,
+  sourceRectangle,
+  publishers,
+  type Asset,
+  type Board,
+  type ImageFormat,
+} from "./model";
 
 export function dimensions(item: Board, size: number) {
   const gap = Math.round((item.gap * size) / 600);
-  const titleHeight = Math.round(size * 0.17);
+  const geometry = cellGeometry(item, size);
+  const titleHeight = geometry.captionHeight;
   const headingHeight =
     item.headingVisible !== false && item.heading?.trim()
       ? Math.round(size * 0.28) + gap
@@ -10,10 +18,10 @@ export function dimensions(item: Board, size: number) {
   return {
     gap,
     titleHeight,
+    cellHeight: geometry.height,
     headingHeight,
     width: item.columns * size + (item.columns + 1) * gap,
-    height:
-      headingHeight + item.rows * (size + titleHeight) + (item.rows + 1) * gap,
+    height: headingHeight + item.rows * geometry.height + (item.rows + 1) * gap,
   };
 }
 export async function loadImage(src: string) {
@@ -150,6 +158,7 @@ export async function createExport(
     );
   }
   const cells = item.cells.slice(0, item.rows * item.columns);
+  const geometry = cellGeometry(item, size);
   const images = await Promise.all(
     cells.map(async (entry) => {
       const asset = assets.find((asset) => asset.id === entry.assetId);
@@ -161,39 +170,52 @@ export async function createExport(
     const top =
       gap +
       headingHeight +
-      Math.floor(index / item.columns) * (size + titleHeight + gap);
+      Math.floor(index / item.columns) * (geometry.height + gap);
+    const imageTop = top + geometry.imageTop;
     context.fillStyle = "#111315";
-    context.fillRect(left, top, size, size);
+    context.fillRect(left, imageTop, size, geometry.imageHeight);
     const image = images[index];
     if (image) {
-      const scale =
-        entry.fit === "cover"
-          ? Math.max(size / image.width, size / image.height)
-          : Math.min(size / image.width, size / image.height);
-      const drawWidth = image.width * scale;
-      const drawHeight = image.height * scale;
+      const source = sourceRectangle(
+        entry.crop,
+        image.width,
+        image.height,
+        geometry.aspectRatio,
+      );
       context.save();
       context.beginPath();
-      context.rect(left, top, size, size);
+      context.rect(left, imageTop, size, geometry.imageHeight);
       context.clip();
       context.drawImage(
         image,
-        left + (size - drawWidth) / 2,
-        top + (size - drawHeight) / 2,
-        drawWidth,
-        drawHeight,
+        source.x,
+        source.y,
+        source.width,
+        source.height,
+        left,
+        imageTop,
+        size,
+        geometry.imageHeight,
       );
       context.restore();
     }
-    context.fillStyle = publisher.caption;
-    context.fillRect(left, top + size, size, titleHeight);
+    const captionTop = top + geometry.captionTop;
+    context.save();
+    context.fillStyle =
+      item.captionPlacement === "overlay"
+        ? (item.captionOverlayColor ?? "#000000")
+        : publisher.caption;
+    if (item.captionPlacement === "overlay")
+      context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
+    context.fillRect(left, captionTop, size, titleHeight);
+    context.restore();
     drawTitle(
       context,
       entry.title,
       item.cellFont,
       size * 0.11,
       left,
-      top + size,
+      captionTop,
       size,
       titleHeight,
       "#f4f4ef",

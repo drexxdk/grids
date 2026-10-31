@@ -17,7 +17,25 @@ import {
   RefreshCw,
   Images,
   LoaderCircle,
+  RectangleVertical,
+  RectangleHorizontal,
+  Square,
+  PanelTop,
+  PanelBottom,
+  Layers,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  SlidersHorizontal,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverButton,
+  PopoverPanel,
+  Tab,
+  TabGroup,
+  TabList,
+} from "@headlessui/react";
 import {
   Button,
   ColorField,
@@ -199,7 +217,6 @@ export default function App() {
   const imageReturnFocus = useRef<HTMLButtonElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const addImagesButton = useRef<HTMLButtonElement>(null);
-  const [filter, setFilter] = useState("All");
   const [libraryDragOver, setLibraryDragOver] = useState(false);
   const [importProgress, setImportProgress] = useState<{
     completed: number;
@@ -226,9 +243,6 @@ export default function App() {
     { boardId: string; rows: number; columns: number }[]
   >([]);
   const board = workspace.grid;
-  const imageCategories = [
-    ...new Set(activeAssets.map((asset) => asset.category)),
-  ];
   const matchedTemplate = templates.find((template) =>
     Object.entries(template.style).every(([key, value]) =>
       key === "publisher" && template.name === "Superhero"
@@ -350,7 +364,6 @@ export default function App() {
   const deleteImages = (assetIds: string[]) => {
     localStore.current?.scheduleImageDeletion(assetIds);
     dispatchDocument({ type: "assets/delete", assetIds });
-    setFilter("All");
     requestAnimationFrame(() =>
       addImagesButton.current?.focus({ preventScroll: true }),
     );
@@ -459,7 +472,6 @@ export default function App() {
         cellId: targetCellId ?? null,
         assets,
       });
-      setFilter("All");
     } finally {
       setImportProgress((current) =>
         current && current.pending > 1
@@ -561,7 +573,6 @@ export default function App() {
     dispatchDocument(createResetCommand());
     setResizeHistory([]);
     setImageTarget(null);
-    setFilter("All");
     setResetOpen(false);
     setToast("Defaults restored. Images kept.");
   };
@@ -578,7 +589,6 @@ export default function App() {
       });
       setResizeHistory([]);
       setImageTarget(null);
-      setFilter("All");
       setToast("Example loaded.");
       setExampleOpen(false);
     } catch (error) {
@@ -637,109 +647,110 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="app-layout tw:max-[900px]:block! tw:max-[900px]:pb-[280px]">
+      <main className="app-layout tw:max-[900px]:block! tw:max-[900px]:pb-[160px]">
         <EditorLayout>
-          <aside
-            className={`asset-panel ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
-            aria-label="Image library drop zone"
-            aria-busy={importProgress !== null}
-            onDragOver={(event) => {
-              if (event.dataTransfer.types.includes("Files")) {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "copy";
-                setLibraryDragOver(true);
-              }
-            }}
-            onDragLeave={(event) => {
-              if (
-                !(event.relatedTarget instanceof Node) ||
-                !event.currentTarget.contains(event.relatedTarget)
-              )
-                setLibraryDragOver(false);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setLibraryDragOver(false);
-              if (event.dataTransfer.files.length)
-                void importFiles(event.dataTransfer.files);
-            }}
-          >
-            <div className="section-heading">
-              <h2>Image library</h2>
-              {localExamples && (
-                <Button
-                  ref={exampleButton}
-                  variant="icon"
-                  aria-label="Load example"
-                  title="Load example: Legacy comics"
-                  disabled={loadingExample}
-                  onClick={() => setExampleOpen(true)}
-                >
-                  <Images aria-hidden="true" />
-                </Button>
-              )}
-            </div>
-            {imageCategories.length > 1 && (
-              <div
-                className="filter-tabs"
-                role="group"
-                aria-label="Image category"
-              >
-                {["All", ...imageCategories].map((category) => (
-                  <button
-                    key={category}
-                    className={filter === category ? "active" : ""}
-                    data-filter={category}
-                    onClick={() => setFilter(category)}
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div id="asset-library" className="asset-library">
-              <button
-                ref={addImagesButton}
-                type="button"
-                aria-label="Add images"
-                disabled={importProgress !== null}
-                title="Add or drop images"
-                className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-sm tw:border tw:border-dashed tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:border-(--accent) ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
-                onClick={() => document.getElementById("upload")?.click()}
-              >
-                {importProgress ? (
-                  <>
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="tw:animate-spin tw:motion-reduce:animate-none"
-                    />
-                    <span
-                      role="status"
-                      aria-live="polite"
-                      className="tw:flex tw:flex-col tw:items-center tw:gap-1"
-                    >
-                      <span className="tw:text-[11px]">Importing...</span>
-                      <span className="tw:text-[9px]">
-                        {importProgress.completed} / {importProgress.total}
-                      </span>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <ImagePlus aria-hidden="true" />
-                    <span className="tw:text-[11px]">Add images</span>
-                    <span className="tw:text-[9px]">Drop here</span>
-                  </>
-                )}
-              </button>
-              {activeAssets
-                .filter(
-                  (asset) =>
-                    imageCategories.length < 2 ||
-                    filter === "All" ||
-                    asset.category === filter,
+          {(drawerToggle, toolsExpanded) => (
+            <aside
+              className={`asset-panel ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
+              aria-label="Image library drop zone"
+              aria-busy={importProgress !== null}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes("Files")) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setLibraryDragOver(true);
+                }
+              }}
+              onDragLeave={(event) => {
+                if (
+                  !(event.relatedTarget instanceof Node) ||
+                  !event.currentTarget.contains(event.relatedTarget)
                 )
-                .map((asset) => (
+                  setLibraryDragOver(false);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setLibraryDragOver(false);
+                if (event.dataTransfer.files.length)
+                  void importFiles(event.dataTransfer.files);
+              }}
+            >
+              <div className="section-heading">
+                <h2>Image library</h2>
+                {localExamples && (
+                  <Button
+                    ref={exampleButton}
+                    variant="icon"
+                    aria-label="Load example"
+                    title="Load example: Legacy comics"
+                    disabled={loadingExample}
+                    onClick={() => setExampleOpen(true)}
+                  >
+                    <Images aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+              <div className="tw:mb-1 tw:flex tw:items-center tw:justify-between tw:gap-2">
+                <TabGroup>
+                  <TabList
+                    className="tw:flex tw:overflow-hidden tw:rounded-[4px] tw:border tw:border-solid tw:border-(--line)"
+                    aria-label="Image source"
+                  >
+                    <Tab className="tw:min-h-[44px] tw:border-0 tw:border-r tw:border-solid tw:border-(--line) tw:bg-transparent tw:px-3 tw:text-(--muted) tw:data-selected:bg-(--line) tw:data-selected:text-(--accent) tw:focus-visible:outline-2 tw:focus-visible:outline-(--accent) tw:focus-visible:-outline-offset-2!">
+                      Imported
+                    </Tab>
+                    <Tab
+                      className="tw:min-h-[44px] tw:border-0 tw:bg-transparent tw:px-3 tw:text-(--muted) tw:disabled:cursor-default tw:disabled:opacity-50"
+                      disabled
+                      title="Online providers are not available yet"
+                    >
+                      Online
+                    </Tab>
+                  </TabList>
+                </TabGroup>
+                {drawerToggle}
+              </div>
+              <div id="asset-library" className="asset-library">
+                <button
+                  ref={addImagesButton}
+                  data-upload-tile
+                  type="button"
+                  aria-label="Add images"
+                  disabled={importProgress !== null}
+                  title="Add or drop images"
+                  className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-[4px] tw:border tw:border-dotted tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:focus-visible:[outline:2px_solid_var(--accent)]! tw:focus-visible:[outline-offset:-2px]! tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:border-(--accent) tw:enabled:hover:border-solid! tw:focus-visible:border-solid! ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                  onClick={() => document.getElementById("upload")?.click()}
+                >
+                  {importProgress ? (
+                    <>
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="tw:animate-spin tw:motion-reduce:animate-none"
+                      />
+                      <span
+                        role="status"
+                        aria-live="polite"
+                        className="tw:flex tw:flex-col tw:items-center tw:gap-1"
+                      >
+                        <span className="tw:text-[11px]">Importing...</span>
+                        <span className="tw:text-[9px]">
+                          {importProgress.completed} / {importProgress.total}
+                        </span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <ImagePlus aria-hidden="true" />
+                      <span data-upload-label className="tw:text-[11px]">
+                        Add images
+                      </span>
+                      <span data-upload-label className="tw:text-[9px]">
+                        Drop here
+                      </span>
+                    </>
+                  )}
+                </button>
+                {activeAssets.map((asset) => (
                   <LibraryImage
                     key={asset.id}
                     asset={asset}
@@ -747,28 +758,29 @@ export default function App() {
                     onDelete={() => deleteImages([asset.id])}
                   />
                 ))}
-            </div>
-            <input
-              id="upload"
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(event) => upload(event)}
-            />
-            {activeAssets.length > 0 && (
-              <Button
-                className="tw:mt-2 tw:min-h-[44px] tw:w-full"
-                disabled={loadingExample}
-                onClick={() =>
-                  deleteImages(activeAssets.map((asset) => asset.id))
-                }
-              >
-                <Trash2 aria-hidden="true" />
-                Clear all images
-              </Button>
-            )}
-          </aside>
+              </div>
+              <input
+                id="upload"
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => upload(event)}
+              />
+              {toolsExpanded && activeAssets.length > 0 && (
+                <Button
+                  className="tw:mt-2 tw:min-h-[44px] tw:w-full"
+                  disabled={loadingExample}
+                  onClick={() =>
+                    deleteImages(activeAssets.map((asset) => asset.id))
+                  }
+                >
+                  <Trash2 aria-hidden="true" />
+                  Clear all images
+                </Button>
+              )}
+            </aside>
+          )}
           <section className="workspace" aria-label="Grid editor">
             {conflict && (
               <div
@@ -785,6 +797,140 @@ export default function App() {
               </div>
             )}
             <div className="canvas-area">
+              <div
+                role="toolbar"
+                aria-label="Grid appearance"
+                className="tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-3"
+              >
+                <div
+                  role="group"
+                  aria-label="Image aspect ratio"
+                  className="tw:flex tw:gap-1"
+                >
+                  {(
+                    [
+                      ["portrait", RectangleVertical],
+                      ["landscape", RectangleHorizontal],
+                      ["square", Square],
+                    ] as const
+                  ).map(([imageAspect, Icon]) => (
+                    <Button
+                      key={imageAspect}
+                      variant="icon"
+                      title={`${imageAspect[0].toUpperCase()}${imageAspect.slice(1)} images`}
+                      aria-label={`${imageAspect[0].toUpperCase()}${imageAspect.slice(1)} images`}
+                      aria-pressed={
+                        (board.imageAspect ?? "square") === imageAspect
+                      }
+                      className="tw:aria-pressed:bg-(--line) tw:aria-pressed:text-(--accent)"
+                      onClick={() => patchBoard({ imageAspect })}
+                    >
+                      <Icon aria-hidden="true" />
+                    </Button>
+                  ))}
+                </div>
+                <div
+                  role="group"
+                  aria-label="Caption placement"
+                  className="tw:flex tw:gap-1"
+                >
+                  {(
+                    [
+                      ["above", PanelTop, "Text above image"],
+                      ["below", PanelBottom, "Text below image"],
+                      ["overlay", Layers, "Text on image"],
+                    ] as const
+                  ).map(([captionPlacement, Icon, label]) => (
+                    <Button
+                      key={captionPlacement}
+                      variant="icon"
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={
+                        (board.captionPlacement ?? "below") === captionPlacement
+                      }
+                      className="tw:aria-pressed:bg-(--line) tw:aria-pressed:text-(--accent)"
+                      onClick={() => patchBoard({ captionPlacement })}
+                    >
+                      <Icon aria-hidden="true" />
+                    </Button>
+                  ))}
+                </div>
+                {board.captionPlacement === "overlay" && (
+                  <>
+                    <div
+                      role="group"
+                      aria-label="Caption alignment"
+                      className="tw:flex tw:gap-1"
+                    >
+                      {(
+                        [
+                          ["top", AlignStartVertical],
+                          ["middle", AlignCenterVertical],
+                          ["bottom", AlignEndVertical],
+                        ] as const
+                      ).map(([captionAlignment, Icon]) => (
+                        <Button
+                          key={captionAlignment}
+                          variant="icon"
+                          title={`Text at ${captionAlignment}`}
+                          aria-label={`Text at ${captionAlignment}`}
+                          aria-pressed={
+                            (board.captionAlignment ?? "bottom") ===
+                            captionAlignment
+                          }
+                          className="tw:aria-pressed:bg-(--line) tw:aria-pressed:text-(--accent)"
+                          onClick={() => patchBoard({ captionAlignment })}
+                        >
+                          <Icon aria-hidden="true" />
+                        </Button>
+                      ))}
+                    </div>
+                    <Popover>
+                      <PopoverButton
+                        as={Button}
+                        variant="icon"
+                        aria-label="Text overlay settings"
+                        title="Text overlay settings"
+                      >
+                        <SlidersHorizontal aria-hidden="true" />
+                      </PopoverButton>
+                      <PopoverPanel
+                        anchor="bottom"
+                        className="tw:z-70 tw:w-64 tw:max-w-[calc(100vw-24px)] tw:rounded-md tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-3 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]"
+                      >
+                        <ColorField
+                          id="caption-overlay"
+                          label="Overlay color"
+                          value={board.captionOverlayColor ?? "#000000"}
+                          onChange={(captionOverlayColor) =>
+                            patchBoard({ captionOverlayColor })
+                          }
+                        />
+                        <label
+                          className="field-label"
+                          htmlFor="caption-opacity"
+                        >
+                          Opacity{" "}
+                          <output>{board.captionOverlayOpacity ?? 60}%</output>
+                        </label>
+                        <input
+                          id="caption-opacity"
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={board.captionOverlayOpacity ?? 60}
+                          onChange={(event) =>
+                            patchBoard({
+                              captionOverlayOpacity: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </PopoverPanel>
+                    </Popover>
+                  </>
+                )}
+              </div>
               {(!board.heading.trim() || !board.headingVisible) &&
                 !headingEditing && (
                   <Button
@@ -841,6 +987,16 @@ export default function App() {
                           canChoose={activeAssets.length > 0}
                           index={index}
                           gridId={board.id}
+                          gridStyle={board}
+                          onCrop={(crop, assetId) =>
+                            dispatchDocument({
+                              type: "cell/crop",
+                              gridId: board.id,
+                              cellId: item.id,
+                              assetId,
+                              crop,
+                            })
+                          }
                           onPatch={(patch) =>
                             dispatchDocument({
                               type: "cell/patch",
