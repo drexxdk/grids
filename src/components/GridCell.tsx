@@ -49,6 +49,8 @@ export function GridCell({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
+  const dragPreview = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => () => dragPreview.current?.remove(), []);
   const [cropTarget, setCropTarget] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -151,10 +153,11 @@ export function GridCell({
             {asset ? (
               <PopoverButton
                 ref={trigger}
-                className="cell-image-button"
+                className="cell-image-button tw:overflow-hidden"
                 style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                 aria-label={`Cell options ${index + 1}${cell.title ? `: ${cell.title}` : ""}`}
                 draggable={Boolean(asset)}
+                onMouseDownCapture={(event) => event.stopPropagation()}
                 onDragStart={(event) => {
                   close();
                   event.dataTransfer.setData(
@@ -162,9 +165,39 @@ export function GridCell({
                     JSON.stringify({ boardId: gridId, cellId: cell.id }),
                   );
                   event.dataTransfer.effectAllowed = "move";
+                  const image = event.currentTarget.querySelector("img");
+                  if (image?.complete && image.naturalWidth) {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const preview = document.createElement("canvas");
+                    preview.width = Math.ceil(bounds.width);
+                    preview.height = Math.ceil(bounds.height);
+                    const context = preview.getContext("2d");
+                    if (context) {
+                      const source = sourceRectangle(cell.crop, image.naturalWidth, image.naturalHeight, geometry.aspectRatio);
+                      context.drawImage(image, source.x, source.y, source.width, source.height, 0, 0, preview.width, preview.height);
+                      preview.style.position = "fixed";
+                      preview.style.left = "-10000px";
+                      preview.style.top = "0";
+                      preview.style.pointerEvents = "none";
+                      preview.setAttribute("aria-hidden", "true");
+                      document.body.append(preview);
+                      dragPreview.current?.remove();
+                      dragPreview.current = preview;
+                      event.dataTransfer.setDragImage(preview, Math.max(0, Math.min(preview.width, event.clientX - bounds.left)), Math.max(0, Math.min(preview.height, event.clientY - bounds.top)));
+                      requestAnimationFrame(() => {
+                        preview.remove();
+                        if (dragPreview.current === preview) dragPreview.current = null;
+                      });
+                    }
+                  }
+                }}
+                onDragEnd={() => {
+                  dragPreview.current?.remove();
+                  dragPreview.current = null;
                 }}
               >
                 <img
+                  className="tw:pointer-events-none"
                   src={asset.src}
                   alt={cell.title || asset.title}
                   onLoad={(event) =>

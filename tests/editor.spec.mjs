@@ -443,6 +443,129 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
   ).not.toContain('"crop"');
 });
 
+for (const viewportWidth of [1440, 780]) {
+  test(`canvas dragging moves into empty cells and swaps occupied cells with crops at ${viewportWidth}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: viewportWidth, height: 1080 });
+    await page.goto("./");
+    await page.locator("#upload").setInputFiles([
+      {
+        name: "first.svg",
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="#ff0000"/></svg>',
+        ),
+      },
+      {
+        name: "second.svg",
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#0000ff"/></svg>',
+        ),
+      },
+    ]);
+    await expect(page.locator(".asset")).toHaveCount(2);
+    const images = page.locator(".cell-image-button");
+    const headings = page.locator(".cell-heading");
+    await page
+      .getByRole("button", { name: "Portrait images", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Text on image", exact: true })
+      .click();
+    await page
+      .locator(".asset")
+      .nth(0)
+      .dragTo(images.nth(0), { sourcePosition: { x: 5, y: 50 } });
+    await page
+      .locator(".asset")
+      .nth(1)
+      .dragTo(images.nth(1), { sourcePosition: { x: 5, y: 50 } });
+    await headings.nth(0).fill("First item");
+    await headings.nth(1).fill("Second item");
+    await images.nth(0).hover({ position: { x: 5, y: 5 } });
+    await page.getByRole("button", { name: "Crop image", exact: true }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Crop image",
+      exact: true,
+    });
+    await expect(
+      dialog.getByRole("button", { name: "Apply crop", exact: true }),
+    ).toBeEnabled();
+    await dialog.locator("#crop-zoom").fill("4");
+    await dialog
+      .getByRole("button", { name: "Apply crop", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const before = await savedWorkspace(page);
+    expect(before.grid.cells[0].crop).toBeDefined();
+    await expect(images.nth(0)).toHaveCSS("overflow", "hidden");
+    const picture = await images.nth(0).boundingBox();
+    const source = await images.nth(0).locator("img").boundingBox();
+    expect(source.width).toBeGreaterThan(picture.width * 3);
+    expect(
+      await images.nth(0).evaluate((button) => {
+        const bounds = button.getBoundingClientRect();
+        return [8, bounds.width - 8].every(
+          (x) =>
+            document.elementFromPoint(
+              bounds.x + x,
+              bounds.y + bounds.height / 2,
+            ) === button,
+        );
+      }),
+    ).toBe(true);
+    await page.evaluate(() => {
+      const original = DataTransfer.prototype.setDragImage;
+      window.canvasDragPreviews = [];
+      DataTransfer.prototype.setDragImage = function (element, x, y) {
+        window.canvasDragPreviews.push({ tag: element.tagName, width: element.width, height: element.height, x, y, color: [...element.getContext("2d").getImageData(Math.floor(element.width / 2), Math.floor(element.height / 2), 1, 1).data] });
+        return original.call(this, element, x, y);
+      };
+    });
+    await images
+      .nth(0)
+      .dragTo(images.nth(2), {
+        sourcePosition: { x: 8, y: Math.round(picture.height / 2) },
+      });
+    await expect(page.locator(".grid-cell").nth(0).locator("img")).toHaveCount(
+      0,
+    );
+    await expect(headings.nth(0)).toHaveValue("");
+    await expect(headings.nth(2)).toHaveValue("First item");
+    const previews = await page.evaluate(() => window.canvasDragPreviews);
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatchObject({ tag: "CANVAS", width: Math.ceil(picture.width), height: Math.ceil(picture.height), color: [255, 0, 0, 255] });
+    expect(previews[0].x).toBeCloseTo(8, 0);
+    expect(Math.abs(previews[0].y - Math.round(picture.height / 2))).toBeLessThanOrEqual(1);
+    await expect(page.locator("body > canvas")).toHaveCount(0);
+    let current = await savedWorkspace(page);
+    expect(current.grid.cells[2]).toEqual({
+      ...before.grid.cells[0],
+      id: before.grid.cells[2].id,
+    });
+    await images.nth(2).dragTo(images.nth(1));
+    await expect(headings.nth(1)).toHaveValue("First item");
+    await expect(headings.nth(2)).toHaveValue("Second item");
+    await expect(page.locator("body > canvas")).toHaveCount(0);
+    current = await savedWorkspace(page);
+    expect(current.grid.cells[1]).toEqual({
+      ...before.grid.cells[0],
+      id: before.grid.cells[1].id,
+    });
+    expect(current.grid.cells[2]).toEqual({
+      ...before.grid.cells[1],
+      id: before.grid.cells[2].id,
+    });
+    expect(current.assets).toEqual(before.assets);
+    await reloadWorkspace(page);
+    await expect(headings.nth(1)).toHaveValue("First item");
+    await expect(headings.nth(2)).toHaveValue("Second item");
+    expect((await savedWorkspace(page)).grid.cells).toEqual(current.grid.cells);
+  });
+}
+
 test("touch crop editor fills the viewport and keeps portrait controls usable", async ({
   browser,
 }, testInfo) => {
