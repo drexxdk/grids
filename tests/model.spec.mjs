@@ -430,8 +430,14 @@ test("document batch imports and example replacement retain latest media and pre
   expect(workspace.assets).toEqual([]);
 });
 
-test("direct image deletion clears visible and removed references without erasing captions", () => {
+test("library deletion retains visible and removed references while deleting unused images", () => {
   const workspace = localWorkspace();
+  const unused = {
+    ...workspace.assets[0],
+    id: crypto.randomUUID(),
+    title: "Unused",
+  };
+  workspace.assets.push(unused);
   workspace.grid.cells[0] = {
     ...workspace.grid.cells[0],
     assetId: workspace.assets[0].id,
@@ -444,18 +450,24 @@ test("direct image deletion clears visible and removed references without erasin
   const original = structuredClone(reduced);
   const deleted = model.documentReducer(reduced, {
     type: "assets/delete",
-    assetIds: [workspace.assets[0].id],
+    assetIds: workspace.assets.map((asset) => asset.id),
   });
-  expect(deleted.assets).toEqual([]);
+  expect(deleted.assets).toEqual([
+    { ...workspace.assets[0], libraryHidden: true },
+  ]);
+  expect(deleted.grid).toBe(reduced.grid);
   expect(deleted.grid.cells[0]).toMatchObject({
-    assetId: null,
+    assetId: workspace.assets[0].id,
     title: "Keep visible caption",
   });
   expect(
     deleted.grid.overflow.find(
       (entry) => entry.cell.id === workspace.grid.cells[15].id,
     ).cell,
-  ).toMatchObject({ assetId: null, title: "Private caption" });
+  ).toMatchObject({
+    assetId: workspace.assets[0].id,
+    title: "Private caption",
+  });
   expect(model.workspaceSchema.safeParse(deleted).success).toBe(true);
   expect(reduced).toEqual(original);
   expect(

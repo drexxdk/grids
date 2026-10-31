@@ -270,15 +270,13 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("./");
-  await page
-    .locator("#upload")
-    .setInputFiles({
-      name: "stable.svg",
-      mimeType: "image/svg+xml",
-      buffer: Buffer.from(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
-      ),
-    });
+  await page.locator("#upload").setInputFiles({
+    name: "stable.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+    ),
+  });
   await expect(page.locator(".asset")).toHaveCount(1);
   const drawer = page.locator("[data-editor-drawer]");
   const before = await drawer.boundingBox();
@@ -632,7 +630,7 @@ test("empty cells and image library accept direct uploads and file drops", async
   });
 });
 
-test("reset retains images and direct library deletion removes files without confirmation", async ({
+test("reset and library deletion retain canvas images without confirmation", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -715,27 +713,72 @@ test("reset retains images and direct library deletion removes files without con
   await page.getByRole("button", { name: "Delete used", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
-    .poll(async () => (await localDatabase(page)).document?.assets.length)
-    .toBe(1);
-  expect((await localDatabase(page)).images).toHaveLength(1);
+    .poll(
+      async () =>
+        (await localDatabase(page)).document?.assets.find(
+          (asset) => asset.title === "used",
+        )?.libraryHidden,
+    )
+    .toBe(true);
+  expect((await localDatabase(page)).images).toHaveLength(2);
   await expect(page.locator(".asset")).toHaveCount(1);
-  await expect(page.locator(".grid-cell img")).toHaveCount(0);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Keep this caption",
   );
+  await page
+    .getByRole("button", { name: "Add image to cell 2", exact: true })
+    .click();
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await expect(
+    picker.getByRole("button", { name: "Use used", exact: true }),
+  ).toHaveCount(0);
+  await picker.getByRole("button", { name: "Use unused", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await page.locator("#upload").setInputFiles({
+    name: "spare.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(2);
   await page
     .getByRole("button", { name: "Clear all images", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
-    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .poll(
+      async () =>
+        (await localDatabase(page)).document?.assets.filter(
+          (asset) => !asset.libraryHidden,
+        ).length,
+    )
     .toBe(0);
-  expect((await localDatabase(page)).images).toHaveLength(0);
+  expect((await localDatabase(page)).images).toHaveLength(2);
+  await expect(page.locator(".grid-cell img")).toHaveCount(2);
   await expect(addImages).toBeFocused();
   await expect(page.locator(".asset")).toHaveCount(0);
   expect((await addImages.boundingBox()).height).toBeGreaterThanOrEqual(140);
   await reloadWorkspace(page);
   await expect(page.locator(".asset")).toHaveCount(0);
+  await expect(page.locator(".grid-cell img")).toHaveCount(2);
+  await expect(
+    page.locator(".grid-cell").nth(0).locator("img"),
+  ).toHaveAttribute("alt", "Keep this caption");
+  await expect(
+    page.locator(".grid-cell").nth(1).locator("img"),
+  ).toHaveAttribute("alt", "unused");
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep this caption",
+  );
+  const retained = await savedWorkspace(page);
+  expect(retained.grid.cells[0].assetId).toBe(
+    retained.assets.find((asset) => asset.title === "used").id,
+  );
   await page.screenshot({
     path: testInfo.outputPath("clear-reset-library-cleanup-desktop.png"),
   });

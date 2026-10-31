@@ -12,6 +12,7 @@ export interface Asset {
   src: string;
   source?: string;
   trashedAt?: number;
+  libraryHidden?: boolean;
 }
 export interface Cell {
   id: string;
@@ -305,6 +306,7 @@ export const workspaceSchema = z
         src: z.string().min(1),
         source: z.string().min(1).optional(),
         trashedAt: z.number().int().nonnegative().optional(),
+        libraryHidden: z.boolean().optional(),
       }),
     ),
     grid: z.strictObject({
@@ -464,23 +466,20 @@ export function documentReducer(
     }
     case "assets/delete": {
       const ids = new Set(command.assetIds);
-      if (!workspace.assets.some((asset) => ids.has(asset.id)))
+      if (
+        !workspace.assets.some(
+          (asset) => ids.has(asset.id) && !asset.libraryHidden,
+        )
+      )
         return workspace;
-      const clearImage = (cell: Cell) =>
-        cell.assetId && ids.has(cell.assetId)
-          ? { ...cell, assetId: null }
-          : cell;
+      const referenced = referencedAssetIds(workspace);
       return {
         ...workspace,
-        assets: workspace.assets.filter((asset) => !ids.has(asset.id)),
-        grid: {
-          ...grid,
-          cells: grid.cells.map(clearImage),
-          overflow: grid.overflow.map((entry) => ({
-            ...entry,
-            cell: clearImage(entry.cell),
-          })),
-        },
+        assets: workspace.assets
+          .filter((asset) => !ids.has(asset.id) || referenced.has(asset.id))
+          .map((asset) =>
+            ids.has(asset.id) ? { ...asset, libraryHidden: true } : asset,
+          ),
       };
     }
     case "workspace/restore":

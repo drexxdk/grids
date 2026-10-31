@@ -206,7 +206,7 @@ export default function App() {
   const storageButton = useRef<HTMLButtonElement>(null);
   const [storageOpen, setStorageOpen] = useState(false);
   const activeAssets = workspace.assets.filter(
-    (asset) => asset.trashedAt === undefined,
+    (asset) => asset.trashedAt === undefined && !asset.libraryHidden,
   );
   const [storageInfo, setStorageInfo] = useState<
     | (BrowserStorageStatus & {
@@ -745,12 +745,12 @@ export default function App() {
               hidden
               onChange={(event) => upload(event)}
             />
-            {workspace.assets.length > 0 && (
+            {activeAssets.length > 0 && (
               <Button
                 className="tw:mt-2 tw:min-h-[44px] tw:w-full"
                 disabled={loadingExample}
                 onClick={() =>
-                  deleteImages(workspace.assets.map((asset) => asset.id))
+                  deleteImages(activeAssets.map((asset) => asset.id))
                 }
               >
                 <Trash2 aria-hidden="true" />
