@@ -59,6 +59,46 @@ export interface EditorSettings {
   style: GridStyle;
   exportSettings: ExportSettings;
 }
+export type GridPatch = Partial<
+  GridStyle & Pick<GridContent, "name" | "heading">
+>;
+export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
+export type DocumentCommand =
+  | { type: "grid/patch"; gridId: string; patch: GridPatch }
+  | { type: "export/patch"; patch: Partial<ExportSettings> }
+  | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
+  | { type: "cell/clear"; gridId: string; cellId: string }
+  | { type: "cell/place"; gridId: string; cellId: string; assetId: string }
+  | {
+      type: "cell/swap";
+      gridId: string;
+      sourceCellId: string;
+      targetCellId: string;
+    }
+  | {
+      type: "cell/recover";
+      gridId: string;
+      cellId: string;
+      overflowCellId: string;
+    }
+  | {
+      type: "grid/resize";
+      gridId: string;
+      rows: number;
+      columns: number;
+      newCells: Cell[];
+    }
+  | { type: "grid/reset"; defaults: Workspace }
+  | {
+      type: "assets/import";
+      gridId: string;
+      cellId: string | null;
+      assets: Asset[];
+    }
+  | { type: "grid/replace"; grid: Board; assets: Asset[] };
+type CellFactory = (row: number, column: number) => Cell;
+const clampGridSize = (value: number) =>
+  Math.max(1, Math.min(gridLimit, Math.round(Number(value) || 1)));
 export const publishers = {
   none: { color: "transparent", caption: "#202325", text: "#d8f36a" },
   dc: { color: "#0085c7", caption: "#123c55", text: "#ffffff" },
@@ -89,9 +129,10 @@ export function resizeBoard(
   board: Board,
   rows: number,
   columns: number,
+  createCell: CellFactory = () => makeCell(),
 ): Board {
-  rows = Math.max(1, Math.min(gridLimit, Math.round(Number(rows) || 1)));
-  columns = Math.max(1, Math.min(gridLimit, Math.round(Number(columns) || 1)));
+  rows = clampGridSize(rows);
+  columns = clampGridSize(columns);
   const positions = new Map<string, OverflowCell>();
   board.cells.forEach((cell, index) => {
     const row = Math.floor(index / board.columns);
@@ -106,7 +147,7 @@ export function resizeBoard(
     const row = Math.floor(index / columns);
     const column = index % columns;
     const key = `${row}:${column}`;
-    const cell = positions.get(key)?.cell ?? makeCell();
+    const cell = positions.get(key)?.cell ?? createCell(row, column);
     positions.delete(key);
     return cell;
   });
@@ -119,11 +160,14 @@ export const makeWorkspace = (): Workspace => ({
   exportSettings: { format: "image/png", resolution: 1200, quality: 95 },
 });
 
-export function resetWorkspace(workspace: Workspace): Workspace {
-  const defaults = makeWorkspace();
+export function resetWorkspace(
+  workspace: Workspace,
+  defaults = makeWorkspace(),
+): Workspace {
   const configured = applyEditorSettings(
     workspace,
     getEditorSettings(defaults),
+    (row, column) => defaults.grid.cells[row * defaults.grid.columns + column],
   );
   return {
     ...configured,
@@ -189,6 +233,7 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
 export function applyEditorSettings(
   workspace: Workspace,
   input: unknown,
+  createCell: CellFactory = () => makeCell(),
 ): Workspace {
   const settings = editorSettingsSchema.parse(input);
   return {
@@ -198,6 +243,7 @@ export function applyEditorSettings(
         workspace.grid,
         settings.layout.rows,
         settings.layout.columns,
+        createCell,
       ),
       ...settings.style,
     },
@@ -277,5 +323,186 @@ export function loadWorkspace(): Workspace {
     return parsed.success ? parsed.data : makeWorkspace();
   } catch {
     return makeWorkspace();
+  }
+}
+
+export function createResizeCommand(
+  gridId: string,
+  rows: number,
+  columns: number,
+): DocumentCommand {
+  rows = clampGridSize(rows);
+  columns = clampGridSize(columns);
+  return {
+    type: "grid/resize",
+    gridId,
+    rows,
+    columns,
+    newCells: Array.from({ length: rows * columns }, () => makeCell()),
+  };
+}
+
+export const createResetCommand = (): DocumentCommand => ({
+  type: "grid/reset",
+  defaults: makeWorkspace(),
+});
+
+function mergeAssets(existing: Asset[], incoming: Asset[]): Asset[] {
+  const ids = new Set(existing.map((asset) => asset.id));
+  const additions = incoming.filter((asset) => {
+    if (ids.has(asset.id)) return false;
+    ids.add(asset.id);
+    return true;
+  });
+  return additions.length ? [...existing, ...additions] : existing;
+}
+
+export function documentReducer(
+  workspace: Workspace,
+  command: DocumentCommand,
+): Workspace {
+  const grid = workspace.grid;
+  if (
+    "gridId" in command &&
+    command.type !== "assets/import" &&
+    command.gridId !== grid.id
+  )
+    return workspace;
+  const withGrid = (updated: Board): Workspace => ({
+    ...workspace,
+    grid: updated,
+  });
+  const updateCell = (
+    cellId: string,
+    update: (cell: Cell) => Cell,
+  ): Workspace => {
+    if (!grid.cells.some((cell) => cell.id === cellId)) return workspace;
+    return withGrid({
+      ...grid,
+      cells: grid.cells.map((cell) =>
+        cell.id === cellId ? update(cell) : cell,
+      ),
+    });
+  };
+  switch (command.type) {
+    case "grid/patch":
+      return withGrid({ ...grid, ...command.patch });
+    case "export/patch":
+      return {
+        ...workspace,
+        exportSettings: { ...workspace.exportSettings, ...command.patch },
+      };
+    case "cell/patch":
+      return updateCell(command.cellId, (cell) => ({
+        ...cell,
+        ...command.patch,
+      }));
+    case "cell/clear":
+      return updateCell(command.cellId, (cell) => ({
+        ...cell,
+        assetId: null,
+        title: "",
+        fit: "contain",
+      }));
+    case "cell/place": {
+      const asset = workspace.assets.find(
+        (asset) => asset.id === command.assetId,
+      );
+      return asset
+        ? updateCell(command.cellId, (cell) => ({
+            ...cell,
+            assetId: asset.id,
+            title: asset.title.slice(0, 120),
+            fit: "contain",
+          }))
+        : workspace;
+    }
+    case "cell/swap": {
+      const source = grid.cells.find(
+        (cell) => cell.id === command.sourceCellId,
+      );
+      const target = grid.cells.find(
+        (cell) => cell.id === command.targetCellId,
+      );
+      if (!source || !target || source === target) return workspace;
+      return withGrid({
+        ...grid,
+        cells: grid.cells.map((cell) =>
+          cell.id === source.id
+            ? { ...target, id: source.id }
+            : cell.id === target.id
+              ? { ...source, id: target.id }
+              : cell,
+        ),
+      });
+    }
+    case "cell/recover": {
+      const target = grid.cells.find((cell) => cell.id === command.cellId);
+      const archived = grid.overflow.find(
+        (entry) => entry.cell.id === command.overflowCellId,
+      );
+      if (!target || !archived) return workspace;
+      return withGrid({
+        ...grid,
+        cells: grid.cells.map((cell) =>
+          cell.id === target.id ? { ...archived.cell, id: target.id } : cell,
+        ),
+        overflow: grid.overflow.map((entry) =>
+          entry.cell.id === archived.cell.id
+            ? { ...entry, cell: { ...target, id: archived.cell.id } }
+            : entry,
+        ),
+      });
+    }
+    case "grid/resize":
+      return withGrid(
+        resizeBoard(
+          grid,
+          command.rows,
+          command.columns,
+          (row, column) => command.newCells[row * command.columns + column],
+        ),
+      );
+    case "grid/reset":
+      return resetWorkspace(workspace, command.defaults);
+    case "assets/import": {
+      const assets = mergeAssets(workspace.assets, command.assets);
+      const destination =
+        command.gridId === grid.id && command.cellId !== null
+          ? grid.cells.findIndex((cell) => cell.id === command.cellId)
+          : -1;
+      if (destination < 0)
+        return assets === workspace.assets
+          ? workspace
+          : { ...workspace, assets };
+      return {
+        ...workspace,
+        assets,
+        grid: {
+          ...grid,
+          cells: grid.cells.map((cell, index) => {
+            const asset = command.assets[index - destination];
+            return asset
+              ? {
+                  ...cell,
+                  assetId: asset.id,
+                  title: asset.title.slice(0, 120),
+                  fit: "contain",
+                }
+              : cell;
+          }),
+        },
+      };
+    }
+    case "grid/replace":
+      return {
+        ...workspace,
+        assets: mergeAssets(workspace.assets, command.assets),
+        grid: command.grid,
+      };
+    default: {
+      const exhaustive: never = command;
+      return exhaustive;
+    }
   }
 }

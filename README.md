@@ -30,11 +30,13 @@ The grid-action menu offers Rename grid and Download image. Grid settings expand
 
 The modal structure and scrollbar-compensation pattern were adapted from the user's Chatter frontend (`apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, and the portal-dialog rules in `apps/web/src/index.css`). Grids uses Motion instead of Chatter's CSS/Web Animations transitions, adds listener/probe cleanup and post-dialog measurements, and keeps its own editor styling and deployment. No Chatter backend code is included.
 
-Completed work and the ordered development backlog are in [docs/roadmap.md](docs/roadmap.md). Provider sign-in and database settings, general undo/redo, IndexedDB media storage, image ratios, and reviewed/licensed example content remain pending. Guest documents use the versioned `grids-editor-v1` storage key with strict Zod validation. Obsolete prototype saves are ignored; invalid documents initialize fresh defaults, without migration or backup UI.
+Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Provider sign-in and database settings, general undo/redo, IndexedDB media storage, image ratios, and reviewed/licensed example content remain pending. Guest documents use the versioned `grids-editor-v1` storage key with strict Zod validation. Obsolete prototype saves are ignored; invalid documents initialize fresh defaults, without migration or backup UI.
 
 The image-library Load example icon opens a DC/Marvel preset selector. Use example deliberately replaces the current grid; Cancel leaves it unchanged, and existing library uploads are retained. Repeat loads reuse matching library images. Neither the example module nor its images are requested by a fresh workspace until applied. Defaults use Manrope and do not infer comic branding from the grid name or uploaded images.
 
 The model separates layout/style/export configuration from local cell content and media. Its strict settings-only representation excludes images, font files, URLs/paths, placements, IDs, grid names, headings, and captions. Applying settings validates before changing the grid and preserves local content, including removed-cell recovery. Reset uses this shared path, with an explicit reset of the grid name and banner text. This is a client-side boundary, not account sync; future backend ownership and validation remain required.
+
+All editor document changes use typed commands and a React reducer: grid/cell/export edits, placement/swaps/clearing, resizing/recovery/reset, completed imports, and deliberate example replacement. Commands resolve current cell IDs rather than stale positions; resize/reset prepare new-cell IDs before dispatch so replay stays stable. Example replacement merges the latest local library instead of restoring an older snapshot. Selection, dialogs, save/export progress, pending image decoding, and session resize history remain outside the saved document. General undo/redo is still pending.
 
 ## Deploy To GitHub Pages
 
@@ -48,8 +50,8 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 
 ## Project Structure
 
-- [src/App.tsx](src/App.tsx): typed React editor UI, controls, and import/download interactions.
-- [src/model.ts](src/model.ts): versioned single-grid/settings schemas, settings extraction/application, defaults/reset, strict saved-document validation, and coordinate-preserving resizing.
+- [src/App.tsx](src/App.tsx): typed React editor UI, command dispatch, and import/download interactions.
+- [src/model.ts](src/model.ts): versioned single-grid/settings schemas, typed document commands/reducer, settings extraction/application, defaults/reset, and coordinate-preserving resizing.
 - [src/demo/comics.ts](src/demo/comics.ts): lazily loaded single-grid example presets, including the unresolved source/rights record.
 - [src/export.ts](src/export.ts): typed canvas sizing, image rendering, and export generation.
 - `src/components/ui/`: typed Headless UI/Motion buttons, switches, accordion, action menu, and modal.
@@ -57,7 +59,7 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 - `styles.css`: existing responsive canvas/editor styling and incremental Tailwind utilities.
 - `public/assets/`: local fonts, images, and redistribution notices.
 - [tests/editor.spec.mjs](tests/editor.spec.mjs): Node-side production-build browser regression checks.
-- [tests/model.spec.mjs](tests/model.spec.mjs): in-memory TypeScript model checks for allowlisted settings, invalid-input rejection, and local-content preservation.
+- [tests/model.spec.mjs](tests/model.spec.mjs): in-memory TypeScript checks for settings boundaries, immutable document commands, replay-stable IDs, batch imports, and stale-target/media recovery.
 - [vite.config.mjs](vite.config.mjs) and [playwright.config.mjs](playwright.config.mjs): directly executed ESM tooling configuration.
 - `.github/workflows/deploy.yml`: test and GitHub Pages deployment workflow.
 

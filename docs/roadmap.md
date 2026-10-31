@@ -16,25 +16,6 @@ This is a new project with no users or real data. Prototype schemas, storage key
 
 The single-grid model, guest autosave/reset, and selectable examples are implemented. Provider sign-in and database settings remain planned; the current app is browser-only.
 
-## Completed
-
-- [x] React/Vite with strict TypeScript/TSX application sources, `.mjs` Node tooling, and production-subpath build/browser checks. Generated JavaScript bundles are exempt from the source-language rule.
-- [x] Headless UI Dialog/Menu/Disclosure/Switch primitives; Motion animations and reduced motion; Tailwind v4 for new controls; component variants and Lucide icons. Removed the unused global Lucide bundle.
-- [x] Viewport-edge modal scrolling, background lock through exit, scrollbar compensation, trigger-focus restoration, and helper cleanup. Touch dialogs focus a non-input control instead of opening the keyboard.
-- [x] Neutral first launch: one empty 3x3 grid, empty library, square cells, Manrope fonts. No automatic example image/module requests or inferred comic branding.
-- [x] Explicit lazy DC/Marvel single-grid examples. Confirmation deliberately replaces the grid; Cancel changes nothing; existing uploads remain in the library and repeat loads reuse images. Artwork rights and original credits remain unresolved.
-- [x] Naming/rename dialog, uploads, library placement, drag-to-swap, cell titles, fit/fill, background/gap controls, and legacy DC/Marvel palettes. Bundled fonts: Manrope, Bangers, Boogaloo, Bebas Neue.
-- [x] Right-edge column and bottom-edge row controls: 1..12 in each direction, 144 visible cells, 44px named controls with tooltips/disabled limits, no grid-size presets, no controls in exports.
-- [x] Stable cell IDs preserve coordinates, selection, keys, placement, clearing, and swaps. Removed cells persist by coordinate; expansion restores them; recovery swaps retain displaced content. Resize Undo preserves newer edits.
-- [x] Single-grid editor with no board manager or Export All; persisted format/resolution/quality preferences. Replaced prototype multi-board navigation/deletion rather than maintaining compatibility.
-- [x] Heading visibility retains text/fonts/styles while removing hidden space from preview/export. Workspace names stay separate from visible headings.
-- [x] Async uploads follow destination grid/cell IDs. Resized-away/replaced targets do not receive misplaced images; imported media remains in the library.
-- [x] Fresh versioned storage and strict Zod boundary validation; obsolete/invalid prototype documents initialize defaults. Selection/dialogs/progress/session Undo stay separate from saved documents; uploads stay on-device.
-- [x] Guest autosave and Reset to Defaults with image/caption/placement retention, including removed-cell recovery after reload. Failed local saves report Session only; current editing/export remains usable.
-- [x] Separate layout/style/content contracts and a strict versioned settings-only representation. Extraction excludes local media, paths, IDs, placements, grid names, headings, and captions; validated application preserves local content/coordinates. Reset reuses this path. Account API/ownership checks remain pending.
-- [x] PNG/JPEG/WebP downloads with real decoded-image/MIME checks. Initial canvas caps: 16 MP narrow/touch, 32 MP otherwise; 150/300 px options provide large-grid recovery.
-- [x] Production-subpath regressions for upload/dragging, headings/fonts, animated controls/modal/touch focus, single-grid defaults/reset/persistence/schema rejection/save failures, resize/overflow/selection, delayed uploads, export limits, and deliberate examples; desktop/mobile screenshots.
-
 Current limits: media is stored as data URLs in localStorage; Undo is session-only and limited to resizing. Provider sign-in/database settings, IndexedDB media storage, general undo/redo, ratios, themes, custom font uploads, cropping, search, and project archives are unfinished. Canvas caps do not guarantee device memory safety. Pages build/workflow compatibility is checked, not a live deployment certification. Existing prototype storage is not a compatibility requirement for future changes.
 
 ## Development Order
@@ -48,7 +29,7 @@ Current limits: media is stored as data URLs in localStorage; Undo is session-on
 - [x] Convert examples into selectable single-grid presets, not append-only board packs. Applying an example requires deliberate replacement confirmation and retains library images; Cancel changes nothing.
 - [x] Autosave guests to localStorage; visible Reset to Defaults and failed-save feedback. Reset restores configuration/export preferences without deleting local images/captions/placements. Storage failures leave editing/export usable. Account records do not exist yet.
 - [x] Define separate layout/style configuration and local cell content/media contracts; strict settings-only extraction/application excludes media and image references. Shared schemas validate local documents and settings; reset uses the same application path. Future account APIs must accept this allowlist, never the full local document.
-- [ ] Central typed document commands/reducer; keep crop drafts and provider requests/results outside saved state. Reuse React unless a state library solves a demonstrated subscription need.
+- [x] Central typed document commands/React reducer for current mutations, with ID-based live targets, immutable updates, atomic batch imports, media-preserving replacement, and replay-stable resize/reset commands. Session UI and pending async work stay outside saved state; future crop drafts/provider requests must follow this boundary. No additional state library.
 - [ ] Dexie/IndexedDB for client-only images/fonts/thumbnails and larger local grid content; managed/revoked object URLs. localStorage retains guest settings and small preferences. Keep this local data separate from the future account-settings payload; initialize fresh storage rather than importing prototype data.
 - [ ] Debounced Saving/Saved/Save Failed status, storage usage, best-effort persistent-storage requests, unused-media cleanup, and recoverable trash. Browser storage is not permanent backup or synchronization.
 - [ ] Revision checks and BroadcastChannel notifications against silent multi-tab overwrites.

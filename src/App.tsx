@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
   type ChangeEvent,
@@ -33,14 +34,15 @@ import {
   fontOptions,
   gridLimit,
   loadWorkspace,
-  makeCell,
+  createResetCommand,
+  createResizeCommand,
+  documentReducer,
   publishers,
-  resetWorkspace,
-  resizeBoard,
   storageKey,
   type Asset,
   type Board,
-  type Cell,
+  type CellPatch,
+  type GridPatch,
   type ImageFormat,
   type OverflowCell,
   type ExportSettings,
@@ -83,17 +85,18 @@ function BoardHeading({ board }: { board: Board }) {
 }
 
 export default function App() {
-  const [workspace, setWorkspace] = useState(loadWorkspace);
+  const [workspace, dispatchDocument] = useReducer(
+    documentReducer,
+    undefined,
+    loadWorkspace,
+  );
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [toast, setToast] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved locally");
   const { format, resolution, quality } = workspace.exportSettings;
   const patchExport = (patch: Partial<ExportSettings>) =>
-    setWorkspace((current) => ({
-      ...current,
-      exportSettings: { ...current.exportSettings, ...patch },
-    }));
+    dispatchDocument({ type: "export/patch", patch });
   const [exporting, setExporting] = useState(false);
   const [loadingExample, setLoadingExample] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
@@ -135,29 +138,22 @@ export default function App() {
     const timer = setTimeout(() => setToast(""), 4500);
     return () => clearTimeout(timer);
   }, [toast]);
-  const updateBoard = (update: (board: Board) => Board) =>
-    setWorkspace((current) => ({
-      ...current,
-      grid: update(current.grid),
-    }));
-  const patchBoard = (patch: Partial<Board>) =>
-    updateBoard((item) => ({ ...item, ...patch }));
-  const patchCell = (patch: Partial<Cell>) =>
-    updateBoard((item) => ({
-      ...item,
-      cells: item.cells.map((entry, index) =>
-        entry.id === cell.id ? { ...entry, ...patch, id: entry.id } : entry,
-      ),
-    }));
+  const patchBoard = (patch: GridPatch) =>
+    dispatchDocument({ type: "grid/patch", gridId: board.id, patch });
+  const patchCell = (patch: CellPatch) =>
+    dispatchDocument({
+      type: "cell/patch",
+      gridId: board.id,
+      cellId: cell.id,
+      patch,
+    });
   const placeAsset = (id: string, index: number) => {
-    const asset = workspace.assets.find((asset) => asset.id === id);
-    if (!asset) return;
-    updateBoard((item) => ({
-      ...item,
-      cells: item.cells.map((entry, position) =>
-        position === index ? { ...makeCell(asset), id: entry.id } : entry,
-      ),
-    }));
+    dispatchDocument({
+      type: "cell/place",
+      gridId: board.id,
+      cellId: board.cells[index].id,
+      assetId: id,
+    });
     setSelectedCell(index);
   };
   const resize = (key: "rows" | "columns", input: number) => {
@@ -174,15 +170,15 @@ export default function App() {
         selectedCellId: cell.id,
       },
     ]);
-    updateBoard((item) => resizeBoard(item, rows, columns));
+    dispatchDocument(createResizeCommand(board.id, rows, columns));
     const row = Math.min(Math.floor(selectedCell / board.columns), rows - 1);
     const column = Math.min(selectedCell % board.columns, columns - 1);
     setSelectedCellId(board.cells[row * board.columns + column].id);
   };
   const undoResize = () => {
     if (!resizeUndo) return;
-    updateBoard((item) =>
-      resizeBoard(item, resizeUndo.rows, resizeUndo.columns),
+    dispatchDocument(
+      createResizeCommand(board.id, resizeUndo.rows, resizeUndo.columns),
     );
     setResizeHistory((current) =>
       current.filter((entry) => entry !== resizeUndo),
@@ -190,17 +186,12 @@ export default function App() {
     setSelectedCellId(resizeUndo.selectedCellId);
   };
   const recoverCell = (entry: OverflowCell) => {
-    updateBoard((item) => ({
-      ...item,
-      cells: item.cells.map((target) =>
-        target.id === cell.id ? { ...entry.cell, id: target.id } : target,
-      ),
-      overflow: item.overflow.map((archived) =>
-        archived.cell.id === entry.cell.id
-          ? { ...archived, cell: { ...cell, id: archived.cell.id } }
-          : archived,
-      ),
-    }));
+    dispatchDocument({
+      type: "cell/recover",
+      gridId: board.id,
+      cellId: cell.id,
+      overflowCellId: entry.cell.id,
+    });
   };
   const importFiles = async (
     files: FileList | null,
@@ -238,26 +229,12 @@ export default function App() {
         );
       }
     }
-    setWorkspace((current) => ({
-      ...current,
-      assets: [...current.assets, ...assets],
-      grid: (() => {
-        const item = current.grid;
-        if (item.id !== targetId || !targetCellId) return item;
-        const destination = item.cells.findIndex(
-          (entry) => entry.id === targetCellId,
-        );
-        if (destination < 0) return item;
-        return {
-          ...item,
-          cells: item.cells.map((entry, index) =>
-            assets[index - destination]
-              ? { ...makeCell(assets[index - destination]), id: entry.id }
-              : entry,
-          ),
-        };
-      })(),
-    }));
+    dispatchDocument({
+      type: "assets/import",
+      gridId: targetId,
+      cellId: targetCellId ?? null,
+      assets,
+    });
     setFilter("All");
   };
   const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
@@ -284,13 +261,11 @@ export default function App() {
         source >= 0 &&
         source < board.rows * board.columns
       ) {
-        updateBoard((item) => {
-          const cells = [...item.cells];
-          const sourceCell = cells[source];
-          const targetCell = cells[index];
-          cells[source] = { ...targetCell, id: sourceCell.id };
-          cells[index] = { ...sourceCell, id: targetCell.id };
-          return { ...item, cells };
+        dispatchDocument({
+          type: "cell/swap",
+          gridId: board.id,
+          sourceCellId: board.cells[source].id,
+          targetCellId: board.cells[index].id,
         });
         setSelectedCell(index);
       }
@@ -353,7 +328,7 @@ export default function App() {
     input.value = "";
   };
   const resetDefaults = () => {
-    setWorkspace(resetWorkspace);
+    dispatchDocument(createResetCommand());
     setResizeHistory([]);
     setSelectedCellId(null);
     setFilter("All");
@@ -364,7 +339,12 @@ export default function App() {
     setLoadingExample(true);
     try {
       const { loadComicExample } = await import("./demo/comics");
-      setWorkspace((current) => loadComicExample(current, examplePublisher));
+      const example = loadComicExample(workspace, examplePublisher);
+      dispatchDocument({
+        type: "grid/replace",
+        grid: example.grid,
+        assets: example.assets,
+      });
       setResizeHistory([]);
       setSelectedCellId(null);
       setFilter("All");
@@ -618,14 +598,12 @@ export default function App() {
                           onFocus={() => setSelectedCell(index)}
                           onChange={(event) => {
                             const title = event.target.value;
-                            updateBoard((current) => ({
-                              ...current,
-                              cells: current.cells.map((entry, position) =>
-                                position === index
-                                  ? { ...entry, title }
-                                  : entry,
-                              ),
-                            }));
+                            dispatchDocument({
+                              type: "cell/patch",
+                              gridId: board.id,
+                              cellId: item.id,
+                              patch: { title },
+                            });
                           }}
                         />
                       </div>
@@ -809,7 +787,13 @@ export default function App() {
                 className="icon-button"
                 title="Clear selected cell"
                 aria-label="Clear selected cell"
-                onClick={() => patchCell(makeCell())}
+                onClick={() =>
+                  dispatchDocument({
+                    type: "cell/clear",
+                    gridId: board.id,
+                    cellId: cell.id,
+                  })
+                }
               >
                 <Trash2 />
               </button>
@@ -896,13 +880,12 @@ export default function App() {
             event.preventDefault();
             const name = draftName.trim();
             if (!name) return;
-            setWorkspace((current) => ({
-              ...current,
-              grid:
-                current.grid.id === renaming
-                  ? { ...current.grid, name }
-                  : current.grid,
-            }));
+            if (renaming !== null)
+              dispatchDocument({
+                type: "grid/patch",
+                gridId: renaming,
+                patch: { name },
+              });
             setRenaming(null);
           }}
         >
