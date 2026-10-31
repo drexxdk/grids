@@ -5,6 +5,24 @@ import { fileURLToPath } from "node:url";
 import { build } from "vite";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+async function storageModuleUrl() {
+  const result = await build({
+    configFile: false,
+    logLevel: "error",
+    build: {
+      write: false,
+      minify: false,
+      lib: {
+        entry: fileURLToPath(new URL("../src/storage.ts", import.meta.url)),
+        formats: ["es"],
+        fileName: "storage",
+      },
+    },
+  });
+  const output = (Array.isArray(result) ? result[0] : result).output;
+  const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
+  return `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`;
+}
 async function localDatabase(page, operation = "read", document = null) {
   return page.evaluate(
     ({ operation, document }) =>
@@ -91,6 +109,178 @@ async function useComicExample(page, publisher = "dc") {
     publisher === "dc" ? "DC Characters" : "Marvel Characters",
   );
 }
+
+test("multi-tab notifications preserve local edits and require confirmed reload", async ({
+  page,
+  context,
+}, testInfo) => {
+  await context.addInitScript(() => {
+    window.workspaceNotifications = [];
+    const NativeChannel = window.BroadcastChannel;
+    window.BroadcastChannel = class extends NativeChannel {
+      constructor(name) {
+        super(name);
+        this.workspaceChannel = name === "grids-workspace-v1";
+      }
+      postMessage(data) {
+        if (this.workspaceChannel)
+          window.workspaceNotifications.push(structuredClone(data));
+        return super.postMessage(data);
+      }
+    };
+  });
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "shared.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="green"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator(".asset").click();
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.cells[0].title)
+    .toBe("shared");
+  const original = await savedWorkspace(page);
+  const other = await context.newPage();
+  await other.goto(page.url());
+  await expect(other.locator(".asset")).toHaveCount(1);
+  await other.clock.install();
+  await other.clock.pauseAt(new Date());
+  await other.clock.runFor(400);
+  expect((await localDatabase(page)).document.revision).toBe(original.revision);
+  await expect(page.locator("#save-status")).toHaveText("Saved locally");
+  await expect(other.locator("#save-status")).toHaveText("Saved locally");
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel("grids-workspace-v1");
+    channel.postMessage({ id: "guest", revision: crypto.randomUUID() });
+    channel.postMessage({ id: "guest", revision: "invalid" });
+    channel.close();
+  });
+  await other.clock.runFor(400);
+  await expect(other.getByRole("alert")).toHaveCount(0);
+  await other.locator("#cell-title").fill("Unsaved second tab");
+  await expect(other.locator(".cell-heading").first()).toHaveValue(
+    "Unsaved second tab",
+  );
+  await page.locator("#cell-title").fill("Saved elsewhere");
+  await page.locator("#board-name").fill("First tab saved");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect
+    .poll(async () => (await localDatabase(page)).document.grid.name)
+    .toBe("First tab saved");
+  const latest = await savedWorkspace(page);
+  await expect(other.locator("#save-status")).toHaveText(
+    "Changed in another tab",
+  );
+  await expect(other.getByRole("alert")).toContainText(
+    "This tab is not saving.",
+  );
+  await other.clock.runFor(500);
+  expect((await localDatabase(page)).document).toEqual(latest);
+  expect(
+    await other.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  const notifications = await page.evaluate(() =>
+    window.workspaceNotifications.filter(
+      (message) => message.revision !== "invalid",
+    ),
+  );
+  expect(notifications.length).toBeGreaterThan(1);
+  for (const message of notifications) {
+    expect(Object.keys(message).sort()).toEqual(["id", "revision"]);
+    expect(message.id).toBe("guest");
+    expect(message.revision).toMatch(/^[0-9a-f-]{36}$/);
+  }
+  await other.screenshot({ path: testInfo.outputPath("conflict-desktop.png") });
+  await other.setViewportSize({ width: 390, height: 844 });
+  await other.screenshot({ path: testInfo.outputPath("conflict-mobile.png") });
+  expect(
+    await other.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await other
+    .getByRole("button", { name: "Reload saved grid", exact: true })
+    .click();
+  const dialog = other.getByRole("dialog", { name: "Reload saved grid" });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await other.clock.runFor(300);
+  await expect(dialog).toHaveCount(0);
+  await expect(other.locator("#cell-title")).toHaveValue("Unsaved second tab");
+  await other.locator("#resolution").selectOption("150");
+  expect((await downloadBoard(other)).suggestedFilename()).toBe("grid.png");
+  expect((await localDatabase(page)).document).toEqual(latest);
+  const unexpectedDialogs = [];
+  other.on("dialog", async (dialog) => {
+    unexpectedDialogs.push(dialog.type());
+    await dialog.dismiss();
+  });
+  await other
+    .getByRole("button", { name: "Reload saved grid", exact: true })
+    .click();
+  const navigation = other.waitForEvent("load");
+  await dialog
+    .getByRole("button", { name: "Reload saved grid", exact: true })
+    .click();
+  await navigation;
+  await expect(other.locator("#board-name")).toHaveValue("First tab saved");
+  await expect(other.locator("#cell-title")).toHaveValue("Saved elsewhere");
+  await expect(other.getByRole("alert")).toHaveCount(0);
+  await expect(other.locator(".grid-cell img")).toHaveCount(1);
+  expect(unexpectedDialogs).toEqual([]);
+  expect((await localDatabase(page)).document.revision).toBe(latest.revision);
+  await other.close();
+});
+
+test("multi-tab focus and visibility checks work without BroadcastChannel", async ({
+  page,
+  context,
+}) => {
+  await context.addInitScript(() => {
+    window.BroadcastChannel = undefined;
+  });
+  await page.goto("./");
+  await savedWorkspace(page);
+  for (const event of ["focus", "visibilitychange"]) {
+    const other = await context.newPage();
+    await other.goto(page.url());
+    await expect(other.locator("#board-grid")).toBeVisible();
+    await page.locator("#board-name").fill(`Saved before ${event}`);
+    await expect
+      .poll(async () => (await localDatabase(page)).document.grid.name)
+      .toBe(`Saved before ${event}`);
+    await other.evaluate((event) => {
+      if (event === "focus") window.dispatchEvent(new Event("focus"));
+      else {
+        Object.defineProperty(document, "visibilityState", {
+          configurable: true,
+          get: () => "visible",
+        });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }
+    }, event);
+    await expect(other.locator("#save-status")).toHaveText(
+      "Changed in another tab",
+    );
+    await expect(other.getByRole("alert")).toBeVisible();
+    expect((await localDatabase(page)).document.grid.name).toBe(
+      `Saved before ${event}`,
+    );
+    await other.close();
+  }
+});
 
 test("unused-image trash survives reload, protects removed cells, and purges only after confirmation", async ({
   page,
@@ -553,25 +743,175 @@ test("missing IndexedDB image data cannot overwrite the stored grid with blank d
   expect(stored.images).toEqual([]);
 });
 
+test("revision notifications are emitted only after successful commits", async ({
+  page,
+}) => {
+  const moduleUrl = await storageModuleUrl();
+  await page.goto("./");
+  const original = await savedWorkspace(page);
+  const result = await page.evaluate(async (moduleUrl) => {
+    const { LocalWorkspaceStore } = await import(moduleUrl);
+    const nativeChannel = window.BroadcastChannel;
+    const notifications = [];
+    let closed = false;
+    window.BroadcastChannel = class {
+      postMessage(message) {
+        notifications.push(message);
+      }
+      close() {
+        closed = true;
+      }
+    };
+    const store = new LocalWorkspaceStore();
+    const workspace = await store.load();
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    };
+    let failed = false;
+    try {
+      await store.save({
+        ...workspace,
+        grid: { ...workspace.grid, name: "Rejected commit" },
+      });
+    } catch {
+      failed = true;
+    }
+    Storage.prototype.setItem = setItem;
+    const before = notifications.length;
+    await store.save({
+      ...workspace,
+      grid: { ...workspace.grid, name: "Committed retry" },
+    });
+    store.dispose();
+    window.BroadcastChannel = nativeChannel;
+    return { failed, before, notifications, closed };
+  }, moduleUrl);
+  expect(result.failed).toBe(true);
+  expect(result.before).toBe(0);
+  expect(result.closed).toBe(true);
+  const stored = (await localDatabase(page)).document;
+  expect(stored.grid.name).toBe("Committed retry");
+  expect(stored.revision).not.toBe(original.revision);
+  expect(result.notifications).toEqual([
+    { id: "guest", revision: stored.revision },
+  ]);
+});
+
+test("revision guard rejects stale writes and simultaneous writers without notifications", async ({
+  page,
+}) => {
+  const moduleUrl = await storageModuleUrl();
+  await page.goto("./");
+  await savedWorkspace(page);
+  const result = await page.evaluate(async (moduleUrl) => {
+    const { LocalWorkspaceStore, LocalWorkspaceConflictError } = await import(
+      moduleUrl
+    );
+    const broadcast = window.BroadcastChannel;
+    window.BroadcastChannel = class {
+      constructor() {
+        throw new Error("Unavailable");
+      }
+    };
+    const writer = new LocalWorkspaceStore();
+    let conflicts = 0;
+    const stale = new LocalWorkspaceStore(() => {
+      conflicts += 1;
+    });
+    const latest = await writer.load();
+    const older = await stale.load();
+    const image = writer.createAsset(new Blob(["Saved bytes"]), "Saved image");
+    const unsaved = stale.createAsset(
+      new Blob(["Unsaved bytes"]),
+      "Unsaved image",
+    );
+    await writer.save({
+      ...latest,
+      assets: [image],
+      grid: { ...latest.grid, name: "Newer grid" },
+    });
+    stale.scheduleImageDeletion([image.id]);
+    let rejected = false;
+    try {
+      await stale.save({
+        ...older,
+        assets: [unsaved],
+        grid: { ...older.grid, name: "Stale grid" },
+      });
+    } catch (error) {
+      rejected = error instanceof LocalWorkspaceConflictError;
+    }
+    const changed = await stale.checkForChanges();
+    const intact = await (await fetch(image.src)).text();
+    const retained = await (await fetch(unsaved.src)).text();
+    writer.dispose();
+    stale.dispose();
+    const first = new LocalWorkspaceStore();
+    const second = new LocalWorkspaceStore();
+    const firstGrid = await first.load();
+    const secondGrid = await second.load();
+    const firstImage = first.createAsset(new Blob(["First"]), "First");
+    const secondImage = second.createAsset(new Blob(["Second"]), "Second");
+    const attempts = await Promise.allSettled([
+      first.save({
+        ...firstGrid,
+        assets: [...firstGrid.assets, firstImage],
+        grid: { ...firstGrid.grid, name: "First writer", gap: 15 },
+      }),
+      second.save({
+        ...secondGrid,
+        assets: [...secondGrid.assets, secondImage],
+        grid: { ...secondGrid.grid, name: "Second writer", gap: 22 },
+      }),
+    ]);
+    const winner =
+      attempts[0].status === "fulfilled" ? firstImage.id : secondImage.id;
+    const statuses = attempts.map((attempt) => attempt.status);
+    const loserConflict =
+      attempts.find((attempt) => attempt.status === "rejected")
+        ?.reason instanceof LocalWorkspaceConflictError;
+    first.dispose();
+    second.dispose();
+    window.BroadcastChannel = broadcast;
+    return {
+      rejected,
+      changed,
+      conflicts,
+      intact,
+      retained,
+      statuses,
+      loserConflict,
+      winner,
+      protectedId: image.id,
+    };
+  }, moduleUrl);
+  expect(result.rejected).toBe(true);
+  expect(result.changed).toBe(true);
+  expect(result.conflicts).toBe(1);
+  expect(result.intact).toBe("Saved bytes");
+  expect(result.retained).toBe("Unsaved bytes");
+  expect(result.statuses.sort()).toEqual(["fulfilled", "rejected"]);
+  expect(result.loserConflict).toBe(true);
+  const stored = await localDatabase(page);
+  expect(stored.document.revision).toMatch(/^[0-9a-f-]{36}$/);
+  expect(stored.document.assets.map((asset) => asset.id).sort()).toEqual(
+    [result.protectedId, result.winner].sort(),
+  );
+  expect(stored.images.map((image) => image.id).sort()).toEqual(
+    [result.protectedId, result.winner].sort(),
+  );
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("grids-settings-v1")).style.gap,
+    ),
+  ).toBe(stored.document.grid.gap);
+});
+
 test("local media ownership revokes object URLs and rejects writes after disposal", async ({
   page,
 }) => {
-  const result = await build({
-    configFile: false,
-    logLevel: "error",
-    build: {
-      write: false,
-      minify: false,
-      lib: {
-        entry: fileURLToPath(new URL("../src/storage.ts", import.meta.url)),
-        formats: ["es"],
-        fileName: "storage",
-      },
-    },
-  });
-  const output = (Array.isArray(result) ? result[0] : result).output;
-  const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
-  const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`;
+  const moduleUrl = await storageModuleUrl();
   await page.goto("./");
   const original = await savedWorkspace(page);
   const lifecycle = await page.evaluate(async (moduleUrl) => {

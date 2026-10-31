@@ -20,6 +20,7 @@ import {
   Trash2,
   Pencil,
   RotateCcw,
+  RefreshCw,
   Images,
 } from "lucide-react";
 import {
@@ -51,6 +52,7 @@ import {
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
 import {
   LocalWorkspaceStore,
+  LocalWorkspaceConflictError,
   getBrowserStorageStatus,
   requestPersistentStorage,
   type BrowserStorageStatus,
@@ -105,6 +107,10 @@ export default function App() {
   );
   const localStore = useRef<LocalWorkspaceStore | null>(null);
   const savedDocument = useRef(workspace);
+  const deliberateReload = useRef(false);
+  const reloadButton = useRef<HTMLButtonElement>(null);
+  const [conflict, setConflict] = useState(false);
+  const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [canSave, setCanSave] = useState(false);
   const storageButton = useRef<HTMLButtonElement>(null);
@@ -164,9 +170,22 @@ export default function App() {
   const palette = publishers[board.publisher];
   const size = dimensions(board, resolution);
   useEffect(() => {
-    const store = new LocalWorkspaceStore();
-    localStore.current = store;
     let cancelled = false;
+    const store = new LocalWorkspaceStore(() => {
+      if (cancelled) return;
+      setCanSave(false);
+      setConflict(true);
+      setSaveStatus("Changed in another tab");
+    });
+    localStore.current = store;
+    const checkForChanges = () => {
+      void store.checkForChanges().catch(() => undefined);
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") checkForChanges();
+    };
+    window.addEventListener("focus", checkForChanges);
+    document.addEventListener("visibilitychange", visible);
     store
       .load()
       .then((restored) => {
@@ -188,6 +207,8 @@ export default function App() {
       });
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", checkForChanges);
+      document.removeEventListener("visibilitychange", visible);
       store.dispose();
       if (localStore.current === store) localStore.current = null;
     };
@@ -198,7 +219,13 @@ export default function App() {
     let cancelled = false;
     let started = false;
     const save = () => {
-      if (started || !canSave || !store) return;
+      if (
+        started ||
+        !canSave ||
+        !store ||
+        (savedDocument.current === workspace && store.hasSavedSnapshot)
+      )
+        return;
       started = true;
       store
         .save(workspace)
@@ -207,8 +234,9 @@ export default function App() {
           savedDocument.current = workspace;
           setSaveStatus("Saved locally");
         })
-        .catch(() => {
+        .catch((error) => {
           if (cancelled) return;
+          if (error instanceof LocalWorkspaceConflictError) return;
           setSaveStatus("Save failed");
           setToast(
             "Local save failed. Your current grid can still be exported.",
@@ -216,7 +244,8 @@ export default function App() {
         });
     };
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (savedDocument.current === workspace) return;
+      if (deliberateReload.current || savedDocument.current === workspace)
+        return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -224,7 +253,11 @@ export default function App() {
       if (document.visibilityState === "hidden") save();
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (canSave && store) {
+    if (
+      canSave &&
+      store &&
+      !(savedDocument.current === workspace && store.hasSavedSnapshot)
+    ) {
       setSaveStatus("Saving locally");
       if (document.visibilityState === "hidden") save();
       else timer = setTimeout(save, 300);
@@ -657,6 +690,20 @@ export default function App() {
               <HardDrive aria-hidden="true" />
             </Button>
           </div>
+          {conflict && (
+            <div
+              role="alert"
+              className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:p-4"
+            >
+              <p className="tw:m-0 tw:min-w-0 tw:text-sm">
+                Another tab saved a newer grid. This tab is not saving.
+              </p>
+              <Button ref={reloadButton} onClick={() => setReloadOpen(true)}>
+                <RefreshCw aria-hidden="true" />
+                Reload saved grid
+              </Button>
+            </div>
+          )}
           <div className="canvas-area">
             <div className="canvas-heading">
               <div>
@@ -1038,6 +1085,30 @@ export default function App() {
       <div id="toast" className="toast" role="status" hidden={!toast}>
         {toast}
       </div>
+      <Modal
+        open={reloadOpen}
+        onClose={() => setReloadOpen(false)}
+        title="Reload saved grid"
+        returnFocus={reloadButton}
+      >
+        <p>
+          Reloading replaces this tab's grid and unsaved images with the saved
+          version.
+        </p>
+        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+          <Button onClick={() => setReloadOpen(false)}>Cancel</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              deliberateReload.current = true;
+              window.location.reload();
+            }}
+          >
+            <RefreshCw aria-hidden="true" />
+            Reload saved grid
+          </Button>
+        </div>
+      </Modal>
       <Modal
         open={storageOpen}
         onClose={() => {
