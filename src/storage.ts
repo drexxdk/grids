@@ -69,6 +69,7 @@ export class LocalWorkspaceStore {
     { blob: Blob; url: string | null }
   >();
   private readonly persistedImages = new Set<string>();
+  private readonly pendingDeletions = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
   private disposed = false;
 
@@ -149,6 +150,11 @@ export class LocalWorkspaceStore {
     return task;
   }
 
+  scheduleImageDeletion(assetIds: string[]) {
+    this.assertActive();
+    assetIds.forEach((id) => this.pendingDeletions.add(id));
+  }
+
   async usage(): Promise<{ count: number; bytes: number }> {
     this.assertActive();
     await this.queue.catch(() => undefined);
@@ -186,21 +192,34 @@ export class LocalWorkspaceStore {
       version: workspace.version,
       grid: workspace.grid,
       exportSettings: workspace.exportSettings,
-      assets: workspace.assets.map(({ id, category, title, source }) => ({
-        id,
-        category,
-        title,
-        ...(source ? { source } : {}),
-      })),
+      assets: workspace.assets.map(
+        ({ id, category, title, source, trashedAt }) => ({
+          id,
+          category,
+          title,
+          ...(source ? { source } : {}),
+          ...(trashedAt !== undefined ? { trashedAt } : {}),
+        }),
+      ),
     });
     const settings = JSON.stringify(getEditorSettings(workspace));
+    const retained = new Set(workspace.assets.map((asset) => asset.id));
+    const deletions = [...this.pendingDeletions].filter(
+      (id) => !retained.has(id),
+    );
     this.assertActive();
     await this.db.transaction("rw", this.documents, this.images, async () => {
       if (records.length) await this.images.bulkPut(records);
+      if (deletions.length) await this.images.bulkDelete(deletions);
       await this.documents.put(document);
       localStorage.setItem(settingsKey, settings);
     });
     records.forEach((record) => this.persistedImages.add(record.id));
+    deletions.forEach((id) => {
+      this.pendingDeletions.delete(id);
+      this.persistedImages.delete(id);
+      this.releaseAsset(id);
+    });
   }
 
   dispose() {

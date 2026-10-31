@@ -53,7 +53,9 @@ export function loadComicExample(
   const assets = [...workspace.assets];
   const exampleAssets = comicExample.images.map((image) => {
     const existing = assets.find(
-      (asset) => asset.source === image.src || asset.src === image.src,
+      (asset) =>
+        asset.trashedAt === undefined &&
+        (asset.source === image.src || asset.src === image.src),
     );
     if (existing) return existing;
     const asset: Asset = {

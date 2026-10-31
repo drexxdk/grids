@@ -10,6 +10,7 @@ export interface Asset {
   title: string;
   src: string;
   source?: string;
+  trashedAt?: number;
 }
 export interface Cell {
   id: string;
@@ -65,6 +66,9 @@ export type GridPatch = Partial<
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
 export type DocumentCommand =
   | { type: "workspace/restore"; workspace: Workspace }
+  | { type: "assets/trash-unused"; assetIds: string[]; trashedAt: number }
+  | { type: "assets/restore"; assetIds: string[] }
+  | { type: "assets/purge"; assetIds: string[] }
   | { type: "grid/patch"; gridId: string; patch: GridPatch }
   | { type: "export/patch"; patch: Partial<ExportSettings> }
   | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
@@ -273,6 +277,7 @@ export const workspaceSchema = z
         title: z.string(),
         src: z.string().min(1),
         source: z.string().min(1).optional(),
+        trashedAt: z.number().int().nonnegative().optional(),
       }),
     ),
     grid: z.strictObject({
@@ -308,7 +313,14 @@ export const workspaceSchema = z
       grid.overflow.some(
         (entry) => entry.row < grid.rows && entry.column < grid.columns,
       ) ||
-      cells.some((cell) => cell.assetId !== null && !assetIds.has(cell.assetId))
+      cells.some(
+        (cell) => cell.assetId !== null && !assetIds.has(cell.assetId),
+      ) ||
+      cells.some((cell) =>
+        assets.some(
+          (asset) => asset.id === cell.assetId && asset.trashedAt !== undefined,
+        ),
+      )
     ) {
       context.addIssue({
         code: "custom",
@@ -348,6 +360,15 @@ function mergeAssets(existing: Asset[], incoming: Asset[]): Asset[] {
   return additions.length ? [...existing, ...additions] : existing;
 }
 
+export function referencedAssetIds(workspace: Workspace): Set<string> {
+  return new Set(
+    [
+      ...workspace.grid.cells,
+      ...workspace.grid.overflow.map((entry) => entry.cell),
+    ].flatMap((cell) => (cell.assetId === null ? [] : [cell.assetId])),
+  );
+}
+
 export function documentReducer(
   workspace: Workspace,
   command: DocumentCommand,
@@ -376,6 +397,44 @@ export function documentReducer(
     });
   };
   switch (command.type) {
+    case "assets/trash-unused": {
+      const ids = new Set(command.assetIds);
+      const referenced = referencedAssetIds(workspace);
+      return {
+        ...workspace,
+        assets: workspace.assets.map((asset) =>
+          ids.has(asset.id) &&
+          asset.trashedAt === undefined &&
+          !referenced.has(asset.id)
+            ? { ...asset, trashedAt: command.trashedAt }
+            : asset,
+        ),
+      };
+    }
+    case "assets/restore": {
+      const ids = new Set(command.assetIds);
+      return {
+        ...workspace,
+        assets: workspace.assets.map((asset) =>
+          ids.has(asset.id) && asset.trashedAt !== undefined
+            ? { ...asset, trashedAt: undefined }
+            : asset,
+        ),
+      };
+    }
+    case "assets/purge": {
+      const ids = new Set(command.assetIds);
+      const referenced = referencedAssetIds(workspace);
+      return {
+        ...workspace,
+        assets: workspace.assets.filter(
+          (asset) =>
+            !ids.has(asset.id) ||
+            asset.trashedAt === undefined ||
+            referenced.has(asset.id),
+        ),
+      };
+    }
     case "workspace/restore":
       return command.workspace;
     case "grid/patch":
@@ -399,7 +458,8 @@ export function documentReducer(
       }));
     case "cell/place": {
       const asset = workspace.assets.find(
-        (asset) => asset.id === command.assetId,
+        (asset) =>
+          asset.id === command.assetId && asset.trashedAt === undefined,
       );
       return asset
         ? updateCell(command.cellId, (cell) => ({

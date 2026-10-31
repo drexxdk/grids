@@ -38,6 +38,7 @@ import {
   createResizeCommand,
   documentReducer,
   publishers,
+  referencedAssetIds,
   type Asset,
   type Board,
   type CellPatch,
@@ -108,6 +109,19 @@ export default function App() {
   const [canSave, setCanSave] = useState(false);
   const storageButton = useRef<HTMLButtonElement>(null);
   const [storageOpen, setStorageOpen] = useState(false);
+  const [emptyTrashSelection, setEmptyTrashSelection] = useState<
+    string[] | null
+  >(null);
+  const activeAssets = workspace.assets.filter(
+    (asset) => asset.trashedAt === undefined,
+  );
+  const trashAssets = workspace.assets.filter(
+    (asset) => asset.trashedAt !== undefined,
+  );
+  const referencedImages = referencedAssetIds(workspace);
+  const unusedAssetIds = activeAssets
+    .filter((asset) => !referencedImages.has(asset.id))
+    .map((asset) => asset.id);
   const [storageInfo, setStorageInfo] = useState<
     | (BrowserStorageStatus & {
         images: { count: number; bytes: number } | null;
@@ -254,6 +268,22 @@ export default function App() {
           : "Persistent storage unavailable.",
     );
     setRequestingPersistence(false);
+  };
+  const trashUnused = () => {
+    dispatchDocument({
+      type: "assets/trash-unused",
+      assetIds: unusedAssetIds,
+      trashedAt: Date.now(),
+    });
+    setFilter("All");
+    setToast("Unused images moved to trash.");
+  };
+  const purgeTrash = () => {
+    if (!emptyTrashSelection || !localStore.current || !canSave) return;
+    localStore.current.scheduleImageDeletion(emptyTrashSelection);
+    dispatchDocument({ type: "assets/purge", assetIds: emptyTrashSelection });
+    setEmptyTrashSelection(null);
+    setToast("Trash removal queued.");
   };
   useEffect(() => {
     if (!toast) return;
@@ -515,7 +545,7 @@ export default function App() {
           <div className="section-heading">
             <h2>Image library</h2>
             <span id="asset-count" className="count">
-              {workspace.assets.length}
+              {activeAssets.length}
             </span>
             <Button
               ref={exampleButton}
@@ -543,7 +573,7 @@ export default function App() {
           <div className="filter-tabs" role="group" aria-label="Image category">
             {[
               "All",
-              ...new Set(workspace.assets.map((asset) => asset.category)),
+              ...new Set(activeAssets.map((asset) => asset.category)),
             ].map((category) => (
               <button
                 key={category}
@@ -556,7 +586,7 @@ export default function App() {
             ))}
           </div>
           <div id="asset-library" className="asset-library">
-            {workspace.assets
+            {activeAssets
               .filter((asset) => filter === "All" || asset.category === filter)
               .map((asset) => (
                 <button
@@ -1010,71 +1040,175 @@ export default function App() {
       </div>
       <Modal
         open={storageOpen}
-        onClose={() => setStorageOpen(false)}
+        onClose={() => {
+          setEmptyTrashSelection(null);
+          setStorageOpen(false);
+        }}
         title="Local storage"
         returnFocus={storageButton}
       >
-        <div aria-busy={storageInfo === null}>
-          {storageInfo === null ? (
-            <p role="status">Checking storage...</p>
-          ) : (
-            <>
-              <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
-                <dt>Stored images</dt>
-                <dd className="tw:m-0 tw:text-right">
-                  {storageInfo.images?.count ?? "Unavailable"}
-                </dd>
-                <dt>Image data</dt>
-                <dd className="tw:m-0 tw:text-right">
-                  {formatBytes(storageInfo.images?.bytes)}
-                </dd>
-                <dt>Browser usage</dt>
-                <dd className="tw:m-0 tw:text-right">
-                  {formatBytes(storageInfo.usage)}
-                </dd>
-                <dt>Browser quota</dt>
-                <dd className="tw:m-0 tw:text-right">
-                  {formatBytes(storageInfo.quota)}
-                </dd>
-                <dt>Persistence</dt>
-                <dd className="tw:m-0 tw:text-right">
-                  {storageInfo.persisted === true
-                    ? "Persistent"
-                    : storageInfo.persisted === false
-                      ? "Best-effort"
-                      : "Unavailable"}
-                </dd>
-              </dl>
-              {storageInfo.quota !== null &&
-                storageInfo.quota > 0 &&
-                storageInfo.usage !== null && (
-                  <progress
-                    aria-label="Browser storage usage"
-                    value={Math.min(storageInfo.usage, storageInfo.quota)}
-                    max={storageInfo.quota}
-                    className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
-                  />
-                )}
-            </>
-          )}
-        </div>
-        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-          <Button onClick={() => setStorageOpen(false)}>Close</Button>
-          <Button
-            variant="primary"
-            onClick={requestPersistence}
-            disabled={
-              requestingPersistence ||
-              !storageInfo?.canRequestPersistence ||
-              storageInfo.persisted === true
-            }
-          >
-            <HardDrive aria-hidden="true" />
-            {requestingPersistence
-              ? "Requesting..."
-              : "Request persistent storage"}
-          </Button>
-        </div>
+        {emptyTrashSelection !== null ? (
+          <>
+            <p>Permanently delete selected images?</p>
+            <p>Selected images: {emptyTrashSelection.length}</p>
+            <p>This cannot be undone.</p>
+            <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+              <Button onClick={() => setEmptyTrashSelection(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={!canSave || saveStatus === "Saving locally"}
+                onClick={purgeTrash}
+              >
+                <Trash2 aria-hidden="true" />
+                Delete permanently
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div aria-busy={storageInfo === null}>
+              {storageInfo === null ? (
+                <p role="status">Checking storage...</p>
+              ) : (
+                <>
+                  <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
+                    <dt>Stored images</dt>
+                    <dd className="tw:m-0 tw:text-right">
+                      {storageInfo.images?.count ?? "Unavailable"}
+                    </dd>
+                    <dt>Image data</dt>
+                    <dd className="tw:m-0 tw:text-right">
+                      {formatBytes(storageInfo.images?.bytes)}
+                    </dd>
+                    <dt>Browser usage</dt>
+                    <dd className="tw:m-0 tw:text-right">
+                      {formatBytes(storageInfo.usage)}
+                    </dd>
+                    <dt>Browser quota</dt>
+                    <dd className="tw:m-0 tw:text-right">
+                      {formatBytes(storageInfo.quota)}
+                    </dd>
+                    <dt>Persistence</dt>
+                    <dd className="tw:m-0 tw:text-right">
+                      {storageInfo.persisted === true
+                        ? "Persistent"
+                        : storageInfo.persisted === false
+                          ? "Best-effort"
+                          : "Unavailable"}
+                    </dd>
+                  </dl>
+                  {storageInfo.quota !== null &&
+                    storageInfo.quota > 0 &&
+                    storageInfo.usage !== null && (
+                      <progress
+                        aria-label="Browser storage usage"
+                        value={Math.min(storageInfo.usage, storageInfo.quota)}
+                        max={storageInfo.quota}
+                        className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
+                      />
+                    )}
+                </>
+              )}
+            </div>
+            <div className="tw:mt-5 tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:pt-4">
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+                <h3 className="tw:m-0 tw:text-sm">Image cleanup</h3>
+                <Button
+                  disabled={
+                    !canSave ||
+                    loadingExample ||
+                    unusedAssetIds.length === 0 ||
+                    saveStatus === "Saving locally"
+                  }
+                  onClick={trashUnused}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Move unused images to trash
+                </Button>
+              </div>
+              <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+                <h3 className="tw:m-0 tw:text-sm">
+                  Trash ({trashAssets.length})
+                </h3>
+                <Button
+                  disabled={
+                    !canSave ||
+                    loadingExample ||
+                    trashAssets.length === 0 ||
+                    saveStatus === "Saving locally"
+                  }
+                  onClick={() =>
+                    setEmptyTrashSelection(trashAssets.map((asset) => asset.id))
+                  }
+                >
+                  <Trash2 aria-hidden="true" />
+                  Empty trash
+                </Button>
+              </div>
+              {trashAssets.length === 0 ? (
+                <p className="tw:mb-0 tw:text-sm">Trash is empty.</p>
+              ) : (
+                <ul className="tw:mb-0 tw:grid tw:list-none tw:gap-2 tw:pl-0">
+                  {trashAssets.map((asset) => (
+                    <li
+                      key={asset.id}
+                      className="tw:flex tw:min-w-0 tw:items-center tw:gap-2"
+                    >
+                      <img
+                        src={asset.src}
+                        alt=""
+                        className="tw:size-[44px] tw:shrink-0 tw:object-contain"
+                      />
+                      <span className="tw:min-w-0 tw:flex-1 tw:break-all tw:text-sm">
+                        {asset.title}
+                      </span>
+                      <Button
+                        variant="icon"
+                        aria-label={`Restore ${asset.title}`}
+                        title={`Restore ${asset.title}`}
+                        disabled={!canSave || saveStatus === "Saving locally"}
+                        onClick={() =>
+                          dispatchDocument({
+                            type: "assets/restore",
+                            assetIds: [asset.id],
+                          })
+                        }
+                      >
+                        <RotateCcw aria-hidden="true" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+              <Button
+                onClick={() => {
+                  setEmptyTrashSelection(null);
+                  setStorageOpen(false);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                onClick={requestPersistence}
+                disabled={
+                  requestingPersistence ||
+                  !storageInfo?.canRequestPersistence ||
+                  storageInfo.persisted === true
+                }
+              >
+                <HardDrive aria-hidden="true" />
+                {requestingPersistence
+                  ? "Requesting..."
+                  : "Request persistent storage"}
+              </Button>
+            </div>
+          </>
+        )}
       </Modal>
       <Modal
         open={renaming !== null}

@@ -92,6 +92,195 @@ async function useComicExample(page, publisher = "dc") {
   );
 }
 
+test("unused-image trash survives reload, protects removed cells, and purges only after confirmation", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["used", "archived", "unused"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="green"/></svg>',
+      ),
+    })),
+  );
+  await expect(page.locator(".asset")).toHaveCount(3);
+  await page.locator(".asset").nth(0).click();
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await page.locator(".cell-image-button").nth(15).click();
+  await page.locator(".asset").nth(1).click();
+  await page.getByRole("button", { name: "Remove row", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Remove column", exact: true })
+    .click();
+  const original = await savedWorkspace(page);
+  const unusedId = original.assets[2].id;
+  const trigger = page.getByRole("button", {
+    name: "Local storage",
+    exact: true,
+  });
+  const dialog = page.getByRole("dialog", { name: "Local storage" });
+  await trigger.click();
+  await dialog
+    .getByRole("button", { name: "Move unused images to trash", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("heading", { name: "Trash (1)", exact: true }),
+  ).toBeVisible();
+  const trashed = await savedWorkspace(page);
+  expect(
+    trashed.assets
+      .filter((asset) => asset.trashedAt !== undefined)
+      .map((asset) => asset.id),
+  ).toEqual([unusedId]);
+  expect(trashed.grid).toEqual(original.grid);
+  expect((await localDatabase(page)).images).toHaveLength(3);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await trigger.click();
+  const source = await dialog.locator("li img").getAttribute("src");
+  await dialog
+    .getByRole("button", { name: "Restore unused", exact: true })
+    .click();
+  await expect(page.locator(".asset")).toHaveCount(3);
+  const restored = await savedWorkspace(page);
+  expect(restored.assets[2].id).toBe(unusedId);
+  await expect
+    .poll(async () => (await localDatabase(page)).document.assets[2].trashedAt)
+    .toBeUndefined();
+  expect(
+    await page.locator(".asset").nth(2).locator("img").getAttribute("src"),
+  ).toBe(source);
+  await dialog
+    .getByRole("button", { name: "Move unused images to trash", exact: true })
+    .click();
+  await savedWorkspace(page);
+  await expect(
+    dialog.getByRole("button", { name: "Empty trash", exact: true }),
+  ).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath("trash-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("trash-mobile.png") });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await dialog
+    .getByRole("button", { name: "Empty trash", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("This cannot be undone.", { exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect((await localDatabase(page)).images).toHaveLength(3);
+  await dialog
+    .getByRole("button", { name: "Empty trash", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await localDatabase(page)).document.assets.length)
+    .toBe(2);
+  const purged = await savedWorkspace(page);
+  expect(purged.assets.map((asset) => asset.id)).toEqual(
+    original.assets.slice(0, 2).map((asset) => asset.id),
+  );
+  expect(
+    (await localDatabase(page)).images.map((image) => image.id).sort(),
+  ).toEqual(purged.assets.map((asset) => asset.id).sort());
+  expect(
+    await page.evaluate(async (src) => {
+      try {
+        await fetch(src);
+        return false;
+      } catch {
+        return true;
+      }
+    }, source),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await reloadWorkspace(page);
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await expect(page.locator(".cell-heading").nth(15)).toHaveValue("archived");
+  await expect(page.locator(".grid-cell img")).toHaveCount(2);
+});
+
+test("failed trash purge preserves stored metadata and blobs until the retry commits", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.failPurgeSave = false;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-settings-v1" && window.failPurgeSave)
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "purge.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await savedWorkspace(page);
+  await page
+    .getByRole("button", { name: "Local storage", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Local storage" });
+  await dialog
+    .getByRole("button", { name: "Move unused images to trash", exact: true })
+    .click();
+  const source = await dialog.locator("li img").getAttribute("src");
+  await expect
+    .poll(async () => (await localDatabase(page)).document.assets[0].trashedAt)
+    .toEqual(expect.any(Number));
+  const original = await savedWorkspace(page);
+  await page.evaluate(() => {
+    window.failPurgeSave = true;
+  });
+  await dialog
+    .getByRole("button", { name: "Empty trash", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await expect(page.locator("#save-status")).toHaveText("Save failed");
+  const failed = await localDatabase(page);
+  expect(failed.document).toEqual(original);
+  expect(failed.images).toHaveLength(1);
+  expect(
+    await page.evaluate(async (src) => (await fetch(src)).ok, source),
+  ).toBe(true);
+  await page.evaluate(() => {
+    window.failPurgeSave = false;
+  });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.locator("#image-heading").fill("Retry purge");
+  expect((await savedWorkspace(page)).assets).toEqual([]);
+  expect((await localDatabase(page)).images).toEqual([]);
+  expect(
+    await page.evaluate(async (src) => {
+      try {
+        await fetch(src);
+        return false;
+      } catch {
+        return true;
+      }
+    }, source),
+  ).toBe(true);
+});
+
 test("debounced saves coalesce edits and flush on hide while guarding unsaved navigation", async ({
   page,
 }) => {

@@ -402,3 +402,70 @@ test("document batch imports and example replacement retain latest media and pre
   expect(model.workspaceSchema.safeParse(replaced).success).toBe(true);
   expect(workspace.assets).toEqual([]);
 });
+
+test("trash cleanup protects live and overflow references and restores image identity", () => {
+  const workspace = localWorkspace();
+  const unused = {
+    ...workspace.assets[0],
+    id: crypto.randomUUID(),
+    title: "Unused",
+  };
+  workspace.assets.push(unused);
+  const reduced = model.documentReducer(
+    workspace,
+    model.createResizeCommand(workspace.grid.id, 3, 3),
+  );
+  const original = structuredClone(reduced);
+  const trashed = model.documentReducer(reduced, {
+    type: "assets/trash-unused",
+    assetIds: workspace.assets.map((asset) => asset.id),
+    trashedAt: 123,
+  });
+  expect(trashed.assets[0].trashedAt).toBeUndefined();
+  expect(trashed.assets[1]).toEqual({ ...unused, trashedAt: 123 });
+  expect(trashed.grid).toBe(reduced.grid);
+  expect(
+    model.documentReducer(trashed, {
+      type: "cell/place",
+      gridId: trashed.grid.id,
+      cellId: trashed.grid.cells[0].id,
+      assetId: unused.id,
+    }),
+  ).toBe(trashed);
+  const restored = model.documentReducer(trashed, {
+    type: "assets/restore",
+    assetIds: [unused.id],
+  });
+  expect(restored.assets[1]).toMatchObject(unused);
+  expect(restored.assets[1].trashedAt).toBeUndefined();
+  const purged = model.documentReducer(trashed, {
+    type: "assets/purge",
+    assetIds: workspace.assets.map((asset) => asset.id),
+  });
+  expect(purged.assets).toEqual([workspace.assets[0]]);
+  expect(model.workspaceSchema.safeParse(purged).success).toBe(true);
+  expect(reduced).toEqual(original);
+});
+
+test("trash commands recheck current usage rather than trusting stale cleanup selections", () => {
+  const workspace = localWorkspace();
+  const unused = { ...workspace.assets[0], id: crypto.randomUUID() };
+  workspace.assets.push(unused);
+  const pending = {
+    type: "assets/trash-unused",
+    assetIds: [unused.id],
+    trashedAt: 123,
+  };
+  const placed = model.documentReducer(workspace, {
+    type: "cell/place",
+    gridId: workspace.grid.id,
+    cellId: workspace.grid.cells[0].id,
+    assetId: unused.id,
+  });
+  expect(
+    model.documentReducer(placed, pending).assets[1].trashedAt,
+  ).toBeUndefined();
+  const invalid = structuredClone(placed);
+  invalid.assets[1].trashedAt = 123;
+  expect(model.workspaceSchema.safeParse(invalid).success).toBe(false);
+});
