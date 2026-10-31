@@ -50,6 +50,28 @@ export const makeBoard = (name, assets = []) => ({
   background: "#17191b",
   cells: Array.from({ length: 4 }, (_, index) => makeCell(assets[index])),
 });
+export function removeBoard(workspace, boardId) {
+  const position = workspace.boards.findIndex((board) => board.id === boardId);
+  if (position < 0) return workspace;
+  const activeId = workspace.boards[workspace.active]?.id;
+  const boards = workspace.boards.filter((board) => board.id !== boardId);
+  const survivingActive = boards.findIndex((board) => board.id === activeId);
+  return {
+    ...workspace,
+    boards,
+    active:
+      survivingActive >= 0
+        ? survivingActive
+        : Math.max(0, Math.min(position, boards.length - 1)),
+  };
+}
+export function restoreBoard(workspace, board, position) {
+  if (workspace.boards.some((item) => item.id === board.id)) return workspace;
+  const insertion = Math.max(0, Math.min(position, workspace.boards.length));
+  const boards = [...workspace.boards];
+  boards.splice(insertion, 0, board);
+  return { ...workspace, boards, active: insertion };
+}
 export function loadWorkspace() {
   const fallback = {
     assets: initialAssets,
@@ -62,8 +84,8 @@ export function loadWorkspace() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
     if (
-      !saved?.boards?.length ||
-      !saved.assets?.length ||
+      !Array.isArray(saved?.boards) ||
+      !Array.isArray(saved.assets) ||
       !saved.boards.every(
         (board) =>
           Number.isInteger(board.rows) &&

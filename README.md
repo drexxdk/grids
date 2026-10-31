@@ -30,7 +30,7 @@ The board-action menu offers Rename board and Download image. Board settings exp
 
 The modal structure and scrollbar-compensation pattern were adapted from the user's Chatter frontend (`apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, and the portal-dialog rules in `apps/web/src/index.css`). Gridroom uses Motion instead of Chatter's CSS/Web Animations transitions, adds listener/probe cleanup and post-dialog measurements, and keeps its own editor styling and deployment. No Chatter backend code is included.
 
-The broader roadmap is in [docs/product-plan.md](docs/product-plan.md). Edge row/column controls, undoable board deletion, IndexedDB migration, and opt-in demo packs are not implemented yet.
+The broader roadmap and feature/section completion checklists are in [docs/product-plan.md](docs/product-plan.md). Edge row/column controls, general undo/redo, IndexedDB migration, and opt-in demo packs are not implemented yet.
 
 ## Deploy To GitHub Pages
 
@@ -57,6 +57,7 @@ No API keys or application secrets are needed. Saved boards belong to each brows
 ## Editing And Export
 
 - Set rows and columns independently for each board, from 1 to 6.
+- Delete the active board with the trash button beside board navigation. Undo restores deleted boards during the current session without overwriting changes to surviving boards. Deleting the last board leaves an empty workspace that survives reload; the image library and uploads remain available, and Add Board resumes editing. Reload clears session Undo history, not the saved workspace.
 - Drag a library image or an image file into a cell. Clicking a library image places it in the selected cell, including on touch devices.
 - Drag filled cells to swap them. Edit headings on the board or in the selected-cell panel.
 - Set an optional Image heading above the grid, such as Team DC or Team Marvel. Turn off Show heading to export without a banner while retaining the text; an empty heading also omits the banner.

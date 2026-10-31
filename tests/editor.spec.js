@@ -486,3 +486,103 @@ test("touch dialogs do not autofocus text inputs", async ({ browser }) => {
     await context.close();
   }
 });
+
+test("board deletion restores edits and the last-board empty state survives reload", async ({
+  page,
+}, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("./");
+  await page.locator("#cell-title").fill("Keep my custom caption");
+  await page.getByRole("switch", { name: "Show heading" }).click();
+  const original = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0],
+  );
+  await page
+    .getByRole("button", { name: "Delete board: DC Characters", exact: true })
+    .click();
+  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator("#canvas-title")).toHaveText("Marvel Characters");
+  await page.locator("#board-name").fill("My remaining board");
+  await page.getByRole("button", { name: "Undo board deletion" }).click();
+  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
+  await expect(
+    page.getByRole("tab", { name: /My remaining board/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Show heading" }),
+  ).not.toBeChecked();
+  await expect(page.locator("#cell-title")).toHaveValue(
+    "Keep my custom caption",
+  );
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0],
+    ),
+  ).toEqual(original);
+
+  await page
+    .getByRole("button", { name: "Delete board: DC Characters", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Delete board: My remaining board",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "No boards", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#add-board")).toBeFocused();
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.locator("#board-grid")).toHaveCount(0);
+  await expect(page.locator("#export-all")).toBeDisabled();
+  await expect(page.locator(".asset")).toHaveCount(8);
+  await page.screenshot({
+    path: testInfo.outputPath("empty-workspace-desktop.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Undo board deletion" }).click();
+  await expect(page.locator("#canvas-title")).toHaveText("My remaining board");
+  await page
+    .getByRole("button", {
+      name: "Delete board: My remaining board",
+      exact: true,
+    })
+    .click();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "No boards", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards,
+    ),
+  ).toEqual([]);
+  await page
+    .locator("#upload")
+    .setInputFiles(path.join(projectRoot, "public/assets/DC - Kite Man.jpg"));
+  await expect(page.locator(".asset")).toHaveCount(9);
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".asset")).toHaveCount(9);
+  await expect(
+    page.getByRole("heading", { name: "No boards", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: testInfo.outputPath("empty-workspace-mobile.png"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.locator("#add-board").click();
+  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator("#canvas-title")).toHaveText("Board 1");
+  await expect(page.locator(".grid-cell")).toHaveCount(4);
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
