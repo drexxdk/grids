@@ -16,6 +16,7 @@ import {
   Trash2,
   RefreshCw,
   Images,
+  LoaderCircle,
 } from "lucide-react";
 import {
   Button,
@@ -200,6 +201,14 @@ export default function App() {
   const addImagesButton = useRef<HTMLButtonElement>(null);
   const [filter, setFilter] = useState("All");
   const [libraryDragOver, setLibraryDragOver] = useState(false);
+  const [importProgress, setImportProgress] = useState<{
+    completed: number;
+    total: number;
+    pending: number;
+  } | null>(null);
+  const localExamples = ["localhost", "127.0.0.1", "[::1]"].includes(
+    window.location.hostname,
+  );
   const [toast, setToast] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved locally");
   const { format, resolution, quality } = workspace.exportSettings;
@@ -404,37 +413,60 @@ export default function App() {
   ) => {
     const store = localStore.current;
     if (!store) return;
+    const batch = Array.from(files ?? []);
+    if (!batch.length) return;
+    setImportProgress((current) => ({
+      completed: current?.completed ?? 0,
+      total: (current?.total ?? 0) + batch.length,
+      pending: (current?.pending ?? 0) + 1,
+    }));
     const targetId = board.id;
     const assets: Asset[] = [];
-    for (const file of Array.from(files ?? [])) {
-      if (!file.type.startsWith("image/")) {
-        setToast(`${file.name} is not an image.`);
-        continue;
+    try {
+      for (const file of batch) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (!file.type.startsWith("image/")) {
+          setToast(`${file.name} is not an image.`);
+          setImportProgress((current) =>
+            current ? { ...current, completed: current.completed + 1 } : null,
+          );
+          continue;
+        }
+        let asset: Asset | null = null;
+        try {
+          if (localStore.current !== store) return;
+          asset = store.createAsset(
+            file,
+            file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+          );
+          await loadImage(asset.src);
+          if (localStore.current !== store) return;
+          assets.push(asset);
+        } catch {
+          if (asset) store.releaseAsset(asset.id);
+          setToast(
+            `Could not load ${file.name}. Try a PNG, JPEG, or WebP image.`,
+          );
+        } finally {
+          setImportProgress((current) =>
+            current ? { ...current, completed: current.completed + 1 } : null,
+          );
+        }
       }
-      let asset: Asset | null = null;
-      try {
-        if (localStore.current !== store) return;
-        asset = store.createAsset(
-          file,
-          file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
-        );
-        await loadImage(asset.src);
-        if (localStore.current !== store) return;
-        assets.push(asset);
-      } catch {
-        if (asset) store.releaseAsset(asset.id);
-        setToast(
-          `Could not load ${file.name}. Try a PNG, JPEG, or WebP image.`,
-        );
-      }
+      dispatchDocument({
+        type: "assets/import",
+        gridId: targetId,
+        cellId: targetCellId ?? null,
+        assets,
+      });
+      setFilter("All");
+    } finally {
+      setImportProgress((current) =>
+        current && current.pending > 1
+          ? { ...current, pending: current.pending - 1 }
+          : null,
+      );
     }
-    dispatchDocument({
-      type: "assets/import",
-      gridId: targetId,
-      cellId: targetCellId ?? null,
-      assets,
-    });
-    setFilter("All");
   };
   const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
     event.preventDefault();
@@ -534,7 +566,7 @@ export default function App() {
     setToast("Defaults restored. Images kept.");
   };
   const loadExample = async () => {
-    if (loadingExample) return;
+    if (!localExamples || loadingExample) return;
     setLoadingExample(true);
     try {
       const { loadComicExample } = await import("./demo/comics");
@@ -610,6 +642,7 @@ export default function App() {
           <aside
             className={`asset-panel ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
             aria-label="Image library drop zone"
+            aria-busy={importProgress !== null}
             onDragOver={(event) => {
               if (event.dataTransfer.types.includes("Files")) {
                 event.preventDefault();
@@ -633,16 +666,18 @@ export default function App() {
           >
             <div className="section-heading">
               <h2>Image library</h2>
-              <Button
-                ref={exampleButton}
-                variant="icon"
-                aria-label="Load example"
-                title="Load example: Legacy comics"
-                disabled={loadingExample}
-                onClick={() => setExampleOpen(true)}
-              >
-                <Images aria-hidden="true" />
-              </Button>
+              {localExamples && (
+                <Button
+                  ref={exampleButton}
+                  variant="icon"
+                  aria-label="Load example"
+                  title="Load example: Legacy comics"
+                  disabled={loadingExample}
+                  onClick={() => setExampleOpen(true)}
+                >
+                  <Images aria-hidden="true" />
+                </Button>
+              )}
             </div>
             {imageCategories.length > 1 && (
               <div
@@ -667,13 +702,35 @@ export default function App() {
                 ref={addImagesButton}
                 type="button"
                 aria-label="Add images"
+                disabled={importProgress !== null}
                 title="Add or drop images"
-                className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-sm tw:border tw:border-dashed tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:enabled:hover:border-(--accent) ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-sm tw:border tw:border-dashed tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:border-(--accent) ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
                 onClick={() => document.getElementById("upload")?.click()}
               >
-                <ImagePlus aria-hidden="true" />
-                <span className="tw:text-[11px]">Add images</span>
-                <span className="tw:text-[9px]">Drop here</span>
+                {importProgress ? (
+                  <>
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="tw:animate-spin tw:motion-reduce:animate-none"
+                    />
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className="tw:flex tw:flex-col tw:items-center tw:gap-1"
+                    >
+                      <span className="tw:text-[11px]">Importing...</span>
+                      <span className="tw:text-[9px]">
+                        {importProgress.completed} / {importProgress.total}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus aria-hidden="true" />
+                    <span className="tw:text-[11px]">Add images</span>
+                    <span className="tw:text-[9px]">Drop here</span>
+                  </>
+                )}
               </button>
               {activeAssets
                 .filter(
@@ -859,6 +916,7 @@ export default function App() {
                     {(["dc", "marvel"] as const).map((publisher) => (
                       <button
                         key={publisher}
+                        className="tw:enabled:hover:bg-(--line)! tw:enabled:hover:text-(--accent)! tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-(--accent)"
                         aria-pressed={board.publisher === publisher}
                         onClick={() => patchBoard({ publisher })}
                       >

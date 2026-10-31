@@ -265,12 +265,90 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   page,
 }, testInfo) => {
   await page.goto("./");
+  await selectTheme(page, "Superhero");
+  const subThemes = page.getByRole("group", {
+    name: "Superhero sub-theme",
+    exact: true,
+  });
+  for (const name of ["Marvel", "DC"]) {
+    const button = subThemes.getByRole("button", { name, exact: true });
+    await page.mouse.move(0, 0);
+    const background = await button.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    const selected = await button.getAttribute("aria-pressed");
+    const before = await button.boundingBox();
+    await button.hover();
+    await expect
+      .poll(() =>
+        button.evaluate((element) => getComputedStyle(element).backgroundColor),
+      )
+      .not.toBe(background);
+    await expect(button).toHaveAttribute("aria-pressed", selected);
+    expect(await button.boundingBox()).toEqual(before);
+  }
+  const headingToggle = page.getByRole("switch", {
+    name: "Show heading",
+    exact: true,
+  });
+  for (const checked of ["true", "false"]) {
+    await page.mouse.move(0, 0);
+    await expect(headingToggle).toHaveCSS("filter", "none");
+    const before = await headingToggle.boundingBox();
+    await headingToggle.hover();
+    await expect(headingToggle).toHaveCSS("filter", "brightness(1.1)");
+    await expect(headingToggle).toHaveAttribute("aria-checked", checked);
+    expect(await headingToggle.boundingBox()).toEqual(before);
+    await headingToggle.click();
+  }
   await expect(page.locator(".settings-panel select")).toHaveCount(0);
   const hex = page.getByRole("textbox", {
     name: "Background hex value",
     exact: true,
   });
   const picker = page.getByLabel("Background color picker", { exact: true });
+  for (const id of ["theme-selector", "heading-font", "cell-font"]) {
+    await page.locator(`label[for="${id}"]`).hover();
+    await expect(page.locator(`#${id}`)).toHaveCSS(
+      "border-top-color",
+      "rgb(48, 51, 53)",
+    );
+    await page.locator(`#${id}`).hover();
+    await expect(page.locator(`#${id}`)).toHaveCSS(
+      "border-top-color",
+      "rgb(216, 243, 106)",
+    );
+    await page.locator(`label[for="${id}"]`).click();
+    await expect(page.locator(`#${id}`)).toBeFocused();
+    await page.locator(`#${id}`).press("ArrowDown");
+    await expect(page.getByRole("listbox")).toBeVisible();
+    await page.getByRole("listbox").press("Escape");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+  }
+  await page.locator('label[for="background-value"]').hover();
+  await expect(hex).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(picker).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(hex.locator("..")).toHaveCSS(
+    "border-top-color",
+    "rgb(48, 51, 53)",
+  );
+  await page.locator('label[for="background-value"]').click();
+  await expect(hex).toBeFocused();
+  await hex.blur();
+  for (const field of [picker, hex]) {
+    await page.mouse.move(0, 0);
+    await expect(field).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const value = await field.inputValue();
+    const before = await field.boundingBox();
+    await field.hover();
+    await expect(field).toHaveCSS("background-color", "rgb(48, 51, 53)");
+    await expect(field.locator("..")).toHaveCSS(
+      "border-top-color",
+      "rgb(216, 243, 106)",
+    );
+    await expect(field).toHaveValue(value);
+    expect(await field.boundingBox()).toEqual(before);
+  }
   const pickerBox = await picker.boundingBox();
   expect(pickerBox.width).toBeGreaterThanOrEqual(64);
   expect(pickerBox.height).toBeGreaterThanOrEqual(44);
@@ -292,6 +370,22 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   await picker.fill("#aabbcc");
   await expect(hex).toHaveValue("#AABBCC");
   await page.locator("#heading-font").click();
+  for (const option of await page.getByRole("option").all()) {
+    await expect(option).toHaveCSS("align-items", "center");
+    const spacing = await option.evaluate((element) => {
+      const row = element.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const text = range.getBoundingClientRect();
+      return {
+        height: row.height,
+        top: text.top - row.top,
+        bottom: row.bottom - text.bottom,
+      };
+    });
+    expect(spacing.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(spacing.top - spacing.bottom)).toBeLessThanOrEqual(2);
+  }
   await page.getByRole("listbox").press("End");
   await page.getByRole("listbox").press("Enter");
   await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
@@ -530,6 +624,17 @@ test("cell toolbar overlays the image and never selects a cell", async ({
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator(".asset").hover();
+  const libraryDelete = page.getByRole("button", {
+    name: "Delete overlay",
+    exact: true,
+  });
+  await libraryDelete.hover();
+  await expect(libraryDelete).toHaveCSS(
+    "border-top-color",
+    "rgb(216, 243, 106)",
+  );
+  await page.mouse.move(3, 3);
   const image = page.locator(".cell-image-button").first();
   await page.locator(".asset").dragTo(image);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
@@ -537,6 +642,14 @@ test("cell toolbar overlays the image and never selects a cell", async ({
   await image.hover();
   const tools = page.getByRole("group", { name: "Cell tools", exact: true });
   await expect(tools).toBeVisible();
+  for (const name of ["Replace image", "Fill image", "Clear cell"]) {
+    const button = tools.getByRole("button", { name, exact: true });
+    const before = await button.boundingBox();
+    await button.hover();
+    await expect(button).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
+    expect(await button.boundingBox()).toEqual(before);
+  }
+  await image.hover();
   const picture = await image.boundingBox();
   const toolbar = await tools.boundingBox();
   expect(toolbar.x).toBeGreaterThanOrEqual(picture.x - 1);
@@ -562,6 +675,11 @@ test("cell toolbar overlays the image and never selects a cell", async ({
   await expect(
     tools.getByRole("button", { name: "Fit image", exact: true }),
   ).toBeVisible();
+  await tools.getByRole("button", { name: "Fit image", exact: true }).hover();
+  await expect(
+    tools.getByRole("button", { name: "Fit image", exact: true }),
+  ).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
+  await image.hover();
   await expect(tools.locator("button:disabled")).toHaveCount(0);
   await expect(
     tools.getByRole("button", { name: "Clear cell", exact: true }),
@@ -643,6 +761,119 @@ test("touch cell overlays target the tapped image without autofocus", async ({
     path: testInfo.outputPath("cell-overlay-mobile.png"),
   });
   await context.close();
+});
+
+test("example loading is available only on localhost", async ({ page }) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Load example", exact: true }),
+  ).toBeVisible();
+  const exampleRequests = [];
+  await page.route("https://grids.example/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("comics")) exampleRequests.push(url.pathname);
+    const response = await route.fetch({
+      url: `http://localhost:5840${url.pathname}${url.search}`,
+    });
+    await route.fulfill({ response });
+  });
+  await page.goto("https://grids.example/tier-list/");
+  await expect(page.locator("#board-grid")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Load example", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "Load example", exact: true }),
+  ).toHaveCount(0);
+  expect(exampleRequests).toEqual([]);
+});
+
+test("image imports show progress and keep the editor responsive through failed files", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const decode = HTMLImageElement.prototype.decode;
+    window.pendingImageDecodes = [];
+    HTMLImageElement.prototype.decode = function () {
+      if (!this.src.startsWith("blob:")) return decode.call(this);
+      return new Promise((resolve, reject) => {
+        window.pendingImageDecodes.push(() =>
+          decode.call(this).then(resolve, reject),
+        );
+      });
+    };
+  });
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles([
+    {
+      name: "first.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
+      ),
+    },
+    {
+      name: "broken.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from("not an image"),
+    },
+    {
+      name: "second.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#e74264"/></svg>',
+      ),
+    },
+  ]);
+  const add = page.getByRole("button", { name: "Add images", exact: true });
+  const progress = add.getByRole("status");
+  const library = page.getByRole("complementary", {
+    name: "Image library drop zone",
+    exact: true,
+  });
+  await expect(progress).toContainText("0 / 3");
+  await expect(add).toBeDisabled();
+  await expect(add).toHaveCSS("opacity", "1");
+  await expect(library).toHaveAttribute("aria-busy", "true");
+  await page.locator("#gap").fill("21");
+  await expect(page.locator("#gap")).toHaveValue("21");
+  await page.screenshot({
+    path: testInfo.outputPath("import-progress-desktop.png"),
+  });
+  for (const completed of [0, 1, 2]) {
+    await expect(progress).toContainText(`${completed} / 3`);
+    await expect
+      .poll(() => page.evaluate(() => window.pendingImageDecodes.length))
+      .toBe(1);
+    if (completed === 1) {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(progress).toBeVisible();
+      await expect
+        .poll(async () => {
+          const bounds = await progress.boundingBox();
+          return bounds ? bounds.y + bounds.height : Infinity;
+        })
+        .toBeLessThanOrEqual(836);
+      await page.screenshot({
+        path: testInfo.outputPath("import-progress-mobile.png"),
+      });
+    }
+    await page.evaluate(() => {
+      window.pendingImageDecodes.shift()();
+    });
+  }
+  await expect(progress).toHaveCount(0);
+  await expect(add).toBeEnabled();
+  await expect(library).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(page.locator("#toast")).toContainText(
+    "Could not load broken.svg",
+  );
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.assets.length)
+    .toBe(2);
+  expect((await localDatabase(page)).images).toHaveLength(2);
+  expect((await savedWorkspace(page)).grid.gap).toBe(21);
 });
 
 test("empty cells and image library accept direct uploads and file drops", async ({

@@ -36,7 +36,7 @@ The modal structure and scrollbar-compensation pattern were adapted from the use
 
 Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Provider sign-in/database settings, general undo/redo, uploaded fonts/thumbnails, image ratios, and reviewed/licensed examples remain pending. Dexie stores image blobs and the coherent local grid snapshot in IndexedDB (`grids-client-v1`); localStorage holds only the settings cache (`grids-settings-v1`). Restoration uses strict Zod validation and fresh blob URLs. Obsolete prototype localStorage documents are ignored, without migration or backup UI.
 
-The image-library Load example icon opens a DC/Marvel preset selector. Use example deliberately replaces the current grid; Cancel leaves it unchanged, and existing library uploads are retained. Repeat loads reuse matching library images. Neither the example module nor its images are requested by a fresh workspace until applied. Defaults use Manrope and do not infer comic branding from the grid name or uploaded images.
+The image-library Load example icon is available only on localhost/loopback hosts for testing; it is hidden on public hosts. It opens a DC/Marvel preset selector. Use example deliberately replaces the current grid; Cancel leaves it unchanged, and existing library uploads are retained. Repeat loads reuse matching library images. Neither the example module nor its images are requested by a fresh workspace until applied. Defaults use Manrope and do not infer comic branding from the grid name or uploaded images.
 
 The model separates layout/style/export configuration from local cell content and media. Its strict settings-only representation excludes images, font files, URLs/paths, placements, IDs, grid names, headings, and captions. Applying settings validates before changing the grid and preserves local content, including removed-cell recovery. Reset uses this shared path, with an explicit reset of the grid name and banner text. This is a client-side boundary, not account sync; future backend ownership and validation remain required.
 
@@ -88,7 +88,7 @@ Changed in another tab stops this tab's autosaves and displays a persistent warn
 - Set an optional Image heading above the grid, such as Team DC or Team Marvel. Turn off Show heading to export without a banner while retaining the text; an empty heading also omits the banner.
 - Choose a theme, then adjust its settings below. Superhero includes DC/Marvel sub-themes with blue/red publisher colors; other themes have no publisher selector. Colors are included in exports and saved with the grid. Headers keep the team name centered without logos.
 - Choose Manrope, Bangers, Boogaloo, or Bebas Neue separately for the banner and cell headings.
-- Upload additional images, choose Fit or Fill, and adjust spacing and background.
+- Upload additional images, choose Fit or Fill, and adjust spacing and background. Imports show a spinner and completed-file count in the upload tile on desktop and mobile. Processing yields between files so the editor can update; invalid images are skipped with an error, and loading clears when the batch finishes.
 - Export the grid as PNG, JPEG, or WebP. Format, resolution, and quality preferences survive reloads.
 - Exports include the optional image heading, images, and cell headings, not editor controls or the grid's workspace name.
 

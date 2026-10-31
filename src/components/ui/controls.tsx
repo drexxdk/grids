@@ -1,4 +1,5 @@
 import {
+  DataInteractive,
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
@@ -52,7 +53,7 @@ const buttonStyles = cva(
           "tw:border-[var(--line)] tw:bg-transparent tw:text-[var(--text)] tw:enabled:hover:border-[var(--accent)]",
         primary:
           "tw:border-[var(--accent)] tw:bg-[var(--accent)] tw:text-[#19200d] tw:enabled:hover:brightness-110",
-        icon: "tw:size-[44px] tw:shrink-0 tw:border-[var(--line)] tw:bg-transparent tw:p-0 tw:enabled:hover:border-[var(--accent)]",
+        icon: "tw:size-[44px] tw:shrink-0 tw:border-[var(--line)] tw:bg-transparent tw:p-0 tw:enabled:hover:border-[var(--accent)]!",
       },
     },
     defaultVariants: { variant: "secondary" },
@@ -95,7 +96,7 @@ export function SelectField({
       <ListboxLabel className="field-label">{label}</ListboxLabel>
       <ListboxButton
         id={id}
-        className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:enabled:hover:border-(--accent)"
+        className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:data-hover:border-(--accent)"
       >
         <span className="tw:min-w-0 tw:break-words">
           {options.find((option) => option.value === value)?.label ?? value}
@@ -112,7 +113,7 @@ export function SelectField({
             key={option.value}
             value={option.value}
             data-value={option.value}
-            className="tw:min-h-[44px] tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
+            className="tw:flex tw:min-h-[44px] tw:items-center tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
           >
             {option.label}
           </ListboxOption>
@@ -144,17 +145,22 @@ export function ColorField({
       <label className="field-label" htmlFor={`${id}-value`}>
         {label}
       </label>
-      <div className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:focus-within:border-(--accent)">
-        <input
+      <DataInteractive
+        as="div"
+        className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:data-hover:border-(--accent) tw:focus-within:border-(--accent) tw:transition-colors"
+      >
+        <DataInteractive
+          as="input"
           id={id}
           type="color"
           value={value}
           aria-label={`${label} color picker`}
           title={`${label} color picker`}
-          className="tw:h-[44px] tw:w-[64px] tw:shrink-0 tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-1"
+          className="tw:h-[44px] tw:w-[64px] tw:shrink-0 tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-1 tw:data-hover:bg-(--line) tw:transition-colors"
           onChange={(event) => onChange(event.target.value)}
         />
-        <input
+        <DataInteractive
+          as="input"
           id={`${id}-value`}
           type="text"
           aria-label={`${label} hex value`}
@@ -162,7 +168,7 @@ export function ColorField({
           spellCheck={false}
           autoComplete="off"
           maxLength={7}
-          className="tw:h-[44px]! tw:w-full tw:min-w-0 tw:flex-1 tw:rounded-none! tw:border-0! tw:bg-transparent! tw:px-2 tw:text-(--text) tw:outline-none"
+          className="tw:h-[44px]! tw:w-full tw:min-w-0 tw:flex-1 tw:rounded-none! tw:border-0! tw:bg-transparent! tw:px-2 tw:text-(--text) tw:outline-none tw:data-hover:bg-(--line)! tw:transition-colors"
           onChange={(event) => {
             setDraft(event.target.value);
             const color = normalize(event.target.value);
@@ -179,7 +185,7 @@ export function ColorField({
             }
           }}
         />
-      </div>
+      </DataInteractive>
     </>
   );
 }
@@ -202,7 +208,7 @@ export function Toggle({
         onChange={onChange}
         aria-label={label}
         className={clsx(
-          "tw:relative tw:h-[24px] tw:w-[44px] tw:shrink-0 tw:rounded-full tw:border-0 tw:p-0 tw:after:absolute tw:after:-inset-y-[10px] tw:after:inset-x-0 tw:after:content-[''] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)]",
+          "tw:relative tw:h-[24px] tw:w-[44px] tw:shrink-0 tw:rounded-full tw:border-0 tw:p-0 tw:after:absolute tw:after:-inset-y-[10px] tw:after:inset-x-0 tw:after:content-[''] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)] tw:enabled:hover:brightness-110 tw:enabled:hover:ring-2 tw:enabled:hover:ring-(--accent)/40 tw:transition-[filter,box-shadow] tw:motion-reduce:transition-none",
           checked ? "tw:bg-[var(--accent)]" : "tw:bg-[var(--line)]",
         )}
       >
