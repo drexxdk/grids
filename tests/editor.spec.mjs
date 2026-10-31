@@ -2,8 +2,72 @@ import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { build } from "vite";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+async function localDatabase(page, operation = "read", document = null) {
+  return page.evaluate(
+    ({ operation, document }) =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open("grids-client-v1");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(
+            ["documents", "images"],
+            operation === "read" ? "readonly" : "readwrite",
+          );
+          const documents = transaction.objectStore("documents");
+          const images = transaction.objectStore("images");
+          const result = {};
+          if (operation === "read") {
+            const saved = documents.get("guest");
+            saved.onsuccess = () => {
+              result.document = saved.result;
+            };
+            const media = images.getAll();
+            media.onsuccess = () => {
+              result.images = media.result.map(({ id, blob }) => ({
+                id,
+                isBlob: blob instanceof Blob,
+                size: blob.size,
+                type: blob.type,
+              }));
+            };
+          } else if (operation === "write") documents.put(document);
+          else if (operation === "delete") documents.delete("guest");
+          else if (operation === "delete-image") images.delete(document.id);
+          else if (operation === "clear") {
+            documents.clear();
+            images.clear();
+          }
+          transaction.oncomplete = () => {
+            database.close();
+            resolve(result);
+          };
+          transaction.onabort = transaction.onerror = () => {
+            database.close();
+            reject(
+              transaction.error ?? new Error("Local database request failed."),
+            );
+          };
+        };
+      }),
+    { operation, document },
+  );
+}
+
+async function savedWorkspace(page) {
+  await expect(page.locator("#save-status")).toHaveText("Saved locally");
+  return (await localDatabase(page)).document;
+}
+
+async function reloadWorkspace(page) {
+  await expect(page.locator("#save-status")).toHaveText("Saved locally");
+  await page.reload();
+  await expect(page.locator("#board-grid")).toBeVisible();
+}
+
 async function downloadBoard(page) {
   const promise = page.waitForEvent("download");
   await page.locator("#export-board").click();
@@ -27,6 +91,178 @@ async function useComicExample(page, publisher = "dc") {
     publisher === "dc" ? "DC Characters" : "Marvel Characters",
   );
 }
+
+test("IndexedDB stores image blobs and private grid content while localStorage holds settings only", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-settings-v1" && value.length > 2048)
+        throw new DOMException("Settings too large", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.goto("./");
+  const image = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#12a874"/>${" ".repeat(100_000)}</svg>`,
+  );
+  await page.locator("#replace-upload").setInputFiles({
+    name: "private-photo.svg",
+    mimeType: "image/svg+xml",
+    buffer: image,
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator("#board-name").fill("Private collection");
+  await page.locator("#image-heading").fill("Private banner");
+  await page.locator("#cell-title").fill("Private caption");
+  await page.locator("#resolution").selectOption("150");
+  const document = await savedWorkspace(page);
+  const stored = await localDatabase(page);
+  expect(stored.images).toEqual([
+    {
+      id: document.assets[0].id,
+      isBlob: true,
+      size: image.length,
+      type: "image/svg+xml",
+    },
+  ]);
+  expect(JSON.stringify(document)).not.toMatch(/blob:|data:/);
+  const settings = await page.evaluate(() =>
+    localStorage.getItem("grids-settings-v1"),
+  );
+  expect(settings.length).toBeLessThan(2048);
+  const configuration = JSON.parse(settings);
+  expect(Object.keys(configuration).sort()).toEqual([
+    "exportSettings",
+    "layout",
+    "style",
+    "version",
+  ]);
+  for (const privateValue of [
+    document.grid.id,
+    document.assets[0].id,
+    "Private collection",
+    "Private banner",
+    "Private caption",
+    "private photo",
+    "blob:",
+    "data:",
+  ])
+    expect(settings).not.toContain(privateValue);
+  const originalUrl = await page.locator(".asset img").getAttribute("src");
+  expect(originalUrl).toMatch(/^blob:/);
+  await reloadWorkspace(page);
+  await expect(page.locator("#board-name")).toHaveValue("Private collection");
+  await expect(page.locator("#image-heading")).toHaveValue("Private banner");
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Private caption",
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator(".asset img")
+        .evaluate((image) => image.complete && image.naturalWidth === 48),
+    )
+    .toBe(true);
+  expect(await page.locator(".asset img").getAttribute("src")).not.toBe(
+    originalUrl,
+  );
+  await page.locator("#cell-title").fill("First edit");
+  await page.locator("#cell-title").fill("Second edit");
+  await page.locator("#cell-title").fill("Latest edit");
+  expect((await savedWorkspace(page)).grid.cells[0].title).toBe("Latest edit");
+  await reloadWorkspace(page);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Latest edit",
+  );
+});
+
+test("missing IndexedDB image data cannot overwrite the stored grid with blank defaults", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#replace-upload").setInputFiles({
+    name: "retained.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator("#board-name").fill("Keep stored grid");
+  const original = await savedWorkspace(page);
+  await localDatabase(page, "delete-image", { id: original.assets[0].id });
+  await reloadWorkspace(page);
+  await expect(page.locator("#save-status")).toHaveText("Session only");
+  await expect(page.locator("#toast")).toContainText(
+    "stored grid has not been replaced",
+  );
+  await page.locator("#cell-title").fill("Session edit");
+  const stored = await localDatabase(page);
+  expect(stored.document).toEqual(original);
+  expect(stored.images).toEqual([]);
+});
+
+test("local media ownership revokes object URLs and rejects writes after disposal", async ({
+  page,
+}) => {
+  const result = await build({
+    configFile: false,
+    logLevel: "error",
+    build: {
+      write: false,
+      minify: false,
+      lib: {
+        entry: fileURLToPath(new URL("../src/storage.ts", import.meta.url)),
+        formats: ["es"],
+        fileName: "storage",
+      },
+    },
+  });
+  const output = (Array.isArray(result) ? result[0] : result).output;
+  const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`;
+  await page.goto("./");
+  const original = await savedWorkspace(page);
+  const lifecycle = await page.evaluate(async (moduleUrl) => {
+    const { LocalWorkspaceStore } = await import(moduleUrl);
+    const store = new LocalWorkspaceStore();
+    const workspace = await store.load();
+    const asset = store.createAsset(
+      new Blob(["local bytes"], { type: "image/png" }),
+      "Lifetime test",
+    );
+    const before = await (await fetch(asset.src)).text();
+    store.dispose();
+    let revoked = false;
+    let closedWrite = false;
+    let closedCreate = false;
+    try {
+      await fetch(asset.src);
+    } catch {
+      revoked = true;
+    }
+    try {
+      await store.save(workspace);
+    } catch {
+      closedWrite = true;
+    }
+    try {
+      store.createAsset(new Blob(["other bytes"]), "Closed");
+    } catch {
+      closedCreate = true;
+    }
+    return { before, revoked, closedWrite, closedCreate };
+  }, moduleUrl);
+  expect(lifecycle).toEqual({
+    before: "local bytes",
+    revoked: true,
+    closedWrite: true,
+    closedCreate: true,
+  });
+  expect((await localDatabase(page)).document).toEqual(original);
+});
 
 test("single grid starts neutral and examples require deliberate replacement", async ({
   page,
@@ -97,41 +333,31 @@ test("single grid starts neutral and examples require deliberate replacement", a
   });
   await expect(page.locator(".asset")).toHaveCount(1);
   await page.locator("#cell-title").fill("Keep my own caption");
-  const snapshot = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("grids-editor-v1")),
-  );
+  const snapshot = await savedWorkspace(page);
   await page.getByRole("button", { name: "Load example", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Load example" })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(
-    await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("grids-editor-v1")),
-    ),
-  ).toEqual(snapshot);
+  expect(await savedWorkspace(page)).toEqual(snapshot);
   await useComicExample(page);
   await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(9);
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
   await expect(page.locator(".grid-cell")).toHaveCount(4);
-  const loaded = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("grids-editor-v1")),
-  );
+  const loaded = await savedWorkspace(page);
   expect(loaded.assets[0]).toEqual(snapshot.assets[0]);
   expect(new Set(loaded.assets.map((asset) => asset.id)).size).toBe(9);
   expect(loaded).not.toHaveProperty("boards");
   expect(loaded).not.toHaveProperty("active");
   expect(loaded.version).toBe(1);
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
   await useComicExample(page, "marvel");
   await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(9);
-  const repeated = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("grids-editor-v1")),
-  );
+  const repeated = await savedWorkspace(page);
   expect(repeated.assets).toEqual(loaded.assets);
   expect(repeated.grid.publisher).toBe("marvel");
   expect(errors).toEqual([]);
@@ -199,7 +425,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
     "A larger heading",
   );
   await expect(page.locator("#save-status")).toHaveText("Saved locally");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator(".cell-heading").nth(1)).toHaveValue(
     "A larger heading",
   );
@@ -216,8 +442,10 @@ test("image placement, title editing, grid sizing, and image exports", async ({
     "DC   Kite Man",
   );
 
+  await savedWorkspace(page);
+  await localDatabase(page, "clear");
   await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await reloadWorkspace(page);
   await useComicExample(page);
   await page.locator("#resolution").selectOption("600");
 
@@ -365,7 +593,7 @@ test("grid headings and font choices persist and export correctly", async ({
   await page.goto("./");
   await useComicExample(page);
   await page.locator("#cell-title").fill("My custom character");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
   await expect(
     page.getByRole("switch", { name: "Show heading" }),
@@ -391,7 +619,7 @@ test("grid headings and font choices persist and export correctly", async ({
     "Bangers, sans-serif",
   );
   await expect(page.locator("#save-status")).toHaveText("Saved locally");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator("#image-heading")).toHaveValue("Team Superheroes");
   await expect(page.locator("#heading-font")).toHaveValue("Boogaloo");
   await expect(page.locator("#cell-font")).toHaveValue("Bangers");
@@ -450,7 +678,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   await expect(headingSwitch).not.toBeChecked();
   await expect(page.locator(".board-export-heading")).toBeHidden();
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(headingSwitch).not.toBeChecked();
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
   await page.locator("#resolution").selectOption("600");
@@ -542,7 +770,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator("#canvas-title")).toHaveText("My image board");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator("#canvas-title")).toHaveText("My image board");
   await page.screenshot({
     path: testInfo.outputPath("controls-desktop.png"),
@@ -625,14 +853,12 @@ test("guest reset restores settings without deleting images or removed placement
   await page.locator("#format").selectOption("image/webp");
   await page.locator("#resolution").selectOption("300");
   await page.locator("#quality").fill("70");
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator("#image-heading")).toHaveValue("Custom banner");
   await expect(page.locator("#format")).toHaveValue("image/webp");
   await expect(page.locator("#resolution")).toHaveValue("300");
   await expect(page.locator("#quality")).toHaveValue("70");
-  const original = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("grids-editor-v1")),
-  );
+  const original = await savedWorkspace(page);
   await page
     .getByRole("button", { name: "Reset to Defaults", exact: true })
     .click();
@@ -644,9 +870,7 @@ test("guest reset restores settings without deleting images or removed placement
   await expect(page.locator("#resolution")).toHaveValue("1200");
   await expect(page.locator("#quality")).toHaveValue("95");
   await expect(page.locator(".asset")).toHaveCount(1);
-  const reset = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("grids-editor-v1")),
-  );
+  const reset = await savedWorkspace(page);
   expect(reset.assets).toEqual(original.assets);
   expect(reset.grid).toMatchObject({
     name: "Grid",
@@ -665,7 +889,7 @@ test("guest reset restores settings without deleting images or removed placement
       (entry) => entry.cell.title === "Keep my custom caption",
     ),
   ).toBe(true);
-  await page.reload();
+  await reloadWorkspace(page);
   await page.getByRole("button", { name: "Add row", exact: true }).click();
   await page.getByRole("button", { name: "Add column", exact: true }).click();
   await expect(page.locator(".cell-heading").nth(15)).toHaveValue(
@@ -701,37 +925,79 @@ test("long imported filenames produce valid captions across reload", async ({
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     title.slice(0, 120),
   );
-  await page.reload();
+  await reloadWorkspace(page);
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     title.slice(0, 120),
   );
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem("grids-editor-v1")).assets[0].title,
-    ),
-  ).toBe(title);
+  expect((await savedWorkspace(page)).assets[0].title).toBe(title);
 });
 
-test("failed guest saves report session-only mode without blocking export", async ({
+test("failed guest saves roll back blobs and recover without blocking export", async ({
   page,
 }) => {
   await page.addInitScript(() => {
+    window.failGuestSaves = true;
     const setItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key, value) {
-      if (key === "grids-editor-v1")
+      if (key === "grids-settings-v1" && window.failGuestSaves)
         throw new DOMException("Quota exceeded", "QuotaExceededError");
       return setItem.call(this, key, value);
     };
   });
   await page.goto("./");
-  await expect(page.locator("#save-status")).toHaveText("Session only");
+  await expect(page.locator("#save-status")).toHaveText("Save failed");
   await expect(page.locator("#toast")).toContainText("Local save failed");
+  await page.locator("#replace-upload").setInputFiles({
+    name: "retry.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
   await page.locator("#resolution").selectOption("150");
   expect((await downloadBoard(page)).suggestedFilename()).toBe("grid.png");
+  await expect(page.locator("#save-status")).toHaveText("Save failed");
+  const failed = await localDatabase(page);
+  expect(failed.document).toBeUndefined();
+  expect(failed.images).toEqual([]);
   expect(
-    await page.evaluate(() => localStorage.getItem("grids-editor-v1")),
+    await page.evaluate(() => localStorage.getItem("grids-settings-v1")),
   ).toBeNull();
+  await page.evaluate(() => {
+    window.failGuestSaves = false;
+  });
+  await page.locator("#cell-title").fill("Recovered save");
+  expect((await savedWorkspace(page)).assets).toHaveLength(1);
+  await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Recovered save",
+  );
+});
+
+test("unavailable IndexedDB leaves session editing and image exports usable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    IDBFactory.prototype.open = function () {
+      throw new DOMException("Local database unavailable", "InvalidStateError");
+    };
+  });
+  await page.goto("./");
+  await expect(page.locator("#save-status")).toHaveText("Session only");
+  await page.locator("#replace-upload").setInputFiles({
+    name: "session.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="green"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator("#resolution").selectOption("150");
+  expect((await downloadBoard(page)).suggestedFilename()).toBe("grid.png");
+  await expect(page.locator("#save-status")).toHaveText("Session only");
 });
 
 test("fresh storage ignores obsolete prototypes and rejects invalid documents", async ({
@@ -756,20 +1022,19 @@ test("fresh storage ignores obsolete prototypes and rejects invalid documents", 
     "coordinates",
     "json",
   ]) {
-    await page.evaluate((corruption) => {
-      const saved = JSON.parse(localStorage.getItem("grids-editor-v1"));
-      if (corruption === "version") saved.version = 99;
-      if (corruption === "cells")
-        saved.grid.cells[1].id = saved.grid.cells[0].id;
-      if (corruption === "references")
-        saved.grid.cells[0].assetId = crypto.randomUUID();
-      if (corruption === "coordinates") saved.grid.rows = 13;
-      localStorage.setItem(
-        "grids-editor-v1",
-        corruption === "json" ? "{broken" : JSON.stringify(saved),
+    const saved = await savedWorkspace(page);
+    if (corruption === "version") saved.version = 99;
+    if (corruption === "cells") saved.grid.cells[1].id = saved.grid.cells[0].id;
+    if (corruption === "references")
+      saved.grid.cells[0].assetId = crypto.randomUUID();
+    if (corruption === "coordinates") saved.grid.rows = 13;
+    if (corruption === "json") {
+      await localDatabase(page, "delete");
+      await page.evaluate(() =>
+        localStorage.setItem("grids-settings-v1", "{broken"),
       );
-    }, corruption);
-    await page.reload();
+    } else await localDatabase(page, "write", saved);
+    await reloadWorkspace(page);
     await expect(page.locator(".grid-cell")).toHaveCount(9);
     await expect(page.locator("#canvas-title")).toHaveText("Grid");
   }
@@ -780,10 +1045,7 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
 }, testInfo) => {
   await page.goto("./");
   await useComicExample(page);
-  const savedCells = () =>
-    page.evaluate(
-      () => JSON.parse(localStorage.getItem("grids-editor-v1")).grid.cells,
-    );
+  const savedCells = async () => (await savedWorkspace(page)).grid.cells;
   const original = await savedCells();
   await page.locator(".cell-image-button").nth(2).click();
   await page.getByRole("button", { name: "Add column", exact: true }).click();
@@ -807,7 +1069,7 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
   await expect(
     page.getByRole("region", { name: "Removed cells", exact: true }),
   ).toBeVisible();
-  await page.reload();
+  await reloadWorkspace(page);
   await page.getByRole("button", { name: "Add column", exact: true }).click();
   const restored = await savedCells();
   expect(restored.map((cell) => cell.id)).toEqual(
@@ -871,7 +1133,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
     const original = HTMLImageElement.prototype.decode;
     HTMLImageElement.prototype.decode = function () {
       const decoded = original.call(this);
-      return this.src.startsWith("data:")
+      return this.src.startsWith("blob:")
         ? decoded.then(
             () =>
               new Promise((resolve) =>
@@ -917,22 +1179,20 @@ test("uploads follow stable cells through resize and large exports are bounded",
       .locator(".cell-heading")
       .evaluateAll((cells) => cells.some((cell) => cell.value.includes("Eye"))),
   ).toBe(false);
-  await page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem("grids-editor-v1"));
-    const board = saved.grid;
-    board.rows = 12;
-    board.columns = 12;
-    board.heading = "";
-    board.overflow = [];
-    board.cells = Array.from({ length: 144 }, () => ({
-      id: crypto.randomUUID(),
-      assetId: null,
-      title: "",
-      fit: "contain",
-    }));
-    localStorage.setItem("grids-editor-v1", JSON.stringify(saved));
-  });
-  await page.reload();
+  const saved = await savedWorkspace(page);
+  const board = saved.grid;
+  board.rows = 12;
+  board.columns = 12;
+  board.heading = "";
+  board.overflow = [];
+  board.cells = Array.from({ length: 144 }, () => ({
+    id: crypto.randomUUID(),
+    assetId: null,
+    title: "",
+    fit: "contain",
+  }));
+  await localDatabase(page, "write", saved);
+  await reloadWorkspace(page);
   await expect(
     page.getByRole("button", { name: "Add row", exact: true }),
   ).toBeDisabled();

@@ -30,7 +30,7 @@ The grid-action menu offers Rename grid and Download image. Grid settings expand
 
 The modal structure and scrollbar-compensation pattern were adapted from the user's Chatter frontend (`apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, and the portal-dialog rules in `apps/web/src/index.css`). Grids uses Motion instead of Chatter's CSS/Web Animations transitions, adds listener/probe cleanup and post-dialog measurements, and keeps its own editor styling and deployment. No Chatter backend code is included.
 
-Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Provider sign-in and database settings, general undo/redo, IndexedDB media storage, image ratios, and reviewed/licensed example content remain pending. Guest documents use the versioned `grids-editor-v1` storage key with strict Zod validation. Obsolete prototype saves are ignored; invalid documents initialize fresh defaults, without migration or backup UI.
+Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Provider sign-in/database settings, general undo/redo, uploaded fonts/thumbnails, image ratios, and reviewed/licensed examples remain pending. Dexie stores image blobs and the coherent local grid snapshot in IndexedDB (`grids-client-v1`); localStorage holds only the settings cache (`grids-settings-v1`). Restoration uses strict Zod validation and fresh blob URLs. Obsolete prototype localStorage documents are ignored, without migration or backup UI.
 
 The image-library Load example icon opens a DC/Marvel preset selector. Use example deliberately replaces the current grid; Cancel leaves it unchanged, and existing library uploads are retained. Repeat loads reuse matching library images. Neither the example module nor its images are requested by a fresh workspace until applied. Defaults use Manrope and do not infer comic branding from the grid name or uploaded images.
 
@@ -52,6 +52,7 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 
 - [src/App.tsx](src/App.tsx): typed React editor UI, command dispatch, and import/download interactions.
 - [src/model.ts](src/model.ts): versioned single-grid/settings schemas, typed document commands/reducer, settings extraction/application, defaults/reset, and coordinate-preserving resizing.
+- [src/storage.ts](src/storage.ts): Dexie grid/image transactions, serialized saves, strict restoration, settings-only localStorage cache, and managed object URLs.
 - [src/demo/comics.ts](src/demo/comics.ts): lazily loaded single-grid example presets, including the unresolved source/rights record.
 - [src/export.ts](src/export.ts): typed canvas sizing, image rendering, and export generation.
 - `src/components/ui/`: typed Headless UI/Motion buttons, switches, accordion, action menu, and modal.
@@ -76,7 +77,9 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 - Export the grid as PNG, JPEG, or WebP. Format, resolution, and quality preferences survive reloads.
 - Exports include the optional image heading, images, and cell headings, not editor controls or the grid's workspace name.
 
-The optional legacy comic pairing is Bangers for the image heading and Boogaloo for cell headings, with 0.5px letter spacing. Default grids use Manrope. All fonts are bundled locally. Fonts, icons, and original images stay local; no third-party service receives uploads. The grid, export preferences, and image data URLs are currently saved in this browser's local storage. Large imported images may exceed the browser storage limit; the app will report this and exports remain available for that session. Canvas exports are capped at 16 MP on narrow/touch layouts and 32 MP otherwise; choose 150/300 px per image for larger grids. These are initial allocation safeguards, not a guarantee against every device's memory limits.
+The optional legacy comic pairing is Bangers for the image heading and Boogaloo for cell headings, with 0.5px letter spacing. Default grids use Manrope. All fonts are bundled locally. Fonts, icons, and original images stay local; no third-party service receives uploads. Imported files use managed blob URLs and persist as IndexedDB blobs, not base64 strings in localStorage. Preset source tags retain image identity across reloads without storing temporary blob URLs.
+
+Saving locally/Saved locally/Save failed reflect asynchronous persistence; wait for Saved locally before closing to retain pending edits. Grid and new-image writes are transactional and serialized; failed saves leave editing/export usable and subsequent edits retry. Unavailable storage or a missing saved image enters Session only mode without overwriting the stored grid. Browser storage is not permanent backup or cross-device synchronization. Canvas exports remain capped at 16 MP on narrow/touch layouts and 32 MP otherwise; choose 150/300 px per image for larger grids. These are initial allocation safeguards, not a guarantee against every device's memory limits.
 
 ## Check
 
@@ -85,6 +88,8 @@ npm run check
 ```
 
 The browser tests run against the production build under `/tier-list/` to verify repository-subpath hosting. They check neutral first launch without demo requests, deliberate single-grid example replacement/cancel, real drag-and-drop, uploads, grid resizing, autosave/reset/export preferences, invalid-document rejection, storage-failure feedback, the mobile layout, and downloaded PNG/JPEG/WebP image pixels. Comic-based checks explicitly load the legacy example; its image-rights review and replacement with owned/licensed fixtures remain pending. Foundation checks cover heading visibility/export parity, animated controls, rename persistence/cancel, modal scroll/focus lifecycle, and touch-device no-autofocus. The multi-format export check has a larger timeout for image decoding and full-resolution output. Tests also write the two example full-resolution PNGs to `exports/`, which is ignored by Git.
+
+Storage checks use real browser IndexedDB: large blobs and private grid content, settings-only localStorage, fresh object URLs, latest-edit persistence, transaction rollback/retry, unavailable-storage fallback, missing-image overwrite protection, and object-URL disposal. Tests await completed saves before reload and verify preset deduplication after blob restoration.
 
 ```sh
 npx playwright install chromium

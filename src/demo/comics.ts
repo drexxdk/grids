@@ -52,9 +52,15 @@ export function loadComicExample(
 ): Workspace {
   const assets = [...workspace.assets];
   const exampleAssets = comicExample.images.map((image) => {
-    const existing = assets.find((asset) => asset.src === image.src);
+    const existing = assets.find(
+      (asset) => asset.source === image.src || asset.src === image.src,
+    );
     if (existing) return existing;
-    const asset: Asset = { ...image, id: crypto.randomUUID() };
+    const asset: Asset = {
+      ...image,
+      source: image.src,
+      id: crypto.randomUUID(),
+    };
     assets.push(asset);
     return asset;
   });

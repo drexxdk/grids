@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const fontOptions = ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"];
-export const storageKey = "grids-editor-v1";
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
@@ -10,6 +9,7 @@ export interface Asset {
   category: string;
   title: string;
   src: string;
+  source?: string;
 }
 export interface Cell {
   id: string;
@@ -64,6 +64,7 @@ export type GridPatch = Partial<
 >;
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
 export type DocumentCommand =
+  | { type: "workspace/restore"; workspace: Workspace }
   | { type: "grid/patch"; gridId: string; patch: GridPatch }
   | { type: "export/patch"; patch: Partial<ExportSettings> }
   | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
@@ -271,6 +272,7 @@ export const workspaceSchema = z
         category: z.string(),
         title: z.string(),
         src: z.string().min(1),
+        source: z.string().min(1).optional(),
       }),
     ),
     grid: z.strictObject({
@@ -314,17 +316,6 @@ export const workspaceSchema = z
       });
     }
   });
-
-export function loadWorkspace(): Workspace {
-  try {
-    const parsed = workspaceSchema.safeParse(
-      JSON.parse(localStorage.getItem(storageKey) ?? "null"),
-    );
-    return parsed.success ? parsed.data : makeWorkspace();
-  } catch {
-    return makeWorkspace();
-  }
-}
 
 export function createResizeCommand(
   gridId: string,
@@ -385,6 +376,8 @@ export function documentReducer(
     });
   };
   switch (command.type) {
+    case "workspace/restore":
+      return command.workspace;
     case "grid/patch":
       return withGrid({ ...grid, ...command.patch });
     case "export/patch":

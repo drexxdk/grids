@@ -33,12 +33,11 @@ import { GridResizer, RemovedCells } from "./components/GridResizer";
 import {
   fontOptions,
   gridLimit,
-  loadWorkspace,
+  makeWorkspace,
   createResetCommand,
   createResizeCommand,
   documentReducer,
   publishers,
-  storageKey,
   type Asset,
   type Board,
   type CellPatch,
@@ -49,6 +48,7 @@ import {
   type Publisher,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
+import { LocalWorkspaceStore } from "./storage";
 
 function BoardHeading({ board }: { board: Board }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -88,8 +88,11 @@ export default function App() {
   const [workspace, dispatchDocument] = useReducer(
     documentReducer,
     undefined,
-    loadWorkspace,
+    makeWorkspace,
   );
+  const localStore = useRef<LocalWorkspaceStore | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [canSave, setCanSave] = useState(false);
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [toast, setToast] = useState("");
@@ -125,14 +128,51 @@ export default function App() {
   const palette = publishers[board.publisher];
   const size = dimensions(board, resolution);
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(workspace));
-      setSaveStatus("Saved locally");
-    } catch {
-      setSaveStatus("Session only");
-      setToast("Local save failed. Your current grid can still be exported.");
-    }
-  }, [workspace]);
+    const store = new LocalWorkspaceStore();
+    localStore.current = store;
+    let cancelled = false;
+    store
+      .load()
+      .then((restored) => {
+        if (cancelled) return;
+        dispatchDocument({ type: "workspace/restore", workspace: restored });
+        setCanSave(true);
+        setLoaded(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSaveStatus("Session only");
+        setToast(
+          error instanceof Error
+            ? `${error.message} Editing and exports remain available for this session.`
+            : "Local storage is unavailable. Editing and exports remain available for this session.",
+        );
+        setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+      store.dispose();
+      if (localStore.current === store) localStore.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (!canSave || !localStore.current) return;
+    let cancelled = false;
+    setSaveStatus("Saving locally");
+    localStore.current
+      .save(workspace)
+      .then(() => {
+        if (!cancelled) setSaveStatus("Saved locally");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSaveStatus("Save failed");
+        setToast("Local save failed. Your current grid can still be exported.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace, canSave]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4500);
@@ -197,6 +237,8 @@ export default function App() {
     files: FileList | null,
     targetIndex: number | null = null,
   ) => {
+    const store = localStore.current;
+    if (!store) return;
     const targetId = board.id;
     const targetCellId =
       targetIndex === null ? null : board.cells[targetIndex]?.id;
@@ -206,24 +248,18 @@ export default function App() {
         setToast(`${file.name} is not an image.`);
         continue;
       }
+      let asset: Asset | null = null;
       try {
-        const src = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () =>
-            typeof reader.result === "string"
-              ? resolve(reader.result)
-              : reject(new Error("The image could not be read."));
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        await loadImage(src);
-        assets.push({
-          id: crypto.randomUUID(),
-          category: "Imported",
-          title: file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
-          src,
-        });
+        if (localStore.current !== store) return;
+        asset = store.createAsset(
+          file,
+          file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+        );
+        await loadImage(asset.src);
+        if (localStore.current !== store) return;
+        assets.push(asset);
       } catch {
+        if (asset) store.releaseAsset(asset.id);
         setToast(
           `Could not load ${file.name}. Try a PNG, JPEG, or WebP image.`,
         );
@@ -358,6 +394,16 @@ export default function App() {
       setLoadingExample(false);
     }
   };
+  if (!loaded) {
+    return (
+      <main
+        className="tw:grid tw:min-h-dvh tw:place-items-center"
+        aria-busy="true"
+      >
+        <p role="status">Loading grid...</p>
+      </main>
+    );
+  }
   return (
     <>
       <header className="app-header">
