@@ -41,6 +41,7 @@ export const makeBoard = (name, assets = []) => ({
   name,
   publisher: defaultPublisher(name, assets),
   heading: defaultHeading(name),
+  headingVisible: true,
   headingFont: "Bangers",
   cellFont: "Boogaloo",
   rows: 2,
@@ -92,6 +93,7 @@ export function loadWorkspace() {
         );
       if (typeof item.heading !== "string")
         item.heading = defaultHeading(item.name);
+      if (typeof item.headingVisible !== "boolean") item.headingVisible = true;
       if (!fontOptions.includes(item.headingFont)) item.headingFont = "Bangers";
       if (!fontOptions.includes(item.cellFont)) item.cellFont = "Boogaloo";
     });

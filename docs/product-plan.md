@@ -1,6 +1,8 @@
 # Gridroom Product And Implementation Plan
 
-Status: proposal, not implemented. Prepared October 31, 2026.
+Status: implementation started. Prepared October 31, 2026. The requirements below remain the roadmap, not a claim that every feature is available.
+
+Implemented first foundation slice: Tailwind/Headless UI/Motion integration, incremental TypeScript checks, animated board-action menu and settings accordion, rename dialog with scrollbar takeover and touch-safe focus, and persistent heading visibility shared by preview/export. Existing export and migration checks remain covered. Edge resizing, board deletion/undo, storage/schema redesign, and opt-in demo separation are still pending; Phase 1 is not complete.
 
 ## 1. Product Direction
 

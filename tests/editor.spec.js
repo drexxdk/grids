@@ -13,6 +13,7 @@ async function downloadBoard(page) {
 test("image placement, title editing, grid sizing, and image exports", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
@@ -241,6 +242,7 @@ test("board headings and font choices persist and old boards migrate without los
     const saved = JSON.parse(localStorage.getItem("gridroom-v1"));
     saved.boards.forEach((item) => {
       delete item.heading;
+      delete item.headingVisible;
       delete item.headingFont;
       delete item.cellFont;
       delete item.publisher;
@@ -250,6 +252,9 @@ test("board headings and font choices persist and old boards migrate without los
   });
   await page.reload();
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
+  await expect(
+    page.getByRole("switch", { name: "Show heading" }),
+  ).toBeChecked();
   await expect(page.locator("#publisher")).toHaveValue("dc");
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "My custom character",
@@ -311,4 +316,173 @@ test("board headings and font choices persist and old boards migrate without los
         ),
     )
     .toBe(true);
+});
+
+test("animated editor controls preserve heading content and modal scroll/focus", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 760 });
+  await page.goto("./");
+  const headingSwitch = page.getByRole("switch", { name: "Show heading" });
+  await expect(headingSwitch).toHaveCSS("width", "44px");
+  await expect(headingSwitch).toHaveCSS("height", "24px");
+  await headingSwitch.focus();
+  await headingSwitch.press("Space");
+  await expect(headingSwitch).not.toBeChecked();
+  await expect(page.locator(".board-export-heading")).toBeHidden();
+  await expect(page.locator("#image-heading")).toHaveValue("Team DC");
+  await page.reload();
+  await expect(headingSwitch).not.toBeChecked();
+  await expect(page.locator("#image-heading")).toHaveValue("Team DC");
+  await page.locator("#resolution").selectOption("600");
+  const download = await downloadBoard(page);
+  const bytes = [...(await readFile(await download.path()))];
+  const exportSize = await page.evaluate(async (bytes) => {
+    const image = await createImageBitmap(
+      new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+    );
+    const size = { width: image.width, height: image.height };
+    image.close();
+    return size;
+  }, bytes);
+  expect(exportSize).toEqual({ width: 1236, height: 1440 });
+  await headingSwitch.click();
+  await expect(page.locator(".board-export-heading")).toHaveText("Team DC");
+
+  const settings = page.getByRole("button", {
+    name: "Board settings",
+    exact: true,
+  });
+  await settings.click();
+  await expect(settings).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#board-name")).toBeHidden();
+  await settings.press("Enter");
+  await expect(page.locator("#board-name")).toBeVisible();
+
+  const actions = page.getByRole("button", {
+    name: "Board actions",
+    exact: true,
+  });
+  await actions.focus();
+  await actions.press("ArrowDown");
+  const rename = page.getByRole("menuitem", { name: "Rename board" });
+  await expect(rename).toBeVisible();
+  const before = await page.evaluate(() => ({
+    scroll: window.scrollY,
+    left: document.body.getBoundingClientRect().left,
+    width: document.body.getBoundingClientRect().width,
+  }));
+  await rename.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Rename board" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("#rename-board-name")).toBeFocused();
+  await expect(
+    dialog.getByRole("button", { name: "Save", exact: true }),
+  ).toHaveCSS("color", "rgb(25, 32, 13)");
+  await expect(page.locator("html")).toHaveCSS("overflow", "hidden");
+  await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
+  const during = await page.evaluate(() => ({
+    scroll: window.scrollY,
+    left: document.body.getBoundingClientRect().left,
+    width: document.body.getBoundingClientRect().width,
+  }));
+  expect(during).toEqual(before);
+  await page.locator("#rename-board-name").fill("Discard this name");
+  await page.evaluate(() => {
+    const content = document.createElement("div");
+    content.style.height = "1200px";
+    document.querySelector('[role="dialog"] form').prepend(content);
+  });
+  const frame = page.locator("[data-modal-scroll]");
+  await frame.evaluate((element) => element.scrollTo(0, 400));
+  await expect
+    .poll(() => frame.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(before.scroll);
+  await page.screenshot({
+    path: testInfo.outputPath("modal-scroll-desktop.png"),
+  });
+  const closing = await page.evaluate(async () => {
+    document.querySelector('[aria-label="Close dialog"]').click();
+    await Promise.resolve();
+    return {
+      mounted: Boolean(document.querySelector('[role="dialog"]')),
+      overflow: getComputedStyle(document.documentElement).overflow,
+    };
+  });
+  expect(closing).toEqual({ mounted: true, overflow: "hidden" });
+  await expect(dialog).toHaveCount(0);
+  await expect(actions).toBeFocused();
+  await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "stable");
+  expect(await page.evaluate(() => window.scrollY)).toBe(before.scroll);
+  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
+
+  await actions.click();
+  await rename.click();
+  await page.locator("#rename-board-name").fill("My image board");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#canvas-title")).toHaveText("My image board");
+  await page.reload();
+  await expect(page.locator("#canvas-title")).toHaveText("My image board");
+  await page.screenshot({
+    path: testInfo.outputPath("controls-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await actions.click();
+  await rename.click();
+  await expect(dialog).toBeVisible();
+  await page.locator("#rename-board-name").fill("Mobile cancel");
+  await page.screenshot({
+    path: testInfo.outputPath("controls-mobile.png"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#canvas-title")).toHaveText("My image board");
+  expect(errors).toEqual([]);
+});
+
+test("touch dialogs do not autofocus text inputs", async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto("http://localhost:5840/tier-list/");
+    await page
+      .getByRole("button", { name: "Board actions", exact: true })
+      .tap();
+    await page.getByRole("menuitem", { name: "Rename board" }).tap();
+    await expect(
+      page.getByRole("dialog", { name: "Rename board" }),
+    ).toBeVisible();
+    await expect(page.locator("#rename-board-name")).not.toBeFocused();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Boolean(document.activeElement?.closest('[role="dialog"]')),
+        ),
+      )
+      .toBe(true);
+    await page.getByRole("button", { name: "Cancel", exact: true }).tap();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
+      "INPUT",
+    );
+  } finally {
+    await context.close();
+  }
 });

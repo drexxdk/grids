@@ -9,7 +9,15 @@ import {
   Scan,
   Crop,
   Trash2,
+  Pencil,
 } from "lucide-react";
+import {
+  Accordion,
+  ActionMenu,
+  Button,
+  Toggle,
+} from "./components/ui/controls";
+import { Modal } from "./components/ui/Modal";
 import {
   fontOptions,
   loadWorkspace,
@@ -40,12 +48,12 @@ function BoardHeading({ board }) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [board.heading, board.headingFont, board.columns]);
+  }, [board.heading, board.headingFont, board.headingVisible, board.columns]);
   return (
     <h2
       ref={headingRef}
       className="board-export-heading"
-      hidden={!board.heading.trim()}
+      hidden={board.headingVisible === false || !board.heading.trim()}
     >
       <span className="board-heading-text">{board.heading}</span>
     </h2>
@@ -63,6 +71,10 @@ export default function App() {
   const [quality, setQuality] = useState(95);
   const [exporting, setExporting] = useState(false);
   const replaceUpload = useRef(null);
+  const boardActions = useRef(null);
+  const renameInput = useRef(null);
+  const [renaming, setRenaming] = useState(null);
+  const [draftName, setDraftName] = useState("");
   const board = workspace.boards[workspace.active];
   const cell = board.cells[selectedCell];
   const palette = publishers[board.publisher];
@@ -355,6 +367,25 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <ActionMenu
+              buttonRef={boardActions}
+              actions={[
+                {
+                  label: "Rename board",
+                  icon: Pencil,
+                  onSelect: () => {
+                    setDraftName(board.name);
+                    setRenaming(board.id);
+                  },
+                },
+                {
+                  label: "Download image",
+                  icon: Download,
+                  onSelect: () => exportBoards(),
+                  disabled: exporting,
+                },
+              ]}
+            />
             <button
               id="add-board"
               className="icon-button"
@@ -498,8 +529,7 @@ export default function App() {
           </div>
         </section>
         <aside className="settings-panel">
-          <section className="settings-section">
-            <span className="eyebrow">BOARD SETTINGS</span>
+          <Accordion title="Board settings">
             <label className="field-label" htmlFor="board-name">
               Board name
             </label>
@@ -512,6 +542,11 @@ export default function App() {
             <label className="field-label" htmlFor="image-heading">
               Image heading
             </label>
+            <Toggle
+              label="Show heading"
+              checked={board.headingVisible !== false}
+              onChange={(headingVisible) => patchBoard({ headingVisible })}
+            />
             <input
               id="image-heading"
               maxLength={120}
@@ -607,7 +642,7 @@ export default function App() {
                 {board.background.toUpperCase()}
               </span>
             </div>
-          </section>
+          </Accordion>
           <section className="settings-section">
             <div className="section-heading">
               <span className="eyebrow">SELECTED CELL</span>
@@ -725,6 +760,54 @@ export default function App() {
       <div id="toast" className="toast" role="status" hidden={!toast}>
         {toast}
       </div>
+      <Modal
+        open={renaming !== null}
+        onClose={() => setRenaming(null)}
+        title="Rename board"
+        initialFocus={renameInput}
+        returnFocus={boardActions}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = draftName.trim();
+            if (!name) return;
+            setWorkspace((current) => ({
+              ...current,
+              boards: current.boards.map((item) =>
+                item.id === renaming ? { ...item, name } : item,
+              ),
+            }));
+            setRenaming(null);
+          }}
+        >
+          <label
+            htmlFor="rename-board-name"
+            className="tw:mb-2 tw:block tw:text-sm tw:font-semibold"
+          >
+            Board name
+          </label>
+          <input
+            ref={renameInput}
+            id="rename-board-name"
+            value={draftName}
+            maxLength={70}
+            required
+            onChange={(event) => setDraftName(event.target.value)}
+            className="tw:box-border tw:w-full tw:rounded-md tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--bg)] tw:px-3 tw:py-2 tw:text-[var(--text)]"
+          />
+          <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
+            <Button onClick={() => setRenaming(null)}>Cancel</Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!draftName.trim()}
+            >
+              Save
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

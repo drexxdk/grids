@@ -1,3 +1,7 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw);
+
 @font-face {
   font-family: "Bebas Neue";
   src: url("/assets/bebas-neue.woff2") format("woff2");
@@ -85,6 +89,15 @@
 body {
   margin: 0;
 }
+html {
+  scrollbar-gutter: stable;
+}
+html:has(#headlessui-portal-root [role="dialog"][aria-modal="true"]) {
+  --fixed-scrollbar-inset: var(--scrollbar-width, 0px);
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding-right: var(--scrollbar-width, 0px) !important;
+}
 button,
 input,
 select,
@@ -102,8 +115,10 @@ textarea {
 button {
   cursor: pointer;
 }
-button {
-  color: inherit;
+@layer base {
+  button {
+    color: inherit;
+  }
 }
 button:disabled {
   opacity: 0.5;
