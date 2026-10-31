@@ -2,7 +2,17 @@
 
 Updated October 31, 2026. `[x]` = implemented and checked. `[ ]` = remaining work, including partial features. Only work items have checkboxes.
 
-Build a general-purpose, local-first image-board editor for anime, characters, films, games, books, cards, photographs, and personal collections. The core stays usable without an account, API key, paid service, or backend, and independently deployable to GitHub Pages. Cloud features need separate approval.
+Build a general-purpose, single-grid editor for anime, characters, films, games, books, cards, photographs, and personal collections. Guests can use it without an account, API key, paid service, or backend. Optional accounts save user settings in a database; images always remain on the client. The static frontend can stay on GitHub Pages, but authentication/database access needs a separately hosted backend.
+
+## Agreed Direction (Planned)
+
+- One working grid, not a multi-board workspace. Remove board tabs, Add Board, board duplication/reordering, and multi-board export when this change is implemented.
+- Guests automatically save settings to localStorage and have a visible Reset to Defaults command. Clearing locally stored images is a separate deliberate action.
+- Prioritize Google, Discord, and Facebook sign-in using Chatter's login/session patterns. Signed-in users can save and reload their editor settings from their user record.
+- Store only validated settings in the account database, not uploaded images, thumbnails, data URLs, file paths, or image placements/references. Image and uploaded-font files remain client-only; a different browser/device restores settings, not those files.
+- Local username/password accounts are a lower-priority follow-up, after provider sign-in and settings persistence work reliably.
+
+These are roadmap changes only. The current application's multi-board UI and browser-only storage remain unchanged until the planned migration is implemented.
 
 ## Completed
 
@@ -11,10 +21,10 @@ Build a general-purpose, local-first image-board editor for anime, characters, f
 - [x] Viewport-edge modal scrolling, background lock through exit, scrollbar compensation, trigger-focus restoration, and helper cleanup. Touch dialogs focus a non-input control instead of opening the keyboard.
 - [x] Neutral first launch: one empty 3x3 board, empty library, square cells, Manrope fonts. No automatic example image/module requests or comic branding inferred for new boards.
 - [x] Explicit lazy Load example and legacy comic manifest. Appends boards without replacing uploads/edits; repeat loads reuse images; saved image paths stay stable. Artwork rights and original credits remain unresolved.
-- [x] Multiple boards, naming/rename dialog, uploads, library placement, drag-to-swap, cell titles, fit/fill, background/gap controls, and legacy DC/Marvel palettes. Bundled fonts: Manrope, Bangers, Boogaloo, Bebas Neue.
+- [x] Naming/rename dialog, uploads, library placement, drag-to-swap, cell titles, fit/fill, background/gap controls, and legacy DC/Marvel palettes. Bundled fonts: Manrope, Bangers, Boogaloo, Bebas Neue.
 - [x] Right-edge column and bottom-edge row controls: 1..12 in each direction, 144 visible cells, 44px named controls with tooltips/disabled limits, no grid-size presets, no controls in exports.
 - [x] Stable cell IDs preserve coordinates, selection, keys, placement, clearing, and swaps. Removed cells persist by coordinate; expansion restores them; recovery swaps retain displaced content. Resize Undo preserves newer edits.
-- [x] Visible board deletion with session Undo, original-position/selection restoration, adjacent-board selection, and preservation of surviving edits. Empty workspaces persist and still allow uploads/Add Board.
+- [x] Current legacy multi-board navigation/deletion with session Undo, original-position/selection restoration, adjacent selection, and preserved edits. Empty workspaces persist and allow uploads/Add Board. This workflow is scheduled for replacement by the single-grid/reset model, not further expansion.
 - [x] Heading visibility retains text/fonts/styles while removing hidden space from preview/export. Workspace names stay separate from visible headings.
 - [x] Async uploads follow destination board/cell IDs. Resized-away/deleted targets do not receive misplaced images; imported media remains in the library.
 - [x] Browser-local persistence and legacy normalization. Selection/dialogs/progress/session Undo stay separate from saved documents; uploads stay on-device.
@@ -25,26 +35,43 @@ Current limits: media is stored as data URLs in localStorage; Undo is session-on
 
 ## Development Order
 
-**Next: finish the document/storage foundation, then shared layout/rendering.** Work through the steps below in order; completed pieces are listed above, not repeated in each phase. Resolve schema/demo-rights decisions early. Run crop, FontFace, provider, and phone-export spikes before their dependent features. Failed provider research must not block the upload-only editor. No fixed delivery dates are assumed before those spikes.
+**Next: single-grid/guest-storage foundation, then provider sign-in and user settings, then layout/rendering.** Work through the steps below in order; local accounts follow provider login, not the other way around. Resolve schema/demo-rights/hosting decisions early. Run crop, FontFace, catalog, and phone-export spikes before their dependent features. Failed sign-in or catalog services must not block the guest upload-only editor. No fixed delivery dates are assumed before those spikes.
 
-### 1. Document And Storage Foundation
+### 1. Single Grid And Guest Storage
 
-- [ ] Version the schema; replace active-board indexes with IDs; add Zod boundary validation. Model workspace order/preferences, boards/layout/style/export settings, cells/captions/alt text/crops/locks, media/blob/hash/provenance/rights, fonts/permissions, themes, and templates.
+- [ ] Replace the multi-board workspace with one grid document and editor preferences; remove board navigation/add/delete/duplicate/reorder and Export All controls. Keep stable cell IDs and separate layout/style/export settings, local content/media, and session UI state; add versioning and Zod boundary validation.
+- [ ] Safely migrate existing multi-board saves: let the user choose the grid to continue with and offer a client-side backup of remaining legacy boards/media before retiring the old structure. Never silently discard saved work or restore board management as a permanent feature.
+- [ ] Convert examples into selectable single-grid presets, not append-only board packs. Applying an example/template must preserve existing content or require a deliberate replacement choice.
+- [ ] Autosave guest settings to localStorage; add a visible Reset to Defaults command and failed-save feedback. Reset affects guest configuration, not account records; preserve local images unless the user separately confirms deleting them.
 - [ ] Central typed document commands/reducer; keep crop drafts and provider requests/results outside saved state. Reuse React unless a state library solves a demonstrated subscription need.
-- [ ] Dexie/IndexedDB for boards/media/fonts/thumbnails; managed/revoked object URLs; localStorage only for small preferences and migration markers.
+- [ ] Dexie/IndexedDB for client-only images/fonts/thumbnails and larger local grid content; managed/revoked object URLs. localStorage retains guest settings, small preferences, and migration markers. Keep this local data separate from the future account-settings payload.
 - [ ] Transactional, idempotent `gridroom-v1` migration: validate, extract image blobs, translate fonts/styles/paths, verify references, then mark success. Retain the source until success; offer backup/retry on quota/decode failure and repair missing references rather than resetting the workspace.
 - [ ] Debounced transactional Saving/Saved/Save Failed status, storage usage, backup reminders, best-effort persistent-storage requests, unused-media cleanup, and recoverable trash. Browser storage is not permanent backup or synchronization.
 - [ ] Revision checks and BroadcastChannel notifications against silent multi-tab overwrites.
-- [ ] General undo/redo for text/layout/crops/templates/deletion/batches. Coalesce typing/slider gestures; one Apply/bulk action is one entry. Store small patches/media IDs, not repeated binaries; retain media referenced by history/trash.
+- [ ] General undo/redo for text/layout/crops/templates/reset/cell deletion/batches. Coalesce typing/slider gestures; one Apply/bulk action is one entry. Store small patches/media IDs, not repeated binaries; retain media referenced by history/trash.
 - [ ] Review comic rights/credits; replace unclear examples with owned/licensed content. Keep discoverable asset-specific licenses; remove unused logos after reference checks; move test-only samples out of public builds. Migrate moved image paths without changing IDs/titles.
 - [ ] Incrementally separate editor/library/domain/rendering/storage ownership. Use build-managed font imports where suitable; retain stable public URLs where needed. Do not create empty architectural scaffolding.
 - [ ] ESLint, Prettier, Vitest, Testing Library, broader component variants, and remaining primitive checks below. Add Sonner with the notification layer while retaining inline actionable errors; Floating UI/TanStack Virtual only when needed.
 
-Exit criteria: legacy edits/references and intentional empty workspaces survive; failed writes retain recoverable data; history stays bounded; existing upload/export tests remain green; distributed examples have reviewed rights.
+Exit criteria: one usable grid with no board manager; chosen legacy content survives with recoverable backups; guest autosave/reset works across reloads without accidental media deletion; failed writes retain data; history stays bounded; distributed examples have reviewed rights. Update former multi-board tests to cover migration/reset without weakening image-placement/export coverage.
 
-### 2. Layout, Rendering, And Export Reliability
+### 2. Provider Sign-In And User Settings
 
-Depends on stable IDs/schema and storage from step 1.
+Depends on the single-grid/settings boundary from step 1. This is settings persistence, not image hosting or cloud project storage.
+
+- [ ] Inspect/adapt Chatter's provider-login UI, session lifecycle, and safe account-linking behavior. Implement Google, Discord, and Facebook before local accounts; evaluate provider configuration/app-review requirements and registered callback origins.
+- [ ] Choose a separately deployed authentication API and user/settings database. Keep provider secrets server-side; define the Pages/custom-domain/API origin, session/cookie/CORS/CSRF policy, and supported-browser behavior before shipping. A static Pages build cannot implement login/database writes alone.
+- [ ] Secure provider callbacks with the flow's state/PKCE/nonce protections, validated tokens/provider identity, minimal scopes, and secure session/logout handling. Use stable provider subject IDs; do not auto-link accounts solely by an unverified matching email. Linking providers requires explicit authenticated confirmation.
+- [ ] Save an allowlisted, versioned settings record owned by the authenticated user: grid dimensions/ratio, layout, theme/colors, typography choices, visibility, export defaults, and editor preferences. Enforce ownership and validation server-side; never upload the full local document or accept image/font binaries, data URLs, thumbnails, image URLs/file paths/placements, or other media payloads.
+- [ ] Restore settings on return with real Saving/Saved/Save Failed feedback and revision/conflict protection. On sign-in, offer Keep Guest Settings/Load Account Settings rather than silently replacing either copy. Handle missing local images/fonts with local reselection/fallback, never server upload.
+- [ ] Keep guest and per-user local caches isolated. Logout/account switching must not leak another user's settings or overwrite the guest draft; provider/backend failure leaves guest editing/local autosave available.
+- [ ] Test all three provider flows, callback/session failures, linking/logout/account switching, settings ownership, guest-to-account choices, and restoration in a clean browser. Assert that account requests/database records contain no client media or image references.
+
+Exit criteria: Google/Discord/Facebook sign-in and user-owned settings persistence work; another device restores configuration with no promise of image/font synchronization; guest editing/reset stays independent. Backend/database deployment needs an explicit hosting/security decision, not changes to the current app in this planning step.
+
+### 3. Layout, Rendering, And Export Reliability
+
+Depends on stable IDs/schema and client storage from step 1; rendering itself does not require sign-in.
 
 - [ ] One numeric composition path for accessible DOM preview and canvas export: cell rectangles, heading/caption/footer blocks, line breaks, styles, crops, clips, and transforms.
 - [ ] Independent grid layout, image-cell ratio, and final export dimensions. Changing one never silently changes the others or stretches the composition to force an outer ratio.
@@ -53,13 +80,13 @@ Depends on stable IDs/schema and storage from step 1.
 - [ ] Subtitle/footer/rank/row-label/column-label/per-cell-text switches with retained settings and undo/redo; row-first/column-first numbering and optional exported numbering.
 - [ ] Image/font/source-policy preflight identifying exact missing/nonexportable cells; retry/replacement or deliberate placeholder export, never silent omission.
 - [ ] PNG/WebP transparency, explicit JPEG flattening, final dimensions/scale/social sizes, filename/credit controls, upscaling warnings and file-size estimates where practical.
-- [ ] Bounded source decoding/concurrency and representative-device benchmarks. Canvas memory starts near four bytes/pixel before source images/intermediates/thumbnails/encoding. Add progress/cancel and resolution recovery; process boards sequentially.
+- [ ] Bounded source decoding/concurrency and representative-device benchmarks. Canvas memory starts near four bytes/pixel before source images/intermediates/thumbnails/encoding. Add progress/cancel and resolution recovery for the current grid.
 
 Exit criteria: preview/export agrees across ratios/visibility; layout preserves placements; errors name offending cells; measured budgets support realistic phone exports, not unlimited resolution.
 
-### 3. Appearance, Fonts, And Text
+### 4. Appearance, Fonts, And Text
 
-Depends on shared composition/text from step 2.
+Depends on shared composition/text from step 3. Account persistence stores style/font choices only; uploaded font files stay local.
 
 - [ ] Independent editor Light/Dark/High Contrast/System preferences and board themes. Tokenize surfaces/text/borders/focus/selection/disabled/accent states; editor theme cannot recolor exports.
 - [ ] Board presets: Minimal Light, Minimal Dark, Comic, Poster Wall, Photo Contact Sheet, Custom. Swatches/live previews, named custom themes, duplication, individual resets, theme JSON import/export.
@@ -73,7 +100,7 @@ Depends on shared composition/text from step 2.
 
 Exit criteria: custom fonts survive reload/export and later project round-trip; editor/output themes stay independent; style precedence is predictable and accessible.
 
-### 4. Image Editing, Library, And Responsive Controls
+### 5. Image Editing, Library, And Responsive Controls
 
 Depends on stored originals, history, and shared image transforms.
 
@@ -85,13 +112,13 @@ Depends on stored originals, history, and shared image transforms.
 - [ ] Hash-based deduplication; library search/rename/tags/collections/favorites/recent/used-unused views and source metadata.
 - [ ] Referenced-media Cancel/Replace/Clear choices, undo and recoverable trash. Irreversible cell/media deletion needs a separate deliberate confirmation/history policy.
 - [ ] HTTPS image URL imports, not arbitrary webpage scraping; explain URL/CORS/provider failures and retain upload fallback.
-- [ ] Desktop compact board/undo/ratio/template/appearance/export toolbar, central board, left library, contextual Layout/Appearance/Typography/Cell inspector. Library views: Uploads/Search/Collections/Examples; domain filters belong in Search.
+- [ ] Desktop compact single-grid/undo/reset/ratio/template/appearance/export toolbar with account/settings access, central grid, left library, contextual Layout/Appearance/Typography/Cell inspector. No board tabs/manager. Library views: Uploads/Search/Collections/Examples; domain filters belong in Search.
 - [ ] Mobile board-first experience with deliberately opened library/inspector sheets, no input autofocus. Headless UI Listbox/Combobox/TabGroup/sheets where applicable; shared Motion/reduced motion; feature-scoped Tailwind migration.
 - [ ] Full keyboard/touch move/swap/selection alternatives to dragging. Named Lucide tools, swatches, segmented modes, switches/numeric controls, accessible progress/focus/contrast, 44px touch targets. If localized, single plural-aware count messages using Chatter's i18next/ICU approach.
 
 Exit criteria: independent crops survive reload/undo and match exported pixels; originals remain unchanged; batch failures recover; keyboard/touch editing and mobile sheets work.
 
-### 5. Initial Catalog Search
+### 6. Initial Catalog Search
 
 Depends on compatibility checks and media/rights/crop/export foundations. Target: three validated catalogs across at least two domains, alongside uploads/examples.
 
@@ -105,45 +132,46 @@ Depends on compatibility checks and media/rights/crop/export foundations. Target
 
 Exit criteria: no protected credentials in static assets; every shipped provider clears policy/real-origin/export checks; failures cannot damage boards or disable the offline upload-only core. API access is not permission to reuse images; proxies do not override terms.
 
-### 6. Templates, Batch Tools, And Portable Projects
+### 7. Templates, Batch Tools, And Portable Projects
 
 Depends on commands/history, themes, renderer, media/font permissions.
 
 - [ ] Blank/top 9/top 10/favorites/watchlist/before-after/month/alignment/16-slot personality templates. Domain-neutral definitions include labels/layout/ratio/text/theme, optional anime/game/book/film/photo suggestions, no provider dependency.
-- [ ] Preview with Keep Content/Duplicate Board/Replace Layout choices. Personal layouts/styles exclude private images by default. Right/bottom edge controls stay usable after every template: no layout lock-in.
-- [ ] Multi-selection, duplicate/clear/lock cells, shuffle/sort/fill-empty, board duplication/reordering, undo and keyboard/touch alternatives.
-- [ ] Memory-preflighted sequential ZIP exports using fflate instead of repeated-download prompts.
-- [ ] Versioned `.grids` project archives with permitted media/fonts/thumbnails/attribution. Restricted binaries remain explicit references/portability limits; theme/template JSON excludes private media/credentials.
+- [ ] Preview with Keep Content/Replace Layout choices for the current grid. Personal layouts/styles exclude private images by default. Right/bottom edge controls stay usable after every template: no layout lock-in or board duplication.
+- [ ] Multi-selection, duplicate/clear/lock cells, shuffle/sort/fill-empty, undo and keyboard/touch alternatives within one grid.
+- [ ] Optional memory-preflighted client-side ZIP bundles of the current grid/output/attribution using fflate, not multi-board batch export.
+- [ ] Versioned single-grid `.grids` archives with permitted media/fonts/thumbnails/attribution, generated/imported entirely client-side and never uploaded by account-settings sync. Restricted binaries remain explicit references/portability limits; theme/template JSON excludes private media/credentials.
 - [ ] Validate schema/archive paths/file counts/compressed and uncompressed sizes/pixel dimensions before workspace changes; protect against zip bombs and unsafe overwrites.
 - [ ] Image clipboard export/native share where supported, attribution sheets. Required source credits are never an optional toggle.
 
 Exit criteria: upload-only projects with custom fonts/independent crops round-trip offline in a clean browser; archives respect rights/limits; templates never trap layout or discard content accidentally.
 
-### 7. More Providers And Optional Gateway
+### 8. More Catalogs And Optional Gateway
 
-Requires explicit hosting/credential/terms/cost approval and step 5 adapter gates.
+Requires explicit hosting/credential/terms/cost approval and step 6 catalog gates. This is separate from the account-settings API.
 
-- [ ] Separate Cloudflare Worker or equivalent gateway only for protected credentials/incompatible browser access. Missing configuration/outages disable only affected catalogs.
+- [ ] Separate Cloudflare Worker or equivalent metadata gateway only for protected credentials/incompatible browser access. Missing configuration/outages disable only affected catalogs. Fetch/decode catalog images on the client from permitted source CDNs; do not add server-side image upload/storage/cache or promise support for sources requiring an image proxy.
 - [ ] Fixed provider routes/validated IDs, approved HTTPS hosts/paths, per-hop redirect validation, private/reserved target blocking, file/type/dimension/time limits, quotas/bounded caches/kill switches, independent abuse controls. No fetch-any-URL or public unaudited CORS proxy.
 - [ ] Server-side secrets/rotation; none in `VITE_*`, static assets, projects, unnecessary logs. Restrict origins without treating CORS as authentication/quota protection. Never automatically send private images to remote conversion/cropping services.
 - [ ] Add films/games/photography and further open catalogs individually through the same compatibility reports.
 
 Exit criteria: frontend remains Pages-deployable; outages degrade relevant search only; policy/credentials/costs/abuse controls are verified.
 
-### 8. Advanced Boards And Optional Cloud Features
+### 9. Later Features And Local Accounts
 
 Depends on demand; cloud scope needs separate approval.
 
 - [ ] True tier rows with labels/variable lengths/unranked tray, hero/spanning tiles, mixed/irregular collages without corrupting regular grids.
 - [ ] Brightness/contrast/saturation/grayscale and optional local background removal, subject to source rules/performance.
 - [ ] Capability-tested worker/OffscreenCanvas rendering with main-thread fallback; optional installable offline shell.
-- [ ] Separately scope sharing/accounts/sync/collaboration. Pages cannot supply their storage/auth/backend; define privacy/authentication/moderation/retention/operating costs. No arbitrary public plugin execution in the first release.
+- [ ] Local username/password accounts only after Google/Discord/Facebook and account settings are reliable. Reuse reviewed Chatter patterns for secure password storage, verification/recovery, rate limits, and account linking; this must not delay provider login.
+- [ ] Separately scope settings-only sharing/collaboration, retaining the no-image-upload/storage boundary. Define privacy/authentication/moderation/retention/operating costs. No image cloud sync or arbitrary public plugin execution in the first release.
 
 ## Implementation Contracts
 
 ### Frontend And Chatter Reuse
 
-Use React/Vite, strict TypeScript, Headless UI v2, Tailwind v4, Motion (`motion/react`), class-variance-authority/clsx, Lucide, TypeScript/Playwright. Adapt supported compatible versions and owned frontend behavior from `C:/Users/draxx/Sources/Chatter/apps/web`, not its whole manifest/stylesheet/glass palette/chat offsets/authentication/TipTap/sockets/Redis/CMS/backend. Keep adaptation/license notes. Custom CSS needs a concrete rendering/typography reason.
+Use React/Vite, strict TypeScript, Headless UI v2, Tailwind v4, Motion (`motion/react`), class-variance-authority/clsx, Lucide, TypeScript/Playwright. Adapt supported compatible versions and owned UI behavior from `C:/Users/draxx/Sources/Chatter/apps/web`; inspect its provider-auth/session/account-linking implementation when step 2 begins. Do not copy the whole manifest/stylesheet/glass palette/chat offsets/TipTap/sockets/Redis/CMS/chat backend. Reuse relevant security patterns without making the editor depend on Chatter's chat stack. Keep adaptation/license notes. Custom CSS needs a concrete rendering/typography reason.
 
 Chatter reference paths (not Grids files):
 
@@ -197,12 +225,12 @@ Keep production-subpath checks. Use the smallest behavior-scoped development che
 
 - [ ] Unit tests for composition/ratios/text/transforms, commands/IDs/migration, theme precedence, validated boundaries.
 - [ ] Owned/licensed known-pixel square/portrait/landscape fixtures, pan/zoom/rotation/flip/transparency, long/Unicode/RTL text, custom fonts, preview/export agreement.
-- [ ] Extend browser flows for section switches, crop Apply/Cancel, full undo/redo, theme/font reload, templates, archives, workers, gateway URLs and clean-browser project round-trip as features land.
+- [ ] Extend browser flows for single-grid legacy migration, guest autosave/reset, provider login/settings restoration/media exclusion/account isolation, section switches, crop Apply/Cancel, full undo/redo, theme/font reload, templates, client-side archives, workers, and gateway URLs as features land.
 - [ ] Failure tests for storage quota/corrupt files/fonts/missing media/interrupted migration, provider 429/timeouts/stale searches/CORS, archive limits.
 - [ ] Keyboard/touch alternatives, desktop/mobile overflow/screenshots, accessible crop/progress/focus, reduced motion/high contrast across supported browsers.
 - [ ] Mock provider CI traffic; tiny dated real-service smoke tests at integration/release checkpoints, never bulk crawls.
 
-Public release requires recoverable migration, shipped crop/export fidelity, reviewed distributed assets, and policy/real-origin gates for advertised providers. Restricted media/fonts stay explicit portability limits. Hosted services/accounts/sharing remain optional, not core prerequisites.
+Public release requires recoverable single-grid migration, guest autosave/reset, shipped crop/export fidelity, reviewed assets, and policy/real-origin gates for advertised catalogs. Account features additionally require secure provider sessions, user-owned settings, and verified exclusion of client media from server requests/storage. Restricted media/fonts stay explicit portability limits. Sign-in is optional for guests; local accounts and settings-only sharing are later work, and image cloud storage/sync is out of scope.
 
 ## Reference And Sources
 
