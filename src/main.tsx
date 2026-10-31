@@ -7,10 +7,12 @@ import "../styles.css";
 const cleanupScrollbar = publishScrollbarWidth();
 if (import.meta.hot) import.meta.hot.dispose(cleanupScrollbar);
 
-createRoot(document.getElementById("root")).render(
-	<LazyMotion features={domAnimation} strict>
-		<MotionConfig reducedMotion="user">
-			<App />
-		</MotionConfig>
-	</LazyMotion>,
+const root = document.getElementById("root");
+if (!root) throw new Error("The application root is missing.");
+createRoot(root).render(
+  <LazyMotion features={domAnimation} strict>
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
+  </LazyMotion>,
 );

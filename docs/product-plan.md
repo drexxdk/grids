@@ -2,7 +2,7 @@
 
 Status: implementation started. Prepared October 31, 2026. The requirements below remain the roadmap, not a claim that every feature is available.
 
-Implemented: Tailwind/Headless UI/Motion integration, incremental TypeScript checks, animated board-action menu and settings accordion, rename dialog with scrollbar takeover and touch-safe focus, persistent heading visibility shared by preview/export, and visible board deletion with session Undo and a reload-safe empty workspace. Edge resizing, general undo/redo, storage/schema redesign, and opt-in demo separation are still pending; Phase 1 is not complete.
+Implemented: strict TypeScript/TSX application sources with Node-only `.mjs` tooling; Tailwind/Headless UI/Motion controls; scrollbar-safe rename dialog; persistent heading visibility; visible board deletion with session Undo; coordinate-preserving right/bottom edge resizing with stable cell IDs, recoverable overflow, session resize Undo, and bounded canvas export. General undo/redo, versioned storage/schema redesign, and opt-in demo separation are still pending; Phases 1 and 2 are not complete.
 
 Tracking: `[x]` means implemented with the relevant focused checks passing; `[ ]` means pending or only partially implemented. Section, subsection, and phase completion boxes stay unchecked until every required item and acceptance gate in that group is complete. Table status applies to the entire row, not just one dependency or capability. Reference observations, source inventories, and research links are context, not completion claims. Conditional features remain unchecked until approved and implemented.
 
@@ -30,7 +30,7 @@ These are observed controls, not a claim that every reference-site interaction o
 ### Current Starting Point
 
 - React 19 and Vite, with a GitHub Pages workflow and repository-subpath browser tests.
-- Multiple boards, custom uploads, library placement, cell swapping, titles, and grid resizing from 1 to 6 rows/columns.
+- Multiple boards, custom uploads, library placement, cell swapping, titles, and edge resizing from 1 to 12 rows/columns, with stable cell IDs and recoverable removed cells.
 - Fit/fill, background and gap controls, three bundled display fonts, and comic publisher palettes.
 - PNG/JPEG/WebP canvas exports and browser-local persistence.
 - Demo content is mixed with runtime fonts and unused files in the public asset directory.
@@ -94,7 +94,8 @@ This is a target ownership map, not a requirement to create every directory befo
 - [ ] Demo packs load only after selection; importing one must not overwrite existing boards.
 - [ ] Move the current comic content into one optional example pack. Review distribution rights before continuing to publish it; substituting owned/licensed examples is preferable when rights are unclear.
 - [ ] Keep licenses with clearly identified assets. Font licensing and image licensing are separate.
-- [ ] Remove the unused global Lucide bundle and unused logos after checking references. Continue using the installed React icon package.
+- [x] Remove the unused global Lucide JavaScript bundle; continue using the installed React icon package.
+- [ ] Remove unused logos after checking references and demo redistribution decisions.
 - [ ] Move test-only samples out of public builds. Do not make release tests depend on copyrighted demo content.
 - [ ] Migrate saved relative image paths when demo assets move; keep asset IDs and titles intact. Existing DC/Marvel boards become legacy style presets, not a runtime content taxonomy.
 - [x] Empty board lists and empty libraries are valid saved workspaces; loading them does not reset to the demo. Media-removal UI remains tracked under library management.
@@ -120,10 +121,12 @@ Changing one must not silently change the others. Portrait cells do not automati
 
 - [ ] **Subsection Complete**
 
-- [ ] No grid-size preset selector. Place plus/minus icon buttons on the right edge to add/remove a column and on the bottom edge to add/remove a row. Each action changes that dimension by one; controls remain available after applying any template.
-- [ ] Show columns x rows consistently. Keep edge controls outside the composition, visible and reachable on desktop/mobile, with stable sizing, accessible names, tooltips, and keyboard activation. They never appear in exports.
-- [ ] Add/remove the trailing column or row without rearranging unaffected cells. Preserve stable cell IDs, selection where possible, and recoverable removed placements; resizing is undoable.
-- [ ] Minimum one row and one column; proposed initial ceiling 12 in each direction, subject to a 144-visible-cell cap and rendering-budget checks. Disable only the relevant action at a limit and explain why; limits are capacity safeguards, not fixed layout choices.
+- [x] No grid-size preset selector. Right-edge plus/minus buttons add/remove one column; bottom-edge buttons add/remove one row.
+- [ ] Keep edge controls available after applying future templates; template integration is not implemented yet.
+- [x] Show columns x rows consistently. Keep 44px edge controls outside the composition, reachable on desktop/mobile, with accessible names, tooltips, and keyboard activation. They never appear in exports.
+- [x] Add/remove trailing rows/columns without rearranging unaffected cells; preserve stable IDs, selection, and removed placements. Session Undo restores dimensions without overwriting newer cell edits.
+- [x] Enforce one to twelve rows/columns and a 144-visible-cell cap. Disable the relevant action at a limit and explain the limit in its tooltip.
+- [ ] Validate grid/rendering budgets on representative devices; current caps are initial safeguards, not a guarantee of every device's capacity.
 - [ ] Image ratio presets: 1:1, 2:3, 3:4, 4:5, 3:2, 4:3, 16:9, and 9:16, plus a validated custom ratio.
 - [ ] Uniform image ratio per board in the first release. Mixed-ratio or spanning tiles are a later layout mode, not a hidden override that breaks regular grids.
 - [ ] Separate horizontal/vertical gaps, outer padding, border width/color, optional rounded image corners, and header/caption sizing.
@@ -133,7 +136,8 @@ Changing one must not silently change the others. Portrait cells do not automati
 - [ ] Persist the other section visibility settings independently and include all visibility switches in general undo/redo.
 - [ ] Numbering order: row-first or column-first; optionally omit numbering from exports.
 - [ ] Reorder/swap, duplicate, clear, lock, and select multiple cells. Keyboard and touch alternatives to drag-and-drop are required.
-- [ ] Shrinking a grid retains overflow cells in a recoverable tray; increasing it restores them. Confirm irreversible deletion separately.
+- [x] Shrinking a grid saves removed cells by coordinate; increasing it restores them, including across reloads. A removed-cell tray can swap content with the selected visible cell without discarding the displaced content.
+- [ ] Add irreversible cell deletion only with a separate deliberate confirmation/history policy; no permanent-delete command exists yet.
 - [ ] Ratio changes preserve originals and focal points; adapt crops without stretching or destructively rewriting images.
 
 ### Template System
@@ -335,11 +339,13 @@ Use mocked fixtures in routine tests; perform small real-provider smoke checks s
 | [ ]    | Theme     | Stable ID/version, validated tokens, named preset/custom definition                                         |
 | [ ]    | Template  | Stable ID/version, slot labels/layout and default style references                                          |
 
-- [ ] Stable selected-cell and board IDs replace fragile array-index identity for async imports and layout changes.
-- [ ] Async import captures destination board/cell ID and resolves against the latest document; deleted/resized destinations do not receive misplaced assets.
+- [x] Stable cell IDs drive selection, React keys, placement, clearing, swaps, and layout changes; legacy cells receive IDs without losing visible positions or hidden content.
+- [ ] Replace the workspace's active-board index with an active-board ID as part of the versioned document schema.
+- [x] Async imports capture destination board/cell IDs and resolve against current visible cells; a resized-away or deleted target does not receive misplaced assets, while imported media remains in the library.
 - [x] Keep current selection, open panels/dialogs, export progress, and deletion Undo history separate from saved document state.
 - [ ] Keep future crop drafts and provider requests/results out of saved document state.
-- [ ] Start with typed TypeScript domain/render/provider modules and Zod boundary validation; convert UI files incrementally rather than mandating a big rewrite first.
+- [x] Strictly type current application, document/media interfaces, canvas renderer, and UI/browser modules; no authored `.js`/`.jsx` sources remain.
+- [ ] Add typed provider modules and Zod boundary validation with the versioned storage/provider work.
 - [ ] Central document commands/reducer for placement, edits, layout changes, and bulk actions. Reuse React first; add a dedicated state library only if interaction/subscription needs justify it.
 - [ ] Undo/redo covers text, crops, layout, templates, board deletion, and batch operations. Coalesce typing and slider drags; one Apply or bulk action is one history entry.
 - [ ] History references media IDs and small document patches, not repeated copies of full image binaries. Keep deleted media recoverable while referenced by history/trash.
@@ -385,7 +391,8 @@ Deletion Undo is available for the current session. General redo, durable histor
 - [ ] Export controls support final width/height or scale, common social sizes, quality, filename, and optional labels/credits. Do not stretch the composed grid to force a final ratio; use padding or a reviewed layout adjustment.
 - [ ] Preflight all images/fonts/policies before drawing. Report the exact missing or nonexportable placements; offer replacement, retry, or an explicit placeholder export, never silent omission.
 - [ ] Show output dimensions, likely file-size range when estimable, and effective image resolution/upscaling warnings.
-- [ ] Bound output megapixels and simultaneous decoded images. Proposed starting budgets: 16 MP mobile and 32 MP desktop, subject to browser/device probes and refinement; these are ceilings to validate, not universal capacity guarantees.
+- [x] Reject canvas allocations above initial 16 MP narrow/touch and 32 MP desktop budgets; offer 150/300 px per-image resolutions for larger grids. Validate actual downloaded dimensions after lower-resolution recovery.
+- [ ] Bound source-image decoding/concurrency and validate these initial budgets on representative devices; canvas caps alone are not a universal memory guarantee.
 - [ ] Decoded canvas memory is roughly four bytes per pixel before image buffers, rotated intermediates, thumbnails, and encoding. Grid count alone is not a safe memory limit.
 - [ ] Export one board at a time; stream/batch media decoding where practical. Add worker rendering with OffscreenCanvas only after capability testing, with a main-thread fallback.
 - [ ] Progress/cancel and smaller-resolution recovery. Do not promise unlimited-resolution output on mobile browsers.
@@ -424,18 +431,18 @@ Deletion Undo is available for the current session. General redo, durable histor
 
 Use `C:/Users/draxx/Sources/Chatter/apps/web` as the implementation reference, not merely as visual inspiration. Its frontend files were inspected for this plan. Copy/adapt the relevant owned code and behavior rather than re-solving known modal, scrollbar, focus, and popup problems.
 
-| Status | Layer                     | Choice                                        | Reuse boundary                                                                                                          |
-| ------ | ------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [x]    | UI framework              | React/Vite with incremental TypeScript checks | Keep this app independently deployable; existing JavaScript is not yet strictly checked                                 |
-| [ ]    | Accessible primitives     | `@headlessui/react` v2                        | Dialog, menu, listbox/combobox, Disclosure accordions, tabs, and switches; Motion owns animations                       |
-| [x]    | Styling                   | Tailwind CSS v4 with `@tailwindcss/vite`      | Integrated for new controls with editor tokens; remaining stylesheet migration is tracked above                         |
-| [ ]    | Animation                 | `motion`, imported from `motion/react`        | Dropdowns, accordions, modals/sheets, switches, and view transitions via shared primitives; reduced motion is mandatory |
-| [ ]    | Component variants        | `class-variance-authority` and `clsx`         | Consistent buttons, inputs, tool states, and surfaces                                                                   |
-| [x]    | Icons                     | `lucide-react`                                | Reuse the current icon library; new icon commands have accessible names and title tooltips                              |
-| [ ]    | Notifications             | `sonner` when the notification layer is built | Save/import/export feedback; do not replace inline actionable errors with disappearing toasts                           |
-| [x]    | Build/browser checks      | TypeScript and Playwright                     | Typed UI/browser builds and focused production-subpath regressions                                                      |
-| [ ]    | Remaining quality tooling | ESLint, Prettier, Vitest, Testing Library     | Adapt frontend-only lint/format/unit-test configuration                                                                 |
-| [ ]    | Conditional additions     | Floating UI and TanStack Virtual              | Only when advanced anchored popups or large catalog libraries need them                                                 |
+| Status | Layer                     | Choice                                                   | Reuse boundary                                                                                                          |
+| ------ | ------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [x]    | UI framework              | React/Vite with strict TypeScript/TSX application checks | All application modules are checked; directly executed Node tooling uses `.mjs`                                         |
+| [ ]    | Accessible primitives     | `@headlessui/react` v2                                   | Dialog, menu, listbox/combobox, Disclosure accordions, tabs, and switches; Motion owns animations                       |
+| [x]    | Styling                   | Tailwind CSS v4 with `@tailwindcss/vite`                 | Integrated for new controls with editor tokens; remaining stylesheet migration is tracked above                         |
+| [ ]    | Animation                 | `motion`, imported from `motion/react`                   | Dropdowns, accordions, modals/sheets, switches, and view transitions via shared primitives; reduced motion is mandatory |
+| [ ]    | Component variants        | `class-variance-authority` and `clsx`                    | Consistent buttons, inputs, tool states, and surfaces                                                                   |
+| [x]    | Icons                     | `lucide-react`                                           | Reuse the current icon library; new icon commands have accessible names and title tooltips                              |
+| [ ]    | Notifications             | `sonner` when the notification layer is built            | Save/import/export feedback; do not replace inline actionable errors with disappearing toasts                           |
+| [x]    | Build/browser checks      | TypeScript and Playwright                                | Typed UI/browser builds and focused production-subpath regressions                                                      |
+| [ ]    | Remaining quality tooling | ESLint, Prettier, Vitest, Testing Library                | Adapt frontend-only lint/format/unit-test configuration                                                                 |
+| [ ]    | Conditional additions     | Floating UI and TanStack Virtual                         | Only when advanced anchored popups or large catalog libraries need them                                                 |
 
 Select compatible supported package versions at installation time, using Chatter's working setup as guidance rather than copying its entire dependency manifest. Its chat-specific packages, server checks, authentication, TipTap, sockets, Redis, CMS, and deployment scripts are not prerequisites here. Localization can reuse its i18next/ICU approach when introduced, but is not required just to render a modal.
 
@@ -523,11 +530,13 @@ Chatter's modal currently uses Headless UI/CSS transitions for entry/exit and th
 
 - [ ] **Phase Complete**
 
-- [x] Integrate Headless UI, Tailwind, Motion, component variants, and incremental TypeScript build checks.
+- [x] Integrate Headless UI, Tailwind, Motion, component variants, and strict TypeScript application build checks.
+- [x] Use `.ts`/`.tsx` for application source and `.mjs` only for directly executed Node tooling; disable JavaScript application sources in the compiler. Generated deployment bundles are exempt.
 - [x] Extract shared animated dropdown/menu, accordion, switch, and modal primitives with focused scroll/focus regression coverage.
 - [ ] Complete the remaining UI primitive acceptance matrix and frontend quality tooling.
 - [x] Start incremental module separation with reusable UI/browser modules.
-- [ ] Establish versioned domain types and stable board/cell selection IDs.
+- [x] Add typed document/media interfaces, stable cell IDs, ID-based cell selection, and legacy-cell normalization.
+- [ ] Establish the versioned document schema and replace active-board indexes with IDs.
 - [ ] Separate editor/library/domain ownership as the foundation expands.
 - [ ] Move media storage to IndexedDB with validated, idempotent legacy migration.
 - [ ] Separate example packs and introduce neutral opt-in demo defaults.
@@ -545,13 +554,14 @@ Dependencies: Phase 0 schema/storage decisions.
 - [ ] **Phase Complete**
 
 - [ ] Introduce shared geometry/composition for DOM preview and canvas export.
-- [ ] Add right-edge column and bottom-edge row add/remove controls, without grid-size presets.
-- [ ] Preserve stable cell IDs/coordinates, recoverable overflow, and undo through resizing.
+- [x] Add right-edge column and bottom-edge row add/remove controls, without grid-size presets.
+- [x] Preserve stable cell IDs/coordinates, recoverable overflow, and session Undo through resizing.
 - [ ] Add cell aspect ratios and custom ratio validation.
 - [ ] Add independent padding/gaps/borders and section geometry.
 - [x] Add persistent heading visibility with preview/export parity and retained text/settings.
 - [ ] Add caption/footer/other section switches and integrate visibility with general undo/redo.
-- [ ] Add export resolution/memory preflight.
+- [x] Add bounded canvas-allocation preflight and lower-resolution export options.
+- [ ] Add source-image decoding/concurrency preflight and device performance validation.
 
 Dependencies: stable cell IDs and new schema from Phase 1.
 
@@ -647,6 +657,7 @@ Recommended first implementation package: Phases 1 and 2, with the small Phase 0
 
 - [x] Preserve current production-subpath upload/placement, heading/font migration, and real PNG/JPEG/WebP export regressions.
 - [x] Add focused animated UI/modal/touch-focus regressions and board deletion/Undo/empty-workspace persistence coverage.
+- [x] Add edge-control/coordinate/selection/overflow/resize-Undo regressions, in-flight upload targeting checks, and large-grid export limit/recovery tests.
 - [ ] Unit coverage for layout rectangles, ratio conversion, text sizing, transforms, ID-based commands, migration, and theme precedence.
 - [ ] Crop/export fixtures with known pixels: square/portrait/landscape, pan/zoom/rotate/flip, transparent images, long text, and custom fonts.
 - [ ] Browser flows for upload, right/bottom edge resizing and overflow recovery, active/last-board deletion and undo, heading/section switches with text retention and export parity, crop apply/cancel, undo/redo, themes, font reload, templates, project round-trip, and downloads.

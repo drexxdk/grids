@@ -76,11 +76,9 @@ test("image placement, title editing, grid sizing, and image exports", async ({
     "A larger heading",
   );
 
-  await page.locator("#rows").fill("3");
-  await page.locator("#rows").press("Tab");
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
   await expect(page.locator(".grid-cell")).toHaveCount(6);
-  await page.locator("#columns").fill("3");
-  await page.locator("#columns").press("Tab");
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
   await expect(page.locator(".grid-cell")).toHaveCount(9);
   await page.locator(".cell-image-button").nth(8).click();
   await page
@@ -585,4 +583,185 @@ test("board deletion restores edits and the last-board empty state survives relo
   await expect(page.locator(".grid-cell")).toHaveCount(4);
   await expect(page.locator(".grid-cell img")).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test("edge resizing preserves coordinates, selection, overflow and newer edits", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const savedCells = () =>
+    page.evaluate(
+      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0].cells,
+    );
+  const original = await savedCells();
+  await page.locator(".cell-image-button").nth(2).click();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await expect(page.locator(".grid-cell")).toHaveCount(6);
+  await expect(page.locator("#cell-number")).toHaveText("04");
+  expect((await savedCells())[3].id).toBe(original[2].id);
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.locator("#cell-title").fill("Edit after resizing");
+  await page.getByRole("button", { name: "Undo grid resize" }).click();
+  await expect(page.locator("#rows")).toHaveText("2");
+  await expect(page.locator("#cell-title")).toHaveValue("Edit after resizing");
+  await page
+    .getByRole("button", { name: "Remove column", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Remove column", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Remove column", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("region", { name: "Removed cells", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  const restored = await savedCells();
+  expect(restored.map((cell) => cell.id)).toEqual(
+    original.map((cell) => cell.id),
+  );
+  expect(restored[2].title).toBe("Edit after resizing");
+  await page.getByRole("button", { name: "Remove row", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove row", exact: true }),
+  ).toBeDisabled();
+  await page.locator(".cell-image-button").first().click();
+  await page
+    .getByRole("button", {
+      name: "Swap with selected cell: Edit after resizing",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Edit after resizing",
+  );
+  await expect(
+    page.getByRole("button", {
+      name: `Swap with selected cell: ${original[0].title}`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.screenshot({
+    path: testInfo.outputPath("edge-controls-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: testInfo.outputPath("edge-controls-mobile.png"),
+    fullPage: true,
+  });
+  const geometry = await page.evaluate(() => {
+    const grid = document.querySelector("#board-grid").getBoundingClientRect();
+    const columns = document
+      .querySelector('[aria-label="Column controls"]')
+      .getBoundingClientRect();
+    const rows = document
+      .querySelector('[aria-label="Row controls"]')
+      .getBoundingClientRect();
+    return {
+      right: columns.left >= grid.right,
+      bottom: rows.top >= grid.bottom,
+      overflow: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+  expect(geometry).toEqual({ right: true, bottom: true, overflow: false });
+});
+
+test("uploads follow stable cells through resize and large exports are bounded", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.evaluate(() => {
+    window.pendingImageDecodes = [];
+    const original = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      const decoded = original.call(this);
+      return this.src.startsWith("data:")
+        ? decoded.then(
+            () =>
+              new Promise((resolve) =>
+                window.pendingImageDecodes.push(resolve),
+              ),
+          )
+        : decoded;
+    };
+  });
+  await page.locator(".cell-image-button").nth(2).click();
+  await page
+    .locator("#replace-upload")
+    .setInputFiles(path.join(projectRoot, "public/assets/DC - Kite Man.jpg"));
+  await expect
+    .poll(() => page.evaluate(() => window.pendingImageDecodes.length))
+    .toBe(1);
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await page.evaluate(() =>
+    window.pendingImageDecodes.splice(0).forEach((resolve) => resolve()),
+  );
+  await expect(page.locator(".cell-heading").nth(3)).toHaveValue(
+    "DC   Kite Man",
+  );
+  await expect(page.locator(".cell-heading").nth(2)).toHaveValue("");
+  await page.locator(".cell-image-button").nth(2).click();
+  await page
+    .locator("#replace-upload")
+    .setInputFiles(
+      path.join(projectRoot, "public/assets/Marvel - Eye-Boy.jpg"),
+    );
+  await expect
+    .poll(() => page.evaluate(() => window.pendingImageDecodes.length))
+    .toBe(1);
+  await page
+    .getByRole("button", { name: "Remove column", exact: true })
+    .click();
+  await page.evaluate(() =>
+    window.pendingImageDecodes.splice(0).forEach((resolve) => resolve()),
+  );
+  await expect(page.locator(".asset")).toHaveCount(10);
+  expect(
+    await page
+      .locator(".cell-heading")
+      .evaluateAll((cells) => cells.some((cell) => cell.value.includes("Eye"))),
+  ).toBe(false);
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem("gridroom-v1"));
+    const board = saved.boards[0];
+    board.rows = 12;
+    board.columns = 12;
+    board.heading = "";
+    board.overflow = [];
+    board.cells = Array.from({ length: 144 }, () => ({
+      id: crypto.randomUUID(),
+      assetId: null,
+      title: "",
+      fit: "contain",
+    }));
+    localStorage.setItem("gridroom-v1", JSON.stringify(saved));
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Add row", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Add column", exact: true }),
+  ).toBeDisabled();
+  await page.locator("#resolution").selectOption("600");
+  await page.getByRole("button", { name: "Export board", exact: true }).click();
+  await expect(page.locator("#toast")).toContainText(
+    "Export exceeds the 32 MP limit",
+  );
+  await page.locator("#resolution").selectOption("150");
+  const download = await downloadBoard(page);
+  const bytes = [...(await readFile(await download.path()))];
+  const size = await page.evaluate(async (bytes) => {
+    const bitmap = await createImageBitmap(
+      new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+    );
+    const result = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return result;
+  }, bytes);
+  expect(size).toEqual({ width: 1839, height: 2151 });
 });

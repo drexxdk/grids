@@ -24,13 +24,13 @@ The production site is generated in `dist/`. Preview normally runs at http://loc
 
 ## Frontend Foundation
 
-New controls use Headless UI for accessible interactions, Motion for animation, and Tailwind CSS v4 for styling. Tailwind uses the `tw:` prefix without Preflight while existing canvas styles are migrated incrementally. Typed UI/browser modules are checked during every production build; run `npm run typecheck` separately when needed. Existing JavaScript modules are not yet strictly typechecked.
+Controls use Headless UI for accessible interactions, Motion for animation, and Tailwind CSS v4 for styling. Tailwind uses the `tw:` prefix without Preflight while existing canvas styles are migrated incrementally. All application modules use TypeScript/TSX and are strictly checked during every production build; run `npm run typecheck` separately when needed. Directly executed Node configs and browser-test scripts use `.mjs`. Do not add authored `.js` or `.jsx` files; Vite's generated JavaScript bundles are build output, not application source.
 
 The board-action menu offers Rename board and Download image. Board settings expand/collapse, and the Show heading switch hides the exported heading without erasing its text or styling. The rename dialog scrolls at the viewport edge and keeps the background locked through its exit animation. Touch devices focus a non-input control rather than opening the keyboard automatically.
 
 The modal structure and scrollbar-compensation pattern were adapted from the user's Chatter frontend (`apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, and the portal-dialog rules in `apps/web/src/index.css`). Gridroom uses Motion instead of Chatter's CSS/Web Animations transitions, adds listener/probe cleanup and post-dialog measurements, and keeps its own editor styling and deployment. No Chatter backend code is included.
 
-The broader roadmap and feature/section completion checklists are in [docs/product-plan.md](docs/product-plan.md). Edge row/column controls, general undo/redo, IndexedDB migration, and opt-in demo packs are not implemented yet.
+The broader roadmap and feature/section completion checklists are in [docs/product-plan.md](docs/product-plan.md). General undo/redo, IndexedDB migration, image ratios, and opt-in demo packs are not implemented yet.
 
 ## Deploy To GitHub Pages
 
@@ -44,19 +44,20 @@ No API keys or application secrets are needed. Saved boards belong to each brows
 
 ## Project Structure
 
-- `src/App.jsx`: React editor UI, controls, and import/download interactions.
-- `src/model.js`: workspace defaults and migration of saved boards.
-- `src/export.js`: canvas sizing, image rendering, and export generation.
+- [src/App.tsx](src/App.tsx): typed React editor UI, controls, and import/download interactions.
+- [src/model.ts](src/model.ts): document types, workspace defaults, and saved-board migration.
+- [src/export.ts](src/export.ts): typed canvas sizing, image rendering, and export generation.
 - `src/components/ui/`: typed Headless UI/Motion buttons, switches, accordion, action menu, and modal.
 - `src/browser/scrollbar.ts`: scrollbar measurement and dialog lifecycle compensation support.
 - `styles.css`: existing responsive canvas/editor styling and incremental Tailwind utilities.
 - `public/assets/`: local fonts, images, and redistribution notices.
-- `tests/editor.spec.js`: production-build browser regression checks.
+- [tests/editor.spec.mjs](tests/editor.spec.mjs): Node-side production-build browser regression checks.
+- [vite.config.mjs](vite.config.mjs) and [playwright.config.mjs](playwright.config.mjs): directly executed ESM tooling configuration.
 - `.github/workflows/deploy.yml`: test and GitHub Pages deployment workflow.
 
 ## Editing And Export
 
-- Set rows and columns independently for each board, from 1 to 6.
+- Add/remove columns with right-edge plus/minus buttons and rows with bottom-edge buttons, from 1 to 12 in each direction. Existing cells stay at their coordinates, and removed cells are saved across reloads. Expanding restores them; the removed-cell tray can swap content with the selected cell. Undo grid resize restores prior dimensions during the current session without overwriting newer edits.
 - Delete the active board with the trash button beside board navigation. Undo restores deleted boards during the current session without overwriting changes to surviving boards. Deleting the last board leaves an empty workspace that survives reload; the image library and uploads remain available, and Add Board resumes editing. Reload clears session Undo history, not the saved workspace.
 - Drag a library image or an image file into a cell. Clicking a library image places it in the selected cell, including on touch devices.
 - Drag filled cells to swap them. Edit headings on the board or in the selected-cell panel.
@@ -67,7 +68,7 @@ No API keys or application secrets are needed. Saved boards belong to each brows
 - Export the active board or all boards as PNG, JPEG, or WebP. Allow multiple downloads when exporting all boards.
 - Exports include the optional image heading, images, and character headings, not editor controls or the board's workspace name.
 
-The default comic pairing is Bangers for the image heading and Boogaloo for character headings, with 0.5px letter spacing. All fonts are bundled locally. Fonts, icons, and original images stay local; no third-party service receives uploads. Boards are saved in this browser's local storage. Large imported images may exceed the browser storage limit; the app will report this and exports remain available for that session. Reducing the grid temporarily hides extra cells without deleting them.
+The default comic pairing is Bangers for the image heading and Boogaloo for character headings, with 0.5px letter spacing. All fonts are bundled locally. Fonts, icons, and original images stay local; no third-party service receives uploads. Boards are saved in this browser's local storage. Large imported images may exceed the browser storage limit; the app will report this and exports remain available for that session. Canvas exports are capped at 16 MP on narrow/touch layouts and 32 MP otherwise; choose 150/300 px per image for larger grids. These are initial allocation safeguards, not a guarantee against every device's memory limits.
 
 ## Check
 

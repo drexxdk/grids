@@ -1,6 +1,6 @@
-import { publishers } from "./model";
+import { publishers, type Asset, type Board, type ImageFormat } from "./model";
 
-export function dimensions(item, size) {
+export function dimensions(item: Board, size: number) {
   const gap = Math.round((item.gap * size) / 600);
   const titleHeight = Math.round(size * 0.17);
   const headingHeight =
@@ -16,13 +16,17 @@ export function dimensions(item, size) {
       headingHeight + item.rows * (size + titleHeight) + (item.rows + 1) * gap,
   };
 }
-export async function loadImage(src) {
+export async function loadImage(src: string) {
   const image = new Image();
   image.src = src;
   await image.decode();
   return image;
 }
-function wrapTitle(context, title, maxWidth) {
+function wrapTitle(
+  context: CanvasRenderingContext2D,
+  title: string,
+  maxWidth: number,
+) {
   const lines = [];
   for (const paragraph of title.toUpperCase().split("\n")) {
     let line = "";
@@ -37,7 +41,14 @@ function wrapTitle(context, title, maxWidth) {
   }
   return lines;
 }
-export function fitTitle(context, title, font, maximumSize, width, height) {
+export function fitTitle(
+  context: CanvasRenderingContext2D,
+  title: string,
+  font: string,
+  maximumSize: number,
+  width: number,
+  height: number,
+) {
   let fontSize = Math.max(1, Math.round(maximumSize));
   let lines;
   do {
@@ -53,15 +64,15 @@ export function fitTitle(context, title, font, maximumSize, width, height) {
   return { fontSize, lines };
 }
 function drawTitle(
-  context,
-  title,
-  font,
-  maximumSize,
-  left,
-  top,
-  width,
-  height,
-  color,
+  context: CanvasRenderingContext2D,
+  title: string,
+  font: string,
+  maximumSize: number,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  color: string,
 ) {
   context.letterSpacing = "0.5px";
   const { fontSize, lines } = fitTitle(
@@ -84,7 +95,14 @@ function drawTitle(
     ),
   );
 }
-export async function createExport(item, assets, size, mime, quality = 0.95) {
+export async function createExport(
+  item: Board,
+  assets: Asset[],
+  size: number,
+  mime: ImageFormat,
+  quality = 0.95,
+  maximumPixels = 32_000_000,
+): Promise<Blob> {
   for (const font of new Set([item.headingFont, item.cellFont])) {
     await document.fonts.load(`48px "${font}"`);
     if (!document.fonts.check(`48px "${font}"`))
@@ -94,6 +112,17 @@ export async function createExport(item, assets, size, mime, quality = 0.95) {
     item,
     size,
   );
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width < 1 ||
+    height < 1
+  )
+    throw new Error("Invalid export dimensions.");
+  if (width * height > maximumPixels)
+    throw new Error(
+      `Export exceeds the ${maximumPixels / 1_000_000} MP limit. Choose a smaller resolution.`,
+    );
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -170,7 +199,7 @@ export async function createExport(item, assets, size, mime, quality = 0.95) {
       "#f4f4ef",
     );
   });
-  const blob = await new Promise((resolve) =>
+  const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, mime, quality),
   );
   if (!blob) throw new Error("Export failed. Try a smaller resolution.");

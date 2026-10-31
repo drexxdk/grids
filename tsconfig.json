@@ -5,8 +5,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "allowJs": true,
-    "checkJs": false,
+    "allowJs": false,
+    "types": ["vite/client"],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true

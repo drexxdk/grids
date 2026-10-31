@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type DragEvent,
+} from "react";
 import {
   PanelsTopLeft,
   Download,
@@ -19,28 +27,38 @@ import {
   Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
+import { GridResizer, RemovedCells } from "./components/GridResizer";
 import {
   fontOptions,
+  gridLimit,
   loadWorkspace,
   makeBoard,
   makeCell,
   publishers,
   removeBoard,
   restoreBoard,
+  resizeBoard,
   storageKey,
+  type Asset,
+  type Board,
+  type Cell,
+  type ImageFormat,
+  type OverflowCell,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
 
-function BoardHeading({ board }) {
-  const headingRef = useRef(null);
+function BoardHeading({ board }: { board: Board }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     const heading = headingRef.current;
+    if (!heading || !heading.parentElement) return;
     let cancelled = false;
     const fit = () => {
       if (cancelled || heading.hidden) return;
       const context = document.createElement("canvas").getContext("2d");
+      if (!context || !heading.firstElementChild) return;
       context.letterSpacing = "0.5px";
-      heading.style.fontSize = `${fitTitle(context, board.heading, board.headingFont, (heading.clientHeight * 0.18) / 0.28, heading.firstChild.clientWidth * 0.92, heading.clientHeight * 0.82).fontSize}px`;
+      heading.style.fontSize = `${fitTitle(context, board.heading, board.headingFont, (heading.clientHeight * 0.18) / 0.28, heading.firstElementChild.clientWidth * 0.92, heading.clientHeight * 0.82).fontSize}px`;
     };
     const observer = new ResizeObserver(fit);
     observer.observe(heading.parentElement);
@@ -65,23 +83,38 @@ function BoardHeading({ board }) {
 
 export default function App() {
   const [workspace, setWorkspace] = useState(loadWorkspace);
-  const [selectedCell, setSelectedCell] = useState(0);
+  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [toast, setToast] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved locally");
-  const [format, setFormat] = useState("image/png");
+  const [format, setFormat] = useState<ImageFormat>("image/png");
   const [resolution, setResolution] = useState(1200);
   const [quality, setQuality] = useState(95);
   const [exporting, setExporting] = useState(false);
-  const replaceUpload = useRef(null);
-  const boardActions = useRef(null);
-  const renameInput = useRef(null);
-  const [renaming, setRenaming] = useState(null);
+  const replaceUpload = useRef<HTMLInputElement>(null);
+  const boardActions = useRef<HTMLButtonElement>(null);
+  const renameInput = useRef<HTMLInputElement>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [deletedBoards, setDeletedBoards] = useState([]);
-  const addBoardButton = useRef(null);
-  const board = workspace.boards[workspace.active];
-  const cell = board?.cells[selectedCell];
+  const [deletedBoards, setDeletedBoards] = useState<
+    { board: Board; position: number; selectedCellId: string }[]
+  >([]);
+  const [resizeHistory, setResizeHistory] = useState<
+    { boardId: string; rows: number; columns: number; selectedCellId: string }[]
+  >([]);
+  const addBoardButton = useRef<HTMLButtonElement>(null);
+  const board = workspace.boards.at(workspace.active);
+  const selectedCell = Math.max(
+    0,
+    board?.cells.findIndex((item) => item.id === selectedCellId) ?? 0,
+  );
+  const setSelectedCell = (index: number) =>
+    setSelectedCellId(board?.cells[index]?.id ?? null);
+  const cell = board?.cells[selectedCell] ?? makeCell();
+  const resizeUndo = resizeHistory
+    .slice()
+    .reverse()
+    .find((entry) => entry.boardId === board?.id);
   const palette = board ? publishers[board.publisher] : publishers.none;
   const size = board ? dimensions(board, resolution) : null;
   useEffect(() => {
@@ -100,60 +133,97 @@ export default function App() {
     const timer = setTimeout(() => setToast(""), 4500);
     return () => clearTimeout(timer);
   }, [toast]);
-  const updateBoard = (update) =>
+  const updateBoard = (update: (board: Board) => Board) =>
     setWorkspace((current) => ({
       ...current,
       boards: current.boards.map((item) =>
         item.id === board?.id ? update(item) : item,
       ),
     }));
-  const patchBoard = (patch) => updateBoard((item) => ({ ...item, ...patch }));
-  const patchCell = (patch) =>
+  const patchBoard = (patch: Partial<Board>) =>
+    updateBoard((item) => ({ ...item, ...patch }));
+  const patchCell = (patch: Partial<Cell>) =>
     updateBoard((item) => ({
       ...item,
       cells: item.cells.map((entry, index) =>
-        index === selectedCell ? { ...entry, ...patch } : entry,
+        entry.id === cell.id ? { ...entry, ...patch, id: entry.id } : entry,
       ),
     }));
-  const placeAsset = (id, index) => {
+  const placeAsset = (id: string, index: number) => {
     if (!board) return;
     const asset = workspace.assets.find((asset) => asset.id === id);
     if (!asset) return;
     updateBoard((item) => ({
       ...item,
       cells: item.cells.map((entry, position) =>
-        position === index ? makeCell(asset) : entry,
+        position === index ? { ...makeCell(asset), id: entry.id } : entry,
       ),
     }));
     setSelectedCell(index);
   };
-  const resize = (key, input) => {
-    const value = Math.max(1, Math.min(6, Math.round(Number(input) || 1)));
-    const count =
-      (key === "rows" ? value : board.rows) *
-      (key === "columns" ? value : board.columns);
+  const resize = (key: "rows" | "columns", input: number) => {
+    if (!board) return;
+    const value = Math.max(1, Math.min(gridLimit, Math.round(input) || 1));
+    if (value === board[key]) return;
+    const rows = key === "rows" ? value : board.rows;
+    const columns = key === "columns" ? value : board.columns;
+    setResizeHistory((current) => [
+      ...current,
+      {
+        boardId: board.id,
+        rows: board.rows,
+        columns: board.columns,
+        selectedCellId: cell.id,
+      },
+    ]);
+    updateBoard((item) => resizeBoard(item, rows, columns));
+    const row = Math.min(Math.floor(selectedCell / board.columns), rows - 1);
+    const column = Math.min(selectedCell % board.columns, columns - 1);
+    setSelectedCellId(board.cells[row * board.columns + column].id);
+  };
+  const undoResize = () => {
+    if (!resizeUndo) return;
+    updateBoard((item) =>
+      resizeBoard(item, resizeUndo.rows, resizeUndo.columns),
+    );
+    setResizeHistory((current) =>
+      current.filter((entry) => entry !== resizeUndo),
+    );
+    setSelectedCellId(resizeUndo.selectedCellId);
+  };
+  const recoverCell = (entry: OverflowCell) => {
     updateBoard((item) => ({
       ...item,
-      [key]: value,
-      cells: Array.from(
-        { length: Math.max(count, item.cells.length) },
-        (_, index) => item.cells[index] || makeCell(),
+      cells: item.cells.map((target) =>
+        target.id === cell.id ? { ...entry.cell, id: target.id } : target,
+      ),
+      overflow: item.overflow.map((archived) =>
+        archived.cell.id === entry.cell.id
+          ? { ...archived, cell: { ...cell, id: archived.cell.id } }
+          : archived,
       ),
     }));
-    setSelectedCell((current) => Math.min(current, count - 1));
   };
-  const importFiles = async (files, targetIndex = null) => {
+  const importFiles = async (
+    files: FileList | null,
+    targetIndex: number | null = null,
+  ) => {
     const targetId = board?.id;
-    const assets = [];
-    for (const file of Array.from(files)) {
+    const targetCellId =
+      targetIndex === null ? null : board?.cells[targetIndex]?.id;
+    const assets: Asset[] = [];
+    for (const file of Array.from(files ?? [])) {
       if (!file.type.startsWith("image/")) {
         setToast(`${file.name} is not an image.`);
         continue;
       }
       try {
-        const src = await new Promise((resolve, reject) => {
+        const src = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
+          reader.onload = () =>
+            typeof reader.result === "string"
+              ? resolve(reader.result)
+              : reject(new Error("The image could not be read."));
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
@@ -173,22 +243,26 @@ export default function App() {
     setWorkspace((current) => ({
       ...current,
       assets: [...current.assets, ...assets],
-      boards: current.boards.map((item) =>
-        item.id !== targetId || targetIndex === null
-          ? item
-          : {
-              ...item,
-              cells: item.cells.map((entry, index) =>
-                index < item.rows * item.columns && assets[index - targetIndex]
-                  ? makeCell(assets[index - targetIndex])
-                  : entry,
-              ),
-            },
-      ),
+      boards: current.boards.map((item) => {
+        if (item.id !== targetId || !targetCellId) return item;
+        const destination = item.cells.findIndex(
+          (entry) => entry.id === targetCellId,
+        );
+        if (destination < 0) return item;
+        return {
+          ...item,
+          cells: item.cells.map((entry, index) =>
+            assets[index - destination]
+              ? { ...makeCell(assets[index - destination]), id: entry.id }
+              : entry,
+          ),
+        };
+      }),
     }));
     setFilter("All");
   };
-  const drop = (event, index) => {
+  const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
+    if (!board) return;
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
     const assetId = event.dataTransfer.getData("application/x-gridroom-asset");
@@ -197,7 +271,16 @@ export default function App() {
     );
     if (assetId) placeAsset(assetId, index);
     else if (sourceIndex !== "") {
-      const source = Number(sourceIndex);
+      let dragged: { boardId?: string; cellId?: string } | null;
+      try {
+        dragged = JSON.parse(sourceIndex);
+      } catch {
+        return;
+      }
+      if (dragged?.boardId !== board.id) return;
+      const source = board.cells.findIndex(
+        (entry) => entry.id === dragged.cellId,
+      );
       if (
         Number.isInteger(source) &&
         source >= 0 &&
@@ -205,7 +288,10 @@ export default function App() {
       ) {
         updateBoard((item) => {
           const cells = [...item.cells];
-          [cells[source], cells[index]] = [cells[index], cells[source]];
+          const sourceCell = cells[source];
+          const targetCell = cells[index];
+          cells[source] = { ...targetCell, id: sourceCell.id };
+          cells[index] = { ...sourceCell, id: targetCell.id };
           return { ...item, cells };
         });
         setSelectedCell(index);
@@ -232,6 +318,9 @@ export default function App() {
           resolution,
           format,
           quality / 100,
+          window.matchMedia("(max-width: 767px), (any-pointer: coarse)").matches
+            ? 16_000_000
+            : 32_000_000,
         );
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -254,12 +343,19 @@ export default function App() {
           : "Board exported.",
       );
     } catch (error) {
-      setToast(error.message || "Export failed. Try a smaller resolution.");
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Export failed. Try a smaller resolution.",
+      );
     } finally {
       setExporting(false);
     }
   };
-  const upload = async (event, target = null) => {
+  const upload = async (
+    event: ChangeEvent<HTMLInputElement>,
+    target: number | null = null,
+  ) => {
     const input = event.currentTarget;
     await importFiles(input.files, target);
     input.value = "";
@@ -273,16 +369,16 @@ export default function App() {
       ],
       active: current.boards.length,
     }));
-    setSelectedCell(0);
+    setSelectedCellId(null);
   };
   const deleteActiveBoard = () => {
     if (!board) return;
     setDeletedBoards((current) => [
       ...current,
-      { board, position: workspace.active, selectedCell },
+      { board, position: workspace.active, selectedCellId: cell.id },
     ]);
     setWorkspace((current) => removeBoard(current, board.id));
-    setSelectedCell(0);
+    setSelectedCellId(null);
     setToast(`Deleted ${board.name}.`);
     if (workspace.boards.length === 1)
       requestAnimationFrame(() =>
@@ -296,7 +392,7 @@ export default function App() {
       restoreBoard(current, entry.board, entry.position),
     );
     setDeletedBoards((current) => current.slice(0, -1));
-    setSelectedCell(entry.selectedCell);
+    setSelectedCellId(entry.selectedCellId);
     setToast(`Restored ${entry.board.name}.`);
     requestAnimationFrame(() =>
       addBoardButton.current?.focus({ preventScroll: true }),
@@ -407,7 +503,7 @@ export default function App() {
                   aria-selected={index === workspace.active}
                   onClick={() => {
                     setWorkspace((current) => ({ ...current, active: index }));
-                    setSelectedCell(0);
+                    setSelectedCellId(null);
                   }}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
@@ -475,7 +571,7 @@ export default function App() {
                   <h1 id="canvas-title">{board.name}</h1>
                 </div>
                 <span id="board-summary" className="canvas-meta">
-                  {board.rows} × {board.columns} /{" "}
+                  {board.columns} × {board.rows} /{" "}
                   {
                     board.cells
                       .slice(0, board.rows * board.columns)
@@ -484,103 +580,116 @@ export default function App() {
                   images
                 </span>
               </div>
-              <div
-                id="board-grid"
-                className="board-grid"
-                aria-label="Image grid"
-                style={{
-                  "--columns": board.columns,
-                  "--gap": `${board.gap}px`,
-                  "--board-bg": board.background,
-                  "--publisher-color": palette.color,
-                  "--publisher-text": palette.text,
-                  "--caption-color": palette.caption,
-                  "--heading-font": `"${board.headingFont}"`,
-                  "--cell-font": `"${board.cellFont}"`,
-                }}
+              <GridResizer
+                rows={board.rows}
+                columns={board.columns}
+                onResize={resize}
+                onUndo={resizeUndo ? undoResize : undefined}
               >
-                <BoardHeading board={board} />
-                {board.cells
-                  .slice(0, board.rows * board.columns)
-                  .map((item, index) => {
-                    const asset = workspace.assets.find(
-                      (asset) => asset.id === item.assetId,
-                    );
-                    return (
-                      <div
-                        key={`${board.id}-${index}`}
-                        className={`grid-cell${selectedCell === index ? " selected" : ""}`}
-                        data-index={index}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          event.currentTarget.classList.add("drag-over");
-                        }}
-                        onDragLeave={(event) => {
-                          if (
-                            !event.currentTarget.contains(event.relatedTarget)
-                          )
-                            event.currentTarget.classList.remove("drag-over");
-                        }}
-                        onDrop={(event) => drop(event, index)}
-                      >
-                        <button
-                          className="cell-image-button"
-                          aria-label={`Select cell ${index + 1}${item.title ? `: ${item.title}` : ""}`}
-                          draggable={Boolean(asset)}
-                          onClick={() => setSelectedCell(index)}
-                          onDoubleClick={() => {
-                            setSelectedCell(index);
-                            replaceUpload.current.click();
+                <div
+                  id="board-grid"
+                  className="board-grid"
+                  aria-label="Image grid"
+                  style={
+                    {
+                      "--columns": board.columns,
+                      "--gap": `${board.gap}px`,
+                      "--board-bg": board.background,
+                      "--publisher-color": palette.color,
+                      "--publisher-text": palette.text,
+                      "--caption-color": palette.caption,
+                      "--heading-font": `"${board.headingFont}"`,
+                      "--cell-font": `"${board.cellFont}"`,
+                    } as CSSProperties
+                  }
+                >
+                  <BoardHeading board={board} />
+                  {board.cells
+                    .slice(0, board.rows * board.columns)
+                    .map((item, index) => {
+                      const asset = workspace.assets.find(
+                        (asset) => asset.id === item.assetId,
+                      );
+                      return (
+                        <div
+                          key={item.id}
+                          className={`grid-cell${selectedCell === index ? " selected" : ""}`}
+                          data-index={index}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.currentTarget.classList.add("drag-over");
                           }}
-                          onDragStart={(event) => {
-                            event.dataTransfer.setData(
-                              "application/x-gridroom-cell",
-                              String(index),
-                            );
-                            event.dataTransfer.effectAllowed = "move";
+                          onDragLeave={(event) => {
+                            if (
+                              !(event.relatedTarget instanceof Node) ||
+                              !event.currentTarget.contains(event.relatedTarget)
+                            )
+                              event.currentTarget.classList.remove("drag-over");
                           }}
+                          onDrop={(event) => drop(event, index)}
                         >
-                          {asset ? (
-                            <img
-                              src={asset.src}
-                              alt={item.title}
-                              style={{ objectFit: item.fit }}
-                              draggable={false}
-                            />
-                          ) : (
-                            <span className="empty-cell">
-                              <ImagePlus />
-                              <span>Add image</span>
+                          <button
+                            className="cell-image-button"
+                            aria-label={`Select cell ${index + 1}${item.title ? `: ${item.title}` : ""}`}
+                            draggable={Boolean(asset)}
+                            onClick={() => setSelectedCell(index)}
+                            onDoubleClick={() => {
+                              setSelectedCell(index);
+                              replaceUpload.current?.click();
+                            }}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData(
+                                "application/x-gridroom-cell",
+                                JSON.stringify({
+                                  boardId: board.id,
+                                  cellId: item.id,
+                                }),
+                              );
+                              event.dataTransfer.effectAllowed = "move";
+                            }}
+                          >
+                            {asset ? (
+                              <img
+                                src={asset.src}
+                                alt={item.title}
+                                style={{ objectFit: item.fit }}
+                                draggable={false}
+                              />
+                            ) : (
+                              <span className="empty-cell">
+                                <ImagePlus />
+                                <span>Add image</span>
+                              </span>
+                            )}
+                            <span className="cell-badge">
+                              {String(index + 1).padStart(2, "0")}
                             </span>
-                          )}
-                          <span className="cell-badge">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                        </button>
-                        <textarea
-                          className="cell-heading"
-                          rows={1}
-                          maxLength={120}
-                          value={item.title}
-                          placeholder="ADD HEADING"
-                          aria-label={`Heading for cell ${index + 1}`}
-                          onFocus={() => setSelectedCell(index)}
-                          onChange={(event) => {
-                            const title = event.target.value;
-                            updateBoard((current) => ({
-                              ...current,
-                              cells: current.cells.map((entry, position) =>
-                                position === index
-                                  ? { ...entry, title }
-                                  : entry,
-                              ),
-                            }));
-                          }}
-                        />
-                      </div>
-                    );
-                  })}
-              </div>
+                          </button>
+                          <textarea
+                            className="cell-heading"
+                            rows={1}
+                            maxLength={120}
+                            value={item.title}
+                            placeholder="ADD HEADING"
+                            aria-label={`Heading for cell ${index + 1}`}
+                            onFocus={() => setSelectedCell(index)}
+                            onChange={(event) => {
+                              const title = event.target.value;
+                              updateBoard((current) => ({
+                                ...current,
+                                cells: current.cells.map((entry, position) =>
+                                  position === index
+                                    ? { ...entry, title }
+                                    : entry,
+                                ),
+                              }));
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              </GridResizer>
               <div className="canvas-footer">
                 <span>
                   <Type />
@@ -589,9 +698,14 @@ export default function App() {
                   </span>
                 </span>
                 <span id="canvas-dimensions">
-                  {size.width} × {size.height} px
+                  {size?.width} × {size?.height} px
                 </span>
               </div>
+              <RemovedCells
+                entries={board.overflow}
+                assets={workspace.assets}
+                onRecover={recoverCell}
+              />
             </div>
           ) : (
             <div className="canvas-area tw:grid tw:min-h-[360px] tw:place-content-center tw:justify-items-center tw:gap-4">
@@ -643,7 +757,9 @@ export default function App() {
                 id="publisher"
                 value={board.publisher}
                 onChange={(event) =>
-                  patchBoard({ publisher: event.target.value })
+                  patchBoard({
+                    publisher: event.target.value as Board["publisher"],
+                  })
                 }
               >
                 <option value="none">None</option>
@@ -679,21 +795,12 @@ export default function App() {
                 ))}
               </select>
               <div className="field-pair">
-                {["rows", "columns"].map((key) => (
+                {(["rows", "columns"] as const).map((key) => (
                   <label key={key}>
                     {key === "rows" ? "Rows" : "Columns"}
-                    <input
-                      id={key}
-                      type="number"
-                      min="1"
-                      max="6"
-                      defaultValue={board[key]}
-                      key={`${board.id}-${board[key]}`}
-                      onBlur={(event) => resize(key, event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") event.currentTarget.blur();
-                      }}
-                    />
+                    <output id={key} className="tw:block tw:py-2">
+                      {board[key]}
+                    </output>
                   </label>
                 ))}
               </div>
@@ -767,7 +874,7 @@ export default function App() {
                 <button
                   id="replace-image"
                   className="text-button"
-                  onClick={() => replaceUpload.current.click()}
+                  onClick={() => replaceUpload.current?.click()}
                 >
                   <ImagePlus />
                   Replace
@@ -799,7 +906,9 @@ export default function App() {
               <select
                 id="format"
                 value={format}
-                onChange={(event) => setFormat(event.target.value)}
+                onChange={(event) =>
+                  setFormat(event.target.value as ImageFormat)
+                }
               >
                 <option value="image/png">PNG</option>
                 <option value="image/jpeg">JPEG</option>
@@ -813,6 +922,8 @@ export default function App() {
                 value={resolution}
                 onChange={(event) => setResolution(Number(event.target.value))}
               >
+                <option value="150">150 px / image</option>
+                <option value="300">300 px / image</option>
                 <option value="600">600 px / image</option>
                 <option value="1200">1200 px / image</option>
                 <option value="1800">1800 px / image</option>
