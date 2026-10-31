@@ -19,6 +19,7 @@ import {
   Trash2,
   Pencil,
   Undo2,
+  Images,
 } from "lucide-react";
 import {
   Accordion,
@@ -91,6 +92,7 @@ export default function App() {
   const [resolution, setResolution] = useState(1200);
   const [quality, setQuality] = useState(95);
   const [exporting, setExporting] = useState(false);
+  const [loadingExample, setLoadingExample] = useState(false);
   const replaceUpload = useRef<HTMLInputElement>(null);
   const boardActions = useRef<HTMLButtonElement>(null);
   const renameInput = useRef<HTMLInputElement>(null);
@@ -371,6 +373,23 @@ export default function App() {
     }));
     setSelectedCellId(null);
   };
+  const loadExample = async () => {
+    if (loadingExample) return;
+    setLoadingExample(true);
+    try {
+      const { loadComicExample } = await import("./demo/comics");
+      setWorkspace((current) => loadComicExample(current));
+      setSelectedCellId(null);
+      setFilter("All");
+      setToast("Example added.");
+    } catch (error) {
+      setToast(
+        error instanceof Error ? error.message : "Example could not be loaded.",
+      );
+    } finally {
+      setLoadingExample(false);
+    }
+  };
   const deleteActiveBoard = () => {
     if (!board) return;
     setDeletedBoards((current) => [
@@ -405,7 +424,7 @@ export default function App() {
           <span className="brand-mark">
             <PanelsTopLeft />
           </span>
-          GRIDROOM<span className="brand-tag">IMAGE BOARDS</span>
+          Grids<span className="brand-tag">IMAGE BOARDS</span>
         </a>
         <div className="header-actions">
           <span id="save-status" className="save-status">
@@ -431,6 +450,15 @@ export default function App() {
             <span id="asset-count" className="count">
               {workspace.assets.length}
             </span>
+            <Button
+              variant="icon"
+              aria-label="Load example"
+              title="Load example: Legacy comics"
+              disabled={loadingExample}
+              onClick={loadExample}
+            >
+              <Images aria-hidden="true" />
+            </Button>
           </div>
           <label className="upload-button" htmlFor="upload">
             <Plus />
@@ -445,7 +473,10 @@ export default function App() {
             />
           </label>
           <div className="filter-tabs" role="group" aria-label="Image category">
-            {["All", "DC", "Marvel"].map((category) => (
+            {[
+              "All",
+              ...new Set(workspace.assets.map((asset) => asset.category)),
+            ].map((category) => (
               <button
                 key={category}
                 className={filter === category ? "active" : ""}

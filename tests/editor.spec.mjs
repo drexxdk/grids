@@ -10,6 +10,113 @@ async function downloadBoard(page) {
   return promise;
 }
 
+async function useComicExample(page) {
+  await page
+    .getByRole("button", { name: "Delete board: Board 1", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Load example", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveCount(2);
+  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
+}
+
+test("fresh workspace is neutral and examples append without replacing saved edits", async ({
+  page,
+}, testInfo) => {
+  const requests = [];
+  const errors = [];
+  page.on("request", (request) =>
+    requests.push({ type: request.resourceType(), url: request.url() }),
+  );
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("./");
+  await expect(page).toHaveTitle("Grids - Image Boards");
+  await expect(
+    page.getByRole("link", { name: "Grids IMAGE BOARDS", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.locator(".asset")).toHaveCount(0);
+  await expect(page.locator("#image-heading")).toHaveValue("");
+  await expect(page.locator("#publisher")).toHaveValue("none");
+  await expect(page.locator("#heading-font")).toHaveValue("Manrope");
+  await expect(page.locator("#cell-font")).toHaveValue("Manrope");
+  await expect(page.locator('[data-filter="DC"]')).toHaveCount(0);
+  await expect(page.locator('[data-filter="Marvel"]')).toHaveCount(0);
+  await page.evaluate(() => document.fonts.ready);
+  expect(requests.filter((request) => request.type === "image")).toEqual([]);
+  expect(
+    requests.some((request) => /\/comics-[^/]+\.js/.test(request.url)),
+  ).toBe(false);
+  await page.screenshot({
+    path: testInfo.outputPath("neutral-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("neutral-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.locator("#resolution").selectOption("150");
+  const download = await downloadBoard(page);
+  const bytes = [...(await readFile(await download.path()))];
+  expect(download.suggestedFilename()).toBe("board-1.png");
+  expect(
+    await page.evaluate(async (bytes) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+      );
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return size;
+    }, bytes),
+  ).toEqual({ width: 462, height: 540 });
+  await page.locator("#replace-upload").setInputFiles({
+    name: "personal.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#12a874"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator("#cell-title").fill("Keep my own caption");
+  await page.locator("#add-board").click();
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.locator("#publisher")).toHaveValue("none");
+  const snapshot = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("gridroom-v1")),
+  );
+  await page.getByRole("button", { name: "Load example", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveCount(4);
+  await expect(page.locator(".asset")).toHaveCount(9);
+  await expect(page.locator("#image-heading")).toHaveValue("Team DC");
+  await expect(page.locator(".grid-cell")).toHaveCount(4);
+  const loaded = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("gridroom-v1")),
+  );
+  expect(loaded.boards.slice(0, 2)).toEqual(snapshot.boards);
+  expect(loaded.assets[0]).toEqual(snapshot.assets[0]);
+  expect(new Set(loaded.assets.map((asset) => asset.id)).size).toBe(9);
+  await page.reload();
+  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
+  await page.getByRole("button", { name: "Load example", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveCount(6);
+  await expect(page.locator(".asset")).toHaveCount(9);
+  const repeated = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("gridroom-v1")),
+  );
+  expect(repeated.boards.slice(0, 4)).toEqual(loaded.boards);
+  expect(repeated.assets).toEqual(loaded.assets);
+  await page.getByRole("tab", { name: "01 Board 1", exact: true }).click();
+  await expect(page.locator("#cell-title")).toHaveValue("Keep my own caption");
+  expect(errors).toEqual([]);
+});
+
 test("image placement, title editing, grid sizing, and image exports", async ({
   page,
 }, testInfo) => {
@@ -17,6 +124,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
+  await useComicExample(page);
   await expect
     .poll(() =>
       page
@@ -90,6 +198,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
 
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  await useComicExample(page);
   await page.locator("#resolution").selectOption("600");
 
   const exports = [];
@@ -236,6 +345,7 @@ test("board headings and font choices persist and old boards migrate without los
   page,
 }) => {
   await page.goto("./");
+  await useComicExample(page);
   await page.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem("gridroom-v1"));
     saved.boards.forEach((item) => {
@@ -324,6 +434,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 760 });
   await page.goto("./");
+  await useComicExample(page);
   const headingSwitch = page.getByRole("switch", { name: "Show heading" });
   await expect(headingSwitch).toHaveCSS("width", "44px");
   await expect(headingSwitch).toHaveCSS("height", "24px");
@@ -491,6 +602,7 @@ test("board deletion restores edits and the last-board empty state survives relo
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
+  await useComicExample(page);
   await page.locator("#cell-title").fill("Keep my custom caption");
   await page.getByRole("switch", { name: "Show heading" }).click();
   const original = await page.evaluate(
@@ -580,7 +692,7 @@ test("board deletion restores edits and the last-board empty state survives relo
   await page.locator("#add-board").click();
   await expect(page.getByRole("tab")).toHaveCount(1);
   await expect(page.locator("#canvas-title")).toHaveText("Board 1");
-  await expect(page.locator(".grid-cell")).toHaveCount(4);
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
   await expect(page.locator(".grid-cell img")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -589,6 +701,7 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
   page,
 }, testInfo) => {
   await page.goto("./");
+  await useComicExample(page);
   const savedCells = () =>
     page.evaluate(
       () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0].cells,
@@ -674,6 +787,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
   page,
 }) => {
   await page.goto("./");
+  await useComicExample(page);
   await page.evaluate(() => {
     window.pendingImageDecodes = [];
     const original = HTMLImageElement.prototype.decode;

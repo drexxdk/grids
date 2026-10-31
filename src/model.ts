@@ -1,4 +1,4 @@
-export const fontOptions = ["Bangers", "Boogaloo", "Bebas Neue"];
+export const fontOptions = ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"];
 export const storageKey = "gridroom-v1";
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
@@ -45,24 +45,6 @@ export const publishers = {
   dc: { color: "#0085c7", caption: "#123c55", text: "#ffffff" },
   marvel: { color: "#ed1d24", caption: "#4b1a20", text: "#ffffff" },
 };
-const sources = [
-  ["DC", "Color Kid"],
-  ["DC", "Condiment King"],
-  ["DC", "Friendly Fire"],
-  ["DC", "Kite Man"],
-  ["Marvel", "Eye-Boy"],
-  ["Marvel", "Hindsight"],
-  ["Marvel", "Paste-Pot Pete"],
-  ["Marvel", "Soft Serve"],
-];
-export const initialAssets: Asset[] = sources.map(
-  ([category, title], index) => ({
-    id: `asset-${index}`,
-    category,
-    title,
-    src: `assets/${category} - ${title}.jpg`,
-  }),
-);
 export const makeCell = (asset: Asset | null = null): Cell => ({
   id: crypto.randomUUID(),
   assetId: asset?.id ?? null,
@@ -98,16 +80,16 @@ const defaultPublisher = (
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   id: crypto.randomUUID(),
   name,
-  publisher: defaultPublisher(name, assets),
-  heading: defaultHeading(name),
+  publisher: "none",
+  heading: "",
   headingVisible: true,
-  headingFont: "Bangers",
-  cellFont: "Boogaloo",
-  rows: 2,
-  columns: 2,
+  headingFont: "Manrope",
+  cellFont: "Manrope",
+  rows: 3,
+  columns: 3,
   gap: 12,
   background: "#17191b",
-  cells: Array.from({ length: 4 }, (_, index) => makeCell(assets[index])),
+  cells: Array.from({ length: 9 }, (_, index) => makeCell(assets[index])),
   overflow: [],
 });
 export function resizeBoard(
@@ -165,11 +147,8 @@ export function restoreBoard(
 }
 export function loadWorkspace(): Workspace {
   const fallback: Workspace = {
-    assets: initialAssets,
-    boards: [
-      makeBoard("DC Characters", initialAssets.slice(0, 4)),
-      makeBoard("Marvel Characters", initialAssets.slice(4)),
-    ],
+    assets: [],
+    boards: [makeBoard("Board 1")],
     active: 0,
   };
   try {
