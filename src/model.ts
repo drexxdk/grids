@@ -1,5 +1,7 @@
+import { z } from "zod";
+
 export const fontOptions = ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"];
-export const storageKey = "gridroom-v1";
+export const storageKey = "grids-editor-v1";
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
@@ -36,9 +38,15 @@ export interface Board {
   overflow: OverflowCell[];
 }
 export interface Workspace {
+  version: 1;
   assets: Asset[];
-  boards: Board[];
-  active: number;
+  grid: Board;
+  exportSettings: ExportSettings;
+}
+export interface ExportSettings {
+  format: ImageFormat;
+  resolution: number;
+  quality: number;
 }
 export const publishers = {
   none: { color: "transparent", caption: "#202325", text: "#d8f36a" },
@@ -48,35 +56,9 @@ export const publishers = {
 export const makeCell = (asset: Asset | null = null): Cell => ({
   id: crypto.randomUUID(),
   assetId: asset?.id ?? null,
-  title: asset?.title ?? "",
+  title: asset?.title.slice(0, 120) ?? "",
   fit: "contain",
 });
-const defaultHeading = (name: string) =>
-  (
-    ({
-      "DC Characters": "Team DC",
-      "Marvel Characters": "Team Marvel",
-    }) as Record<string, string>
-  )[name] || "";
-const defaultPublisher = (
-  name: string,
-  assets: (Asset | undefined)[] = [],
-): Publisher => {
-  const named: Record<string, Publisher> = {
-    "DC Characters": "dc",
-    "Marvel Characters": "marvel",
-  };
-  if (named[name]) return named[name];
-  const category = assets[0]?.category;
-  return assets.length &&
-    category &&
-    assets.every((asset) => asset?.category === category) &&
-    ["DC", "Marvel"].includes(category)
-    ? category === "DC"
-      ? "dc"
-      : "marvel"
-    : "none";
-};
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   id: crypto.randomUUID(),
   name,
@@ -119,105 +101,119 @@ export function resizeBoard(
   });
   return { ...board, rows, columns, cells, overflow: [...positions.values()] };
 }
-export function removeBoard(workspace: Workspace, boardId: string): Workspace {
-  const position = workspace.boards.findIndex((board) => board.id === boardId);
-  if (position < 0) return workspace;
-  const activeId = workspace.boards[workspace.active]?.id;
-  const boards = workspace.boards.filter((board) => board.id !== boardId);
-  const survivingActive = boards.findIndex((board) => board.id === activeId);
+export const makeWorkspace = (): Workspace => ({
+  version: 1,
+  assets: [],
+  grid: makeBoard("Grid"),
+  exportSettings: { format: "image/png", resolution: 1200, quality: 95 },
+});
+
+export function resetWorkspace(workspace: Workspace): Workspace {
+  const defaults = makeWorkspace();
+  const resized = resizeBoard(
+    workspace.grid,
+    defaults.grid.rows,
+    defaults.grid.columns,
+  );
   return {
-    ...workspace,
-    boards,
-    active:
-      survivingActive >= 0
-        ? survivingActive
-        : Math.max(0, Math.min(position, boards.length - 1)),
+    ...defaults,
+    assets: workspace.assets,
+    grid: {
+      ...defaults.grid,
+      id: workspace.grid.id,
+      cells: resized.cells,
+      overflow: resized.overflow,
+    },
   };
 }
-export function restoreBoard(
-  workspace: Workspace,
-  board: Board,
-  position: number,
-): Workspace {
-  if (workspace.boards.some((item) => item.id === board.id)) return workspace;
-  const insertion = Math.max(0, Math.min(position, workspace.boards.length));
-  const boards = [...workspace.boards];
-  boards.splice(insertion, 0, board);
-  return { ...workspace, boards, active: insertion };
-}
-export function loadWorkspace(): Workspace {
-  const fallback: Workspace = {
-    assets: [],
-    boards: [makeBoard("Board 1")],
-    active: 0,
-  };
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(storageKey) ?? "null",
-    ) as Workspace | null;
-    if (
-      !saved ||
-      !Array.isArray(saved.boards) ||
-      !Array.isArray(saved.assets) ||
-      !saved.boards.every(
-        (board) =>
-          Number.isInteger(board.rows) &&
-          board.rows >= 1 &&
-          board.rows <= gridLimit &&
-          Number.isInteger(board.columns) &&
-          board.columns >= 1 &&
-          board.columns <= gridLimit &&
-          Array.isArray(board.cells) &&
-          board.cells.length >= board.rows * board.columns,
-      )
-    )
-      return fallback;
-    saved.active = Math.max(
-      0,
-      Math.min(saved.active || 0, saved.boards.length - 1),
+
+const cellSchema = z.strictObject({
+  id: z.uuid(),
+  assetId: z.uuid().nullable(),
+  title: z.string().max(120),
+  fit: z.enum(["contain", "cover"]),
+});
+const coordinate = z
+  .number()
+  .int()
+  .min(0)
+  .max(gridLimit - 1);
+export const workspaceSchema = z
+  .strictObject({
+    version: z.literal(1),
+    assets: z.array(
+      z.strictObject({
+        id: z.uuid(),
+        category: z.string(),
+        title: z.string(),
+        src: z.string().min(1),
+      }),
+    ),
+    grid: z.strictObject({
+      id: z.uuid(),
+      name: z.string().max(70),
+      publisher: z.enum(["none", "dc", "marvel"]),
+      heading: z.string().max(120),
+      headingVisible: z.boolean(),
+      headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+      cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+      rows: z.number().int().min(1).max(gridLimit),
+      columns: z.number().int().min(1).max(gridLimit),
+      gap: z.number().min(0).max(40),
+      background: z.string().regex(/^#[0-9a-f]{6}$/i),
+      cells: z.array(cellSchema).max(gridLimit * gridLimit),
+      overflow: z
+        .array(
+          z.strictObject({
+            row: coordinate,
+            column: coordinate,
+            cell: cellSchema,
+          }),
+        )
+        .max(gridLimit * gridLimit),
+    }),
+    exportSettings: z.strictObject({
+      format: z.enum(["image/png", "image/jpeg", "image/webp"]),
+      resolution: z.union([
+        z.literal(150),
+        z.literal(300),
+        z.literal(600),
+        z.literal(1200),
+        z.literal(1800),
+      ]),
+      quality: z.number().int().min(50).max(100),
+    }),
+  })
+  .superRefine(({ assets, grid }, context) => {
+    const assetIds = new Set(assets.map((asset) => asset.id));
+    const cells = [...grid.cells, ...grid.overflow.map((entry) => entry.cell)];
+    const positions = grid.overflow.map(
+      (entry) => `${entry.row}:${entry.column}`,
     );
-    saved.boards.forEach((item) => {
-      const seen = new Set();
-      const identify = (cell: Cell): Cell => {
-        const id =
-          typeof cell.id === "string" && !seen.has(cell.id)
-            ? cell.id
-            : crypto.randomUUID();
-        seen.add(id);
-        return { ...cell, id };
-      };
-      item.cells = item.cells.map(identify);
-      item.overflow = Array.isArray(item.overflow)
-        ? item.overflow
-            .filter(
-              (entry) =>
-                Number.isInteger(entry.row) &&
-                entry.row >= 0 &&
-                Number.isInteger(entry.column) &&
-                entry.column >= 0 &&
-                entry.cell &&
-                typeof entry.cell === "object",
-            )
-            .map((entry) => ({ ...entry, cell: identify(entry.cell) }))
-        : [];
-      Object.assign(item, resizeBoard(item, item.rows, item.columns));
-      if (!Object.hasOwn(publishers, item.publisher))
-        item.publisher = defaultPublisher(
-          item.name,
-          item.cells
-            .filter((entry) => entry.assetId)
-            .map((entry) =>
-              saved.assets.find((asset) => asset.id === entry.assetId),
-            ),
-        );
-      if (typeof item.heading !== "string")
-        item.heading = defaultHeading(item.name);
-      if (typeof item.headingVisible !== "boolean") item.headingVisible = true;
-      if (!fontOptions.includes(item.headingFont)) item.headingFont = "Bangers";
-      if (!fontOptions.includes(item.cellFont)) item.cellFont = "Boogaloo";
-    });
-    return saved;
+    if (
+      assetIds.size !== assets.length ||
+      new Set(cells.map((cell) => cell.id)).size !== cells.length ||
+      grid.cells.length !== grid.rows * grid.columns ||
+      new Set(positions).size !== positions.length ||
+      grid.overflow.some(
+        (entry) => entry.row < grid.rows && entry.column < grid.columns,
+      ) ||
+      cells.some((cell) => cell.assetId !== null && !assetIds.has(cell.assetId))
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Invalid grid cells or media references.",
+      });
+    }
+  });
+
+export function loadWorkspace(): Workspace {
+  try {
+    const parsed = workspaceSchema.safeParse(
+      JSON.parse(localStorage.getItem(storageKey) ?? "null"),
+    );
+    return parsed.success ? parsed.data : makeWorkspace();
   } catch {
-    return fallback;
+    return makeWorkspace();
   }
 }

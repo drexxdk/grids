@@ -4,56 +4,59 @@ Updated October 31, 2026. `[x]` = implemented and checked. `[ ]` = remaining wor
 
 Build a general-purpose, single-grid editor for anime, characters, films, games, books, cards, photographs, and personal collections. Guests can use it without an account, API key, paid service, or backend. Optional accounts save user settings in a database; images always remain on the client. The static frontend can stay on GitHub Pages, but authentication/database access needs a separately hosted backend.
 
-## Agreed Direction (Planned)
+This is a new project with no users or real data. Prototype schemas, storage keys, and demo saves can be replaced or reset during development. Do not build legacy migrations, compatibility layers, or backup/recovery flows for prototype data.
 
-- One working grid, not a multi-board workspace. Remove board tabs, Add Board, board duplication/reordering, and multi-board export when this change is implemented.
+## Agreed Direction
+
+- One working grid, not a multi-board workspace. No board tabs, Add Board, duplication/reordering, or multi-board export.
 - Guests automatically save settings to localStorage and have a visible Reset to Defaults command. Clearing locally stored images is a separate deliberate action.
 - Prioritize Google, Discord, and Facebook sign-in using Chatter's login/session patterns. Signed-in users can save and reload their editor settings from their user record.
 - Store only validated settings in the account database, not uploaded images, thumbnails, data URLs, file paths, or image placements/references. Image and uploaded-font files remain client-only; a different browser/device restores settings, not those files.
 - Local username/password accounts are a lower-priority follow-up, after provider sign-in and settings persistence work reliably.
 
-These are roadmap changes only. The current application's multi-board UI and browser-only storage remain unchanged until the planned migration is implemented.
+The single-grid model, guest autosave/reset, and selectable examples are implemented. Provider sign-in and database settings remain planned; the current app is browser-only.
 
 ## Completed
 
 - [x] React/Vite with strict TypeScript/TSX application sources, `.mjs` Node tooling, and production-subpath build/browser checks. Generated JavaScript bundles are exempt from the source-language rule.
 - [x] Headless UI Dialog/Menu/Disclosure/Switch primitives; Motion animations and reduced motion; Tailwind v4 for new controls; component variants and Lucide icons. Removed the unused global Lucide bundle.
 - [x] Viewport-edge modal scrolling, background lock through exit, scrollbar compensation, trigger-focus restoration, and helper cleanup. Touch dialogs focus a non-input control instead of opening the keyboard.
-- [x] Neutral first launch: one empty 3x3 board, empty library, square cells, Manrope fonts. No automatic example image/module requests or comic branding inferred for new boards.
-- [x] Explicit lazy Load example and legacy comic manifest. Appends boards without replacing uploads/edits; repeat loads reuse images; saved image paths stay stable. Artwork rights and original credits remain unresolved.
+- [x] Neutral first launch: one empty 3x3 grid, empty library, square cells, Manrope fonts. No automatic example image/module requests or inferred comic branding.
+- [x] Explicit lazy DC/Marvel single-grid examples. Confirmation deliberately replaces the grid; Cancel changes nothing; existing uploads remain in the library and repeat loads reuse images. Artwork rights and original credits remain unresolved.
 - [x] Naming/rename dialog, uploads, library placement, drag-to-swap, cell titles, fit/fill, background/gap controls, and legacy DC/Marvel palettes. Bundled fonts: Manrope, Bangers, Boogaloo, Bebas Neue.
 - [x] Right-edge column and bottom-edge row controls: 1..12 in each direction, 144 visible cells, 44px named controls with tooltips/disabled limits, no grid-size presets, no controls in exports.
 - [x] Stable cell IDs preserve coordinates, selection, keys, placement, clearing, and swaps. Removed cells persist by coordinate; expansion restores them; recovery swaps retain displaced content. Resize Undo preserves newer edits.
-- [x] Current legacy multi-board navigation/deletion with session Undo, original-position/selection restoration, adjacent selection, and preserved edits. Empty workspaces persist and allow uploads/Add Board. This workflow is scheduled for replacement by the single-grid/reset model, not further expansion.
+- [x] Single-grid editor with no board manager or Export All; persisted format/resolution/quality preferences. Replaced prototype multi-board navigation/deletion rather than maintaining compatibility.
 - [x] Heading visibility retains text/fonts/styles while removing hidden space from preview/export. Workspace names stay separate from visible headings.
-- [x] Async uploads follow destination board/cell IDs. Resized-away/deleted targets do not receive misplaced images; imported media remains in the library.
-- [x] Browser-local persistence and legacy normalization. Selection/dialogs/progress/session Undo stay separate from saved documents; uploads stay on-device.
+- [x] Async uploads follow destination grid/cell IDs. Resized-away/replaced targets do not receive misplaced images; imported media remains in the library.
+- [x] Fresh versioned storage and strict Zod boundary validation; obsolete/invalid prototype documents initialize defaults. Selection/dialogs/progress/session Undo stay separate from saved documents; uploads stay on-device.
+- [x] Guest autosave and Reset to Defaults with image/caption/placement retention, including removed-cell recovery after reload. Failed local saves report Session only; current editing/export remains usable.
 - [x] PNG/JPEG/WebP downloads with real decoded-image/MIME checks. Initial canvas caps: 16 MP narrow/touch, 32 MP otherwise; 150/300 px options provide large-grid recovery.
-- [x] Production-subpath regressions for upload/dragging, headings/fonts, animated controls/modal/touch focus, deletion/empty state, resize/overflow/selection, delayed uploads, export limits, neutral defaults, and examples; desktop/mobile screenshot checks.
+- [x] Production-subpath regressions for upload/dragging, headings/fonts, animated controls/modal/touch focus, single-grid defaults/reset/persistence/schema rejection/save failures, resize/overflow/selection, delayed uploads, export limits, and deliberate examples; desktop/mobile screenshots.
 
-Current limits: media is stored as data URLs in localStorage; Undo is session-only and limited to deletion/resizing. Versioned storage, general undo/redo, ratios, themes, custom font uploads, cropping, search, and project backups are unfinished. Canvas caps do not guarantee device memory safety. Pages build/workflow compatibility is checked, not a live deployment certification. The legacy `gridroom-v1` key and internal drag identifiers remain unchanged to preserve compatibility after the Grids rename.
+Current limits: media is stored as data URLs in localStorage; Undo is session-only and limited to resizing. Provider sign-in/database settings, IndexedDB media storage, general undo/redo, ratios, themes, custom font uploads, cropping, search, and project archives are unfinished. Canvas caps do not guarantee device memory safety. Pages build/workflow compatibility is checked, not a live deployment certification. Existing prototype storage is not a compatibility requirement for future changes.
 
 ## Development Order
 
-**Next: single-grid/guest-storage foundation, then provider sign-in and user settings, then layout/rendering.** Work through the steps below in order; local accounts follow provider login, not the other way around. Resolve schema/demo-rights/hosting decisions early. Run crop, FontFace, catalog, and phone-export spikes before their dependent features. Failed sign-in or catalog services must not block the guest upload-only editor. No fixed delivery dates are assumed before those spikes.
+**Next: finish the remaining guest-storage foundation, then provider sign-in and user settings, then layout/rendering.** Work through the steps below in order; local accounts follow provider login, not the other way around. Resolve demo-rights/hosting decisions early. Run crop, FontFace, catalog, and phone-export spikes before their dependent features. Failed sign-in or catalog services must not block the guest upload-only editor. No fixed delivery dates are assumed before those spikes.
 
 ### 1. Single Grid And Guest Storage
 
-- [ ] Replace the multi-board workspace with one grid document and editor preferences; remove board navigation/add/delete/duplicate/reorder and Export All controls. Keep stable cell IDs and separate layout/style/export settings, local content/media, and session UI state; add versioning and Zod boundary validation.
-- [ ] Safely migrate existing multi-board saves: let the user choose the grid to continue with and offer a client-side backup of remaining legacy boards/media before retiring the old structure. Never silently discard saved work or restore board management as a permanent feature.
-- [ ] Convert examples into selectable single-grid presets, not append-only board packs. Applying an example/template must preserve existing content or require a deliberate replacement choice.
-- [ ] Autosave guest settings to localStorage; add a visible Reset to Defaults command and failed-save feedback. Reset affects guest configuration, not account records; preserve local images unless the user separately confirms deleting them.
+- [x] Replace the multi-board workspace with one grid and persisted export preferences; remove board navigation/add/delete/duplicate/reorder and Export All controls. Retain stable cell IDs and separate session UI state.
+- [x] Start with a clean versioned schema/storage key, defaults, and strict Zod boundary validation. Ignore obsolete or invalid prototype saves; no multi-board selection, migration, or backup UI.
+- [x] Convert examples into selectable single-grid presets, not append-only board packs. Applying an example requires deliberate replacement confirmation and retains library images; Cancel changes nothing.
+- [x] Autosave guests to localStorage; visible Reset to Defaults and failed-save feedback. Reset restores configuration/export preferences without deleting local images/captions/placements. Storage failures leave editing/export usable. Account records do not exist yet.
+- [ ] Define separate layout/style configuration, local cell content/media, and the allowlisted account-settings boundary; never send the full local document to an account API.
 - [ ] Central typed document commands/reducer; keep crop drafts and provider requests/results outside saved state. Reuse React unless a state library solves a demonstrated subscription need.
-- [ ] Dexie/IndexedDB for client-only images/fonts/thumbnails and larger local grid content; managed/revoked object URLs. localStorage retains guest settings, small preferences, and migration markers. Keep this local data separate from the future account-settings payload.
-- [ ] Transactional, idempotent `gridroom-v1` migration: validate, extract image blobs, translate fonts/styles/paths, verify references, then mark success. Retain the source until success; offer backup/retry on quota/decode failure and repair missing references rather than resetting the workspace.
-- [ ] Debounced transactional Saving/Saved/Save Failed status, storage usage, backup reminders, best-effort persistent-storage requests, unused-media cleanup, and recoverable trash. Browser storage is not permanent backup or synchronization.
+- [ ] Dexie/IndexedDB for client-only images/fonts/thumbnails and larger local grid content; managed/revoked object URLs. localStorage retains guest settings and small preferences. Keep this local data separate from the future account-settings payload; initialize fresh storage rather than importing prototype data.
+- [ ] Debounced Saving/Saved/Save Failed status, storage usage, best-effort persistent-storage requests, unused-media cleanup, and recoverable trash. Browser storage is not permanent backup or synchronization.
 - [ ] Revision checks and BroadcastChannel notifications against silent multi-tab overwrites.
 - [ ] General undo/redo for text/layout/crops/templates/reset/cell deletion/batches. Coalesce typing/slider gestures; one Apply/bulk action is one entry. Store small patches/media IDs, not repeated binaries; retain media referenced by history/trash.
-- [ ] Review comic rights/credits; replace unclear examples with owned/licensed content. Keep discoverable asset-specific licenses; remove unused logos after reference checks; move test-only samples out of public builds. Migrate moved image paths without changing IDs/titles.
+- [ ] Review comic rights/credits; replace unclear examples with owned/licensed content. Keep discoverable asset-specific licenses; remove unused logos after reference checks; move test-only samples out of public builds. Update examples/tests directly when asset paths change; no legacy path migration.
 - [ ] Incrementally separate editor/library/domain/rendering/storage ownership. Use build-managed font imports where suitable; retain stable public URLs where needed. Do not create empty architectural scaffolding.
 - [ ] ESLint, Prettier, Vitest, Testing Library, broader component variants, and remaining primitive checks below. Add Sonner with the notification layer while retaining inline actionable errors; Floating UI/TanStack Virtual only when needed.
 
-Exit criteria: one usable grid with no board manager; chosen legacy content survives with recoverable backups; guest autosave/reset works across reloads without accidental media deletion; failed writes retain data; history stays bounded; distributed examples have reviewed rights. Update former multi-board tests to cover migration/reset without weakening image-placement/export coverage.
+Exit criteria: one usable grid with no board manager, initialized from the new schema; guest autosave/reset works across reloads without accidental media deletion; failed saves are reported; history stays bounded; distributed examples have reviewed rights. Replace obsolete multi-board tests with single-grid/default/reset coverage while retaining image-placement/export checks.
 
 ### 2. Provider Sign-In And User Settings
 
@@ -67,7 +70,7 @@ Depends on the single-grid/settings boundary from step 1. This is settings persi
 - [ ] Keep guest and per-user local caches isolated. Logout/account switching must not leak another user's settings or overwrite the guest draft; provider/backend failure leaves guest editing/local autosave available.
 - [ ] Test all three provider flows, callback/session failures, linking/logout/account switching, settings ownership, guest-to-account choices, and restoration in a clean browser. Assert that account requests/database records contain no client media or image references.
 
-Exit criteria: Google/Discord/Facebook sign-in and user-owned settings persistence work; another device restores configuration with no promise of image/font synchronization; guest editing/reset stays independent. Backend/database deployment needs an explicit hosting/security decision, not changes to the current app in this planning step.
+Exit criteria: Google/Discord/Facebook sign-in and user-owned settings persistence work; another device restores configuration with no promise of image/font synchronization; guest editing/reset stays independent. Backend/database deployment needs an explicit hosting/security decision before implementation.
 
 ### 3. Layout, Rendering, And Export Reliability
 
@@ -198,24 +201,24 @@ Extract when needed: shared `components/ui`/`browser`; `features/editor`, `featu
 
 None is implemented/certified. Direct means worth a browser spike, not verified support. Recheck current terms, query/image-CDN CORS, export/transform/cache rights, resolution/rate limits and deployed-origin behavior. Do not show disabled buttons implying support.
 
-| Provider | Content / access candidate | Main check |
-| --- | --- | --- |
-| AniList | Anime/manga/characters; direct public queries, OAuth later personal lists | API terms/limits, image export/CORS |
-| Jikan | Unofficial MAL anime/manga/characters; keyless direct | Documented 3 requests/sec, 60/min; upstream outages, separate image rights |
-| Wikimedia Commons | Broad open-license/public-domain media; keyless direct | API origin=*; per-file creator/license, actual image CDN |
-| Open Library | Books/author photos; keyless direct | Cover hotlink guidance, no bulk crawling, export/CORS |
-| Scryfall | Magic cards/art crops; keyless direct | Full cards retain artist/copyright marks, no distortion/filtering; approved crops retain artist/source context |
-| PokéAPI | Pokemon metadata/sprites; keyless direct | Artwork rights, source hosts, resolution/export quality |
-| The Met Collection | Museum imagery; keyless direct | Only valid open-access/downloadable imagery with rights metadata |
-| NASA Image and Video Library | Space imagery; keyless direct | Asset restrictions/credits, endpoints/resolution |
-| MusicBrainz + Cover Art Archive | Music metadata/cover art; direct or gateway | Two-service lookup, identification/header/limit requirements, cover rights/CDN exportability |
-| TMDB | Film/TV posters/backdrops/people; managed credentials recommended | Auth, required branding/attribution, image coverage/export rights |
-| IGDB | Game covers/art/screenshots/characters; gateway required | Official browser restriction, Twitch secret/token lifecycle, terms |
-| RAWG | Games/screenshots; credential gateway candidate | Current access/license/quota/attribution/export rules |
-| Unsplash | Photography; approved app, gateway recommended | Mandatory hotlinking/photographer and Unsplash attribution/download tracking/cache-export policy |
-| Pexels | Photography; credential gateway candidate | API rules/attribution/quota/storage-export policy |
-| Pixabay | Photography/illustrations; credential gateway candidate | API/cache/hotlink rules/rights/quotas |
-| Europeana | Cultural collections; credential gateway candidate | Per-object rights/provider links/variable image availability |
+| Provider                        | Content / access candidate                                                | Main check                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| AniList                         | Anime/manga/characters; direct public queries, OAuth later personal lists | API terms/limits, image export/CORS                                                                            |
+| Jikan                           | Unofficial MAL anime/manga/characters; keyless direct                     | Documented 3 requests/sec, 60/min; upstream outages, separate image rights                                     |
+| Wikimedia Commons               | Broad open-license/public-domain media; keyless direct                    | API origin=\*; per-file creator/license, actual image CDN                                                      |
+| Open Library                    | Books/author photos; keyless direct                                       | Cover hotlink guidance, no bulk crawling, export/CORS                                                          |
+| Scryfall                        | Magic cards/art crops; keyless direct                                     | Full cards retain artist/copyright marks, no distortion/filtering; approved crops retain artist/source context |
+| PokéAPI                         | Pokemon metadata/sprites; keyless direct                                  | Artwork rights, source hosts, resolution/export quality                                                        |
+| The Met Collection              | Museum imagery; keyless direct                                            | Only valid open-access/downloadable imagery with rights metadata                                               |
+| NASA Image and Video Library    | Space imagery; keyless direct                                             | Asset restrictions/credits, endpoints/resolution                                                               |
+| MusicBrainz + Cover Art Archive | Music metadata/cover art; direct or gateway                               | Two-service lookup, identification/header/limit requirements, cover rights/CDN exportability                   |
+| TMDB                            | Film/TV posters/backdrops/people; managed credentials recommended         | Auth, required branding/attribution, image coverage/export rights                                              |
+| IGDB                            | Game covers/art/screenshots/characters; gateway required                  | Official browser restriction, Twitch secret/token lifecycle, terms                                             |
+| RAWG                            | Games/screenshots; credential gateway candidate                           | Current access/license/quota/attribution/export rules                                                          |
+| Unsplash                        | Photography; approved app, gateway recommended                            | Mandatory hotlinking/photographer and Unsplash attribution/download tracking/cache-export policy               |
+| Pexels                          | Photography; credential gateway candidate                                 | API rules/attribution/quota/storage-export policy                                                              |
+| Pixabay                         | Photography/illustrations; credential gateway candidate                   | API/cache/hotlink rules/rights/quotas                                                                          |
+| Europeana                       | Cultural collections; credential gateway candidate                        | Per-object rights/provider links/variable image availability                                                   |
 
 `crossOrigin` before `src` requests permission, not CORS authorization. Visible previews may fail anonymous loading or taint canvas. Metadata licensing does not license artwork, and proxies cannot fix prohibited reuse.
 
@@ -223,14 +226,14 @@ None is implemented/certified. Direct means worth a browser spike, not verified 
 
 Keep production-subpath checks. Use the smallest behavior-scoped development check; relevant integrated checks for shared rendering/storage changes and milestones. Build success does not certify fidelity, data integrity, or permissions.
 
-- [ ] Unit tests for composition/ratios/text/transforms, commands/IDs/migration, theme precedence, validated boundaries.
+- [ ] Unit tests for composition/ratios/text/transforms, commands/IDs, clean storage initialization, theme precedence, validated boundaries.
 - [ ] Owned/licensed known-pixel square/portrait/landscape fixtures, pan/zoom/rotation/flip/transparency, long/Unicode/RTL text, custom fonts, preview/export agreement.
-- [ ] Extend browser flows for single-grid legacy migration, guest autosave/reset, provider login/settings restoration/media exclusion/account isolation, section switches, crop Apply/Cancel, full undo/redo, theme/font reload, templates, client-side archives, workers, and gateway URLs as features land.
-- [ ] Failure tests for storage quota/corrupt files/fonts/missing media/interrupted migration, provider 429/timeouts/stale searches/CORS, archive limits.
+- [ ] Extend browser flows for single-grid defaults, guest autosave/reset, provider login/settings restoration/media exclusion/account isolation, section switches, crop Apply/Cancel, full undo/redo, theme/font reload, templates, client-side archives, workers, and gateway URLs as features land.
+- [ ] Failure tests for storage quota/corrupt files/fonts/missing media, provider 429/timeouts/stale searches/CORS, archive limits.
 - [ ] Keyboard/touch alternatives, desktop/mobile overflow/screenshots, accessible crop/progress/focus, reduced motion/high contrast across supported browsers.
 - [ ] Mock provider CI traffic; tiny dated real-service smoke tests at integration/release checkpoints, never bulk crawls.
 
-Public release requires recoverable single-grid migration, guest autosave/reset, shipped crop/export fidelity, reviewed assets, and policy/real-origin gates for advertised catalogs. Account features additionally require secure provider sessions, user-owned settings, and verified exclusion of client media from server requests/storage. Restricted media/fonts stay explicit portability limits. Sign-in is optional for guests; local accounts and settings-only sharing are later work, and image cloud storage/sync is out of scope.
+Public release requires reliable single-grid initialization, guest autosave/reset, shipped crop/export fidelity, reviewed assets, and policy/real-origin gates for advertised catalogs. Account features additionally require secure provider sessions, user-owned settings, and verified exclusion of client media from server requests/storage. Restricted media/fonts stay explicit portability limits. Sign-in is optional for guests; local accounts and settings-only sharing are later work, and image cloud storage/sync is out of scope.
 
 ## Reference And Sources
 

@@ -4,6 +4,7 @@ import {
   type Asset,
   type Board,
   type Workspace,
+  type Publisher,
 } from "../model";
 
 export const comicExample = {
@@ -45,7 +46,10 @@ export const comicExample = {
   ] as const,
 };
 
-export function loadComicExample(workspace: Workspace): Workspace {
+export function loadComicExample(
+  workspace: Workspace,
+  publisher: Publisher = "dc",
+): Workspace {
   const assets = [...workspace.assets];
   const exampleAssets = comicExample.images.map((image) => {
     const existing = assets.find((asset) => asset.src === image.src);
@@ -54,7 +58,10 @@ export function loadComicExample(workspace: Workspace): Workspace {
     assets.push(asset);
     return asset;
   });
-  const boards: Board[] = comicExample.boards.map((definition) => ({
+  const definition =
+    comicExample.boards.find((item) => item.publisher === publisher) ??
+    comicExample.boards[0];
+  const grid: Board = {
     ...makeBoard(definition.name),
     ...comicExample.defaults,
     publisher: definition.publisher,
@@ -62,11 +69,10 @@ export function loadComicExample(workspace: Workspace): Workspace {
     cells: exampleAssets
       .slice(definition.start, definition.start + 4)
       .map(makeCell),
-  }));
+  };
   return {
     ...workspace,
     assets,
-    boards: [...workspace.boards, ...boards],
-    active: workspace.boards.length,
+    grid,
   };
 }

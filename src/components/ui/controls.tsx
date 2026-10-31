@@ -204,8 +204,8 @@ export function ActionMenu({
             as={Button}
             variant="icon"
             ref={buttonRef}
-            aria-label="Board actions"
-            title="Board actions"
+            aria-label="Grid actions"
+            title="Grid actions"
           >
             <MoreHorizontal aria-hidden="true" />
           </MenuButton>

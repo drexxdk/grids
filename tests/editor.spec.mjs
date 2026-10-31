@@ -6,20 +6,29 @@ import { fileURLToPath } from "node:url";
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 async function downloadBoard(page) {
   const promise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export board", exact: true }).click();
+  await page.locator("#export-board").click();
   return promise;
 }
 
-async function useComicExample(page) {
-  await page
-    .getByRole("button", { name: "Delete board: Board 1", exact: true })
-    .click();
+async function useComicExample(page, publisher = "dc") {
   await page.getByRole("button", { name: "Load example", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(2);
-  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
+  const dialog = page.getByRole("dialog", { name: "Load example" });
+  await dialog
+    .getByRole("button", {
+      name: publisher === "dc" ? "DC" : "Marvel",
+      exact: true,
+    })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Use example", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#canvas-title")).toHaveText(
+    publisher === "dc" ? "DC Characters" : "Marvel Characters",
+  );
 }
 
-test("fresh workspace is neutral and examples append without replacing saved edits", async ({
+test("single grid starts neutral and examples require deliberate replacement", async ({
   page,
 }, testInfo) => {
   const requests = [];
@@ -33,7 +42,10 @@ test("fresh workspace is neutral and examples append without replacing saved edi
   await expect(
     page.getByRole("link", { name: "Grids IMAGE BOARDS", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page.locator("#add-board, #board-tabs, #export-all"),
+  ).toHaveCount(0);
   await expect(page.locator(".grid-cell")).toHaveCount(9);
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect(page.locator("#image-heading")).toHaveValue("");
@@ -65,7 +77,7 @@ test("fresh workspace is neutral and examples append without replacing saved edi
   await page.locator("#resolution").selectOption("150");
   const download = await downloadBoard(page);
   const bytes = [...(await readFile(await download.path()))];
-  expect(download.suggestedFilename()).toBe("board-1.png");
+  expect(download.suggestedFilename()).toBe("grid.png");
   expect(
     await page.evaluate(async (bytes) => {
       const bitmap = await createImageBitmap(
@@ -85,35 +97,43 @@ test("fresh workspace is neutral and examples append without replacing saved edi
   });
   await expect(page.locator(".asset")).toHaveCount(1);
   await page.locator("#cell-title").fill("Keep my own caption");
-  await page.locator("#add-board").click();
-  await expect(page.locator(".grid-cell")).toHaveCount(9);
-  await expect(page.locator("#publisher")).toHaveValue("none");
   const snapshot = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("gridroom-v1")),
+    JSON.parse(localStorage.getItem("grids-editor-v1")),
   );
   await page.getByRole("button", { name: "Load example", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(4);
+  await page
+    .getByRole("dialog", { name: "Load example" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("grids-editor-v1")),
+    ),
+  ).toEqual(snapshot);
+  await useComicExample(page);
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(9);
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
   await expect(page.locator(".grid-cell")).toHaveCount(4);
   const loaded = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("gridroom-v1")),
+    JSON.parse(localStorage.getItem("grids-editor-v1")),
   );
-  expect(loaded.boards.slice(0, 2)).toEqual(snapshot.boards);
   expect(loaded.assets[0]).toEqual(snapshot.assets[0]);
   expect(new Set(loaded.assets.map((asset) => asset.id)).size).toBe(9);
+  expect(loaded).not.toHaveProperty("boards");
+  expect(loaded).not.toHaveProperty("active");
+  expect(loaded.version).toBe(1);
   await page.reload();
   await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
-  await page.getByRole("button", { name: "Load example", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(6);
+  await useComicExample(page, "marvel");
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(9);
   const repeated = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("gridroom-v1")),
+    JSON.parse(localStorage.getItem("grids-editor-v1")),
   );
-  expect(repeated.boards.slice(0, 4)).toEqual(loaded.boards);
   expect(repeated.assets).toEqual(loaded.assets);
-  await page.getByRole("tab", { name: "01 Board 1", exact: true }).click();
-  await expect(page.locator("#cell-title")).toHaveValue("Keep my own caption");
+  expect(repeated.grid.publisher).toBe("marvel");
   expect(errors).toEqual([]);
 });
 
@@ -206,7 +226,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
     ["DC Characters", "dc"],
     ["Marvel Characters", "marvel"],
   ]) {
-    await page.getByRole("tab", { name: new RegExp(name) }).click();
+    await useComicExample(page, publisher);
     for (const mime of ["image/png", "image/jpeg", "image/webp"]) {
       await page.locator("#format").selectOption(mime);
       const download = await downloadBoard(page);
@@ -308,12 +328,10 @@ test("image placement, title editing, grid sizing, and image exports", async ({
 
   await page.locator("#resolution").selectOption("1200");
   await page.locator("#format").selectOption("image/png");
-  for (const name of ["DC Characters", "Marvel Characters"]) {
-    await page.getByRole("tab", { name: new RegExp(name) }).click();
+  for (const publisher of ["dc", "marvel"]) {
+    await useComicExample(page, publisher);
     const downloadPromise = page.waitForEvent("download");
-    await page
-      .getByRole("button", { name: "Export board", exact: true })
-      .click();
+    await page.locator("#export-board").click();
     const download = await downloadPromise;
     await download.saveAs(
       path.join(projectRoot, "exports", download.suggestedFilename()),
@@ -341,23 +359,12 @@ test("image placement, title editing, grid sizing, and image exports", async ({
   expect(errors).toEqual([]);
 });
 
-test("board headings and font choices persist and old boards migrate without losing edits", async ({
+test("grid headings and font choices persist and export correctly", async ({
   page,
 }) => {
   await page.goto("./");
   await useComicExample(page);
-  await page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem("gridroom-v1"));
-    saved.boards.forEach((item) => {
-      delete item.heading;
-      delete item.headingVisible;
-      delete item.headingFont;
-      delete item.cellFont;
-      delete item.publisher;
-    });
-    saved.boards[0].cells[0].title = "My custom character";
-    localStorage.setItem("gridroom-v1", JSON.stringify(saved));
-  });
+  await page.locator("#cell-title").fill("My custom character");
   await page.reload();
   await expect(page.locator("#image-heading")).toHaveValue("Team DC");
   await expect(
@@ -394,7 +401,7 @@ test("board headings and font choices persist and old boards migrate without los
     "background-color",
     "rgba(0, 0, 0, 0)",
   );
-  await page.getByRole("tab", { name: /Marvel Characters/ }).click();
+  await useComicExample(page, "marvel");
   await expect(page.locator("#image-heading")).toHaveValue("Team Marvel");
   await page.locator("#image-heading").fill("");
   await expect(page.locator(".board-export-heading")).toBeHidden();
@@ -462,7 +469,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   await expect(page.locator(".board-export-heading")).toHaveText("Team DC");
 
   const settings = page.getByRole("button", {
-    name: "Board settings",
+    name: "Grid settings",
     exact: true,
   });
   await settings.click();
@@ -472,12 +479,12 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   await expect(page.locator("#board-name")).toBeVisible();
 
   const actions = page.getByRole("button", {
-    name: "Board actions",
+    name: "Grid actions",
     exact: true,
   });
   await actions.focus();
   await actions.press("ArrowDown");
-  const rename = page.getByRole("menuitem", { name: "Rename board" });
+  const rename = page.getByRole("menuitem", { name: "Rename grid" });
   await expect(rename).toBeVisible();
   const before = await page.evaluate(() => ({
     scroll: window.scrollY,
@@ -485,7 +492,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
     width: document.body.getBoundingClientRect().width,
   }));
   await rename.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Rename board" });
+  const dialog = page.getByRole("dialog", { name: "Rename grid" });
   await expect(dialog).toBeVisible();
   await expect(page.locator("#rename-board-name")).toBeFocused();
   await expect(
@@ -571,12 +578,10 @@ test("touch dialogs do not autofocus text inputs", async ({ browser }) => {
   try {
     const page = await context.newPage();
     await page.goto("http://localhost:5840/tier-list/");
-    await page
-      .getByRole("button", { name: "Board actions", exact: true })
-      .tap();
-    await page.getByRole("menuitem", { name: "Rename board" }).tap();
+    await page.getByRole("button", { name: "Grid actions", exact: true }).tap();
+    await page.getByRole("menuitem", { name: "Rename grid" }).tap();
     await expect(
-      page.getByRole("dialog", { name: "Rename board" }),
+      page.getByRole("dialog", { name: "Rename grid" }),
     ).toBeVisible();
     await expect(page.locator("#rename-board-name")).not.toBeFocused();
     await expect
@@ -596,92 +601,80 @@ test("touch dialogs do not autofocus text inputs", async ({ browser }) => {
   }
 });
 
-test("board deletion restores edits and the last-board empty state survives reload", async ({
+test("guest reset restores settings without deleting images or removed placements", async ({
   page,
 }, testInfo) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
-  await useComicExample(page);
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await page.locator(".cell-image-button").nth(15).click();
+  await page.locator("#replace-upload").setInputFiles({
+    name: "local.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
   await page.locator("#cell-title").fill("Keep my custom caption");
-  await page.getByRole("switch", { name: "Show heading" }).click();
-  const original = await page.evaluate(
-    () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0],
+  await page.locator("#image-heading").fill("Custom banner");
+  await page.locator("#heading-font").selectOption("Bangers");
+  await page.locator("#gap").fill("30");
+  await page.locator("#format").selectOption("image/webp");
+  await page.locator("#resolution").selectOption("300");
+  await page.locator("#quality").fill("70");
+  await page.reload();
+  await expect(page.locator("#image-heading")).toHaveValue("Custom banner");
+  await expect(page.locator("#format")).toHaveValue("image/webp");
+  await expect(page.locator("#resolution")).toHaveValue("300");
+  await expect(page.locator("#quality")).toHaveValue("70");
+  const original = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("grids-editor-v1")),
   );
   await page
-    .getByRole("button", { name: "Delete board: DC Characters", exact: true })
+    .getByRole("button", { name: "Reset to Defaults", exact: true })
     .click();
-  await expect(page.getByRole("tab")).toHaveCount(1);
-  await expect(page.locator("#canvas-title")).toHaveText("Marvel Characters");
-  await page.locator("#board-name").fill("My remaining board");
-  await page.getByRole("button", { name: "Undo board deletion" }).click();
-  await expect(page.locator("#canvas-title")).toHaveText("DC Characters");
-  await expect(
-    page.getByRole("tab", { name: /My remaining board/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("switch", { name: "Show heading" }),
-  ).not.toBeChecked();
-  await expect(page.locator("#cell-title")).toHaveValue(
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.locator("#image-heading")).toHaveValue("");
+  await expect(page.locator("#heading-font")).toHaveValue("Manrope");
+  await expect(page.locator("#gap")).toHaveValue("12");
+  await expect(page.locator("#format")).toHaveValue("image/png");
+  await expect(page.locator("#resolution")).toHaveValue("1200");
+  await expect(page.locator("#quality")).toHaveValue("95");
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const reset = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("grids-editor-v1")),
+  );
+  expect(reset.assets).toEqual(original.assets);
+  expect(reset.grid).toMatchObject({
+    name: "Grid",
+    publisher: "none",
+    heading: "",
+    headingVisible: true,
+    headingFont: "Manrope",
+    cellFont: "Manrope",
+    rows: 3,
+    columns: 3,
+    gap: 12,
+    background: "#17191b",
+  });
+  expect(
+    reset.grid.overflow.some(
+      (entry) => entry.cell.title === "Keep my custom caption",
+    ),
+  ).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await expect(page.locator(".cell-heading").nth(15)).toHaveValue(
     "Keep my custom caption",
   );
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0],
-    ),
-  ).toEqual(original);
-
-  await page
-    .getByRole("button", { name: "Delete board: DC Characters", exact: true })
-    .click();
-  await page
-    .getByRole("button", {
-      name: "Delete board: My remaining board",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "No boards", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator("#add-board")).toBeFocused();
-  await expect(page.getByRole("tab")).toHaveCount(0);
-  await expect(page.locator("#board-grid")).toHaveCount(0);
-  await expect(page.locator("#export-all")).toBeDisabled();
-  await expect(page.locator(".asset")).toHaveCount(8);
-  await page.screenshot({
-    path: testInfo.outputPath("empty-workspace-desktop.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Undo board deletion" }).click();
-  await expect(page.locator("#canvas-title")).toHaveText("My remaining board");
-  await page
-    .getByRole("button", {
-      name: "Delete board: My remaining board",
-      exact: true,
-    })
-    .click();
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "No boards", exact: true }),
-  ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards,
-    ),
-  ).toEqual([]);
-  await page
-    .locator("#upload")
-    .setInputFiles(path.join(projectRoot, "public/assets/DC - Kite Man.jpg"));
-  await expect(page.locator(".asset")).toHaveCount(9);
-  await expect(page.getByRole("tab")).toHaveCount(0);
-  await page.reload();
-  await expect(page.locator(".asset")).toHaveCount(9);
-  await expect(
-    page.getByRole("heading", { name: "No boards", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: testInfo.outputPath("empty-workspace-mobile.png"),
+    path: testInfo.outputPath("reset-grid-mobile.png"),
     fullPage: true,
   });
   expect(
@@ -689,12 +682,97 @@ test("board deletion restores edits and the last-board empty state survives relo
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.locator("#add-board").click();
-  await expect(page.getByRole("tab")).toHaveCount(1);
-  await expect(page.locator("#canvas-title")).toHaveText("Board 1");
-  await expect(page.locator(".grid-cell")).toHaveCount(9);
-  await expect(page.locator(".grid-cell img")).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test("long imported filenames produce valid captions across reload", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const title = "A".repeat(150);
+  await page.locator("#replace-upload").setInputFiles({
+    name: `${title}.svg`,
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="green"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    title.slice(0, 120),
+  );
+  await page.reload();
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    title.slice(0, 120),
+  );
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("grids-editor-v1")).assets[0].title,
+    ),
+  ).toBe(title);
+});
+
+test("failed guest saves report session-only mode without blocking export", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-editor-v1")
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.goto("./");
+  await expect(page.locator("#save-status")).toHaveText("Session only");
+  await expect(page.locator("#toast")).toContainText("Local save failed");
+  await page.locator("#resolution").selectOption("150");
+  expect((await downloadBoard(page)).suggestedFilename()).toBe("grid.png");
+  expect(
+    await page.evaluate(() => localStorage.getItem("grids-editor-v1")),
+  ).toBeNull();
+});
+
+test("fresh storage ignores obsolete prototypes and rejects invalid documents", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "gridroom-v1",
+      JSON.stringify({
+        boards: [{ name: "Old prototype" }],
+        active: 0,
+        assets: [],
+      }),
+    ),
+  );
+  await page.goto("./");
+  await expect(page.locator("#canvas-title")).toHaveText("Grid");
+  for (const corruption of [
+    "version",
+    "cells",
+    "references",
+    "coordinates",
+    "json",
+  ]) {
+    await page.evaluate((corruption) => {
+      const saved = JSON.parse(localStorage.getItem("grids-editor-v1"));
+      if (corruption === "version") saved.version = 99;
+      if (corruption === "cells")
+        saved.grid.cells[1].id = saved.grid.cells[0].id;
+      if (corruption === "references")
+        saved.grid.cells[0].assetId = crypto.randomUUID();
+      if (corruption === "coordinates") saved.grid.rows = 13;
+      localStorage.setItem(
+        "grids-editor-v1",
+        corruption === "json" ? "{broken" : JSON.stringify(saved),
+      );
+    }, corruption);
+    await page.reload();
+    await expect(page.locator(".grid-cell")).toHaveCount(9);
+    await expect(page.locator("#canvas-title")).toHaveText("Grid");
+  }
 });
 
 test("edge resizing preserves coordinates, selection, overflow and newer edits", async ({
@@ -704,7 +782,7 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
   await useComicExample(page);
   const savedCells = () =>
     page.evaluate(
-      () => JSON.parse(localStorage.getItem("gridroom-v1")).boards[0].cells,
+      () => JSON.parse(localStorage.getItem("grids-editor-v1")).grid.cells,
     );
   const original = await savedCells();
   await page.locator(".cell-image-button").nth(2).click();
@@ -840,8 +918,8 @@ test("uploads follow stable cells through resize and large exports are bounded",
       .evaluateAll((cells) => cells.some((cell) => cell.value.includes("Eye"))),
   ).toBe(false);
   await page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem("gridroom-v1"));
-    const board = saved.boards[0];
+    const saved = JSON.parse(localStorage.getItem("grids-editor-v1"));
+    const board = saved.grid;
     board.rows = 12;
     board.columns = 12;
     board.heading = "";
@@ -852,7 +930,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
       title: "",
       fit: "contain",
     }));
-    localStorage.setItem("gridroom-v1", JSON.stringify(saved));
+    localStorage.setItem("grids-editor-v1", JSON.stringify(saved));
   });
   await page.reload();
   await expect(
@@ -862,7 +940,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
     page.getByRole("button", { name: "Add column", exact: true }),
   ).toBeDisabled();
   await page.locator("#resolution").selectOption("600");
-  await page.getByRole("button", { name: "Export board", exact: true }).click();
+  await page.locator("#export-board").click();
   await expect(page.locator("#toast")).toContainText(
     "Export exceeds the 32 MP limit",
   );

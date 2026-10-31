@@ -18,7 +18,7 @@ import {
   Crop,
   Trash2,
   Pencil,
-  Undo2,
+  RotateCcw,
   Images,
 } from "lucide-react";
 import {
@@ -33,11 +33,9 @@ import {
   fontOptions,
   gridLimit,
   loadWorkspace,
-  makeBoard,
   makeCell,
   publishers,
-  removeBoard,
-  restoreBoard,
+  resetWorkspace,
   resizeBoard,
   storageKey,
   type Asset,
@@ -45,6 +43,8 @@ import {
   type Cell,
   type ImageFormat,
   type OverflowCell,
+  type ExportSettings,
+  type Publisher,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
 
@@ -88,46 +88,46 @@ export default function App() {
   const [filter, setFilter] = useState("All");
   const [toast, setToast] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved locally");
-  const [format, setFormat] = useState<ImageFormat>("image/png");
-  const [resolution, setResolution] = useState(1200);
-  const [quality, setQuality] = useState(95);
+  const { format, resolution, quality } = workspace.exportSettings;
+  const patchExport = (patch: Partial<ExportSettings>) =>
+    setWorkspace((current) => ({
+      ...current,
+      exportSettings: { ...current.exportSettings, ...patch },
+    }));
   const [exporting, setExporting] = useState(false);
   const [loadingExample, setLoadingExample] = useState(false);
+  const [exampleOpen, setExampleOpen] = useState(false);
+  const [examplePublisher, setExamplePublisher] = useState<Publisher>("dc");
+  const exampleButton = useRef<HTMLButtonElement>(null);
   const replaceUpload = useRef<HTMLInputElement>(null);
   const boardActions = useRef<HTMLButtonElement>(null);
   const renameInput = useRef<HTMLInputElement>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [deletedBoards, setDeletedBoards] = useState<
-    { board: Board; position: number; selectedCellId: string }[]
-  >([]);
   const [resizeHistory, setResizeHistory] = useState<
     { boardId: string; rows: number; columns: number; selectedCellId: string }[]
   >([]);
-  const addBoardButton = useRef<HTMLButtonElement>(null);
-  const board = workspace.boards.at(workspace.active);
+  const board = workspace.grid;
   const selectedCell = Math.max(
     0,
-    board?.cells.findIndex((item) => item.id === selectedCellId) ?? 0,
+    board.cells.findIndex((item) => item.id === selectedCellId),
   );
   const setSelectedCell = (index: number) =>
-    setSelectedCellId(board?.cells[index]?.id ?? null);
-  const cell = board?.cells[selectedCell] ?? makeCell();
+    setSelectedCellId(board.cells[index]?.id ?? null);
+  const cell = board.cells[selectedCell];
   const resizeUndo = resizeHistory
     .slice()
     .reverse()
-    .find((entry) => entry.boardId === board?.id);
-  const palette = board ? publishers[board.publisher] : publishers.none;
-  const size = board ? dimensions(board, resolution) : null;
+    .find((entry) => entry.boardId === board.id);
+  const palette = publishers[board.publisher];
+  const size = dimensions(board, resolution);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(workspace));
       setSaveStatus("Saved locally");
     } catch {
       setSaveStatus("Session only");
-      setToast(
-        "Browser storage is full. Your current boards can still be exported.",
-      );
+      setToast("Local save failed. Your current grid can still be exported.");
     }
   }, [workspace]);
   useEffect(() => {
@@ -138,9 +138,7 @@ export default function App() {
   const updateBoard = (update: (board: Board) => Board) =>
     setWorkspace((current) => ({
       ...current,
-      boards: current.boards.map((item) =>
-        item.id === board?.id ? update(item) : item,
-      ),
+      grid: update(current.grid),
     }));
   const patchBoard = (patch: Partial<Board>) =>
     updateBoard((item) => ({ ...item, ...patch }));
@@ -152,7 +150,6 @@ export default function App() {
       ),
     }));
   const placeAsset = (id: string, index: number) => {
-    if (!board) return;
     const asset = workspace.assets.find((asset) => asset.id === id);
     if (!asset) return;
     updateBoard((item) => ({
@@ -164,7 +161,6 @@ export default function App() {
     setSelectedCell(index);
   };
   const resize = (key: "rows" | "columns", input: number) => {
-    if (!board) return;
     const value = Math.max(1, Math.min(gridLimit, Math.round(input) || 1));
     if (value === board[key]) return;
     const rows = key === "rows" ? value : board.rows;
@@ -210,9 +206,9 @@ export default function App() {
     files: FileList | null,
     targetIndex: number | null = null,
   ) => {
-    const targetId = board?.id;
+    const targetId = board.id;
     const targetCellId =
-      targetIndex === null ? null : board?.cells[targetIndex]?.id;
+      targetIndex === null ? null : board.cells[targetIndex]?.id;
     const assets: Asset[] = [];
     for (const file of Array.from(files ?? [])) {
       if (!file.type.startsWith("image/")) {
@@ -245,7 +241,8 @@ export default function App() {
     setWorkspace((current) => ({
       ...current,
       assets: [...current.assets, ...assets],
-      boards: current.boards.map((item) => {
+      grid: (() => {
+        const item = current.grid;
         if (item.id !== targetId || !targetCellId) return item;
         const destination = item.cells.findIndex(
           (entry) => entry.id === targetCellId,
@@ -259,12 +256,11 @@ export default function App() {
               : entry,
           ),
         };
-      }),
+      })(),
     }));
     setFilter("All");
   };
   const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
-    if (!board) return;
     event.preventDefault();
     event.currentTarget.classList.remove("drag-over");
     const assetId = event.dataTransfer.getData("application/x-gridroom-asset");
@@ -303,47 +299,41 @@ export default function App() {
       importFiles(event.dataTransfer.files, index);
     }
   };
-  const exportBoards = async (all = false) => {
-    if (exporting || !board) return;
+  const exportGrid = async () => {
+    if (exporting) return;
     setExporting(true);
-    const items = structuredClone(all ? workspace.boards : [board]);
+    const item = structuredClone(board);
     const extension = {
       "image/png": "png",
       "image/jpeg": "jpg",
       "image/webp": "webp",
     }[format];
     try {
-      for (const item of items) {
-        const blob = await createExport(
-          item,
-          workspace.assets,
-          resolution,
-          format,
-          quality / 100,
-          window.matchMedia("(max-width: 767px), (any-pointer: coarse)").matches
-            ? 16_000_000
-            : 32_000_000,
-        );
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${
-          item.name
-            .replace(/[^a-z0-9 -]/gi, "")
-            .trim()
-            .replace(/\s+/g, "-")
-            .toLowerCase() || "board"
-        }.${extension}`;
-        document.body.append(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      }
-      setToast(
-        all
-          ? `${items.length} boards exported. Allow multiple downloads if your browser asks.`
-          : "Board exported.",
+      const blob = await createExport(
+        item,
+        workspace.assets,
+        resolution,
+        format,
+        quality / 100,
+        window.matchMedia("(max-width: 767px), (any-pointer: coarse)").matches
+          ? 16_000_000
+          : 32_000_000,
       );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${
+        item.name
+          .replace(/[^a-z0-9 -]/gi, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .toLowerCase() || "board"
+      }.${extension}`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setToast("Grid exported.");
     } catch (error) {
       setToast(
         error instanceof Error
@@ -362,26 +352,24 @@ export default function App() {
     await importFiles(input.files, target);
     input.value = "";
   };
-  const addBoard = () => {
-    setWorkspace((current) => ({
-      ...current,
-      boards: [
-        ...current.boards,
-        makeBoard(`Board ${current.boards.length + 1}`),
-      ],
-      active: current.boards.length,
-    }));
+  const resetDefaults = () => {
+    setWorkspace(resetWorkspace);
+    setResizeHistory([]);
     setSelectedCellId(null);
+    setFilter("All");
+    setToast("Defaults restored. Images kept.");
   };
   const loadExample = async () => {
     if (loadingExample) return;
     setLoadingExample(true);
     try {
       const { loadComicExample } = await import("./demo/comics");
-      setWorkspace((current) => loadComicExample(current));
+      setWorkspace((current) => loadComicExample(current, examplePublisher));
+      setResizeHistory([]);
       setSelectedCellId(null);
       setFilter("All");
-      setToast("Example added.");
+      setToast("Example loaded.");
+      setExampleOpen(false);
     } catch (error) {
       setToast(
         error instanceof Error ? error.message : "Example could not be loaded.",
@@ -389,33 +377,6 @@ export default function App() {
     } finally {
       setLoadingExample(false);
     }
-  };
-  const deleteActiveBoard = () => {
-    if (!board) return;
-    setDeletedBoards((current) => [
-      ...current,
-      { board, position: workspace.active, selectedCellId: cell.id },
-    ]);
-    setWorkspace((current) => removeBoard(current, board.id));
-    setSelectedCellId(null);
-    setToast(`Deleted ${board.name}.`);
-    if (workspace.boards.length === 1)
-      requestAnimationFrame(() =>
-        addBoardButton.current?.focus({ preventScroll: true }),
-      );
-  };
-  const undoBoardDeletion = () => {
-    const entry = deletedBoards.at(-1);
-    if (!entry) return;
-    setWorkspace((current) =>
-      restoreBoard(current, entry.board, entry.position),
-    );
-    setDeletedBoards((current) => current.slice(0, -1));
-    setSelectedCellId(entry.selectedCellId);
-    setToast(`Restored ${entry.board.name}.`);
-    requestAnimationFrame(() =>
-      addBoardButton.current?.focus({ preventScroll: true }),
-    );
   };
   return (
     <>
@@ -431,19 +392,17 @@ export default function App() {
             {saveStatus}
           </span>
           <button
-            id="export-all"
+            id="export-grid-header"
             className="button secondary"
-            disabled={exporting || !board}
-            onClick={() => exportBoards(true)}
+            disabled={exporting}
+            onClick={exportGrid}
           >
             <Download />
-            <span>Export all boards</span>
+            <span>Export grid</span>
           </button>
         </div>
       </header>
-      <main
-        className={`app-layout${board ? "" : " tw:!grid-cols-1 tw:md:!grid-cols-[230px_minmax(0,1fr)]"}`}
-      >
+      <main className="app-layout">
         <aside className="asset-panel">
           <div className="section-heading">
             <h2>Image library</h2>
@@ -451,11 +410,12 @@ export default function App() {
               {workspace.assets.length}
             </span>
             <Button
+              ref={exampleButton}
               variant="icon"
               aria-label="Load example"
               title="Load example: Legacy comics"
               disabled={loadingExample}
-              onClick={loadExample}
+              onClick={() => setExampleOpen(true)}
             >
               <Images aria-hidden="true" />
             </Button>
@@ -494,7 +454,6 @@ export default function App() {
                 <button
                   key={asset.id}
                   className="asset"
-                  disabled={!board}
                   title={`Place ${asset.title} in selected cell`}
                   draggable
                   onClick={() => placeAsset(asset.id, selectedCell)}
@@ -518,471 +477,409 @@ export default function App() {
             <HardDrive />
           </div>
         </aside>
-        <section className="workspace" aria-label="Board editor">
+        <section className="workspace" aria-label="Grid editor">
           <div className="workspace-toolbar">
-            <div
-              id="board-tabs"
-              className="board-tabs"
-              role="tablist"
-              aria-label="Boards"
+            <ActionMenu
+              buttonRef={boardActions}
+              actions={[
+                {
+                  label: "Rename grid",
+                  icon: Pencil,
+                  onSelect: () => {
+                    setDraftName(board.name);
+                    setRenaming(board.id);
+                  },
+                },
+                {
+                  label: "Download image",
+                  icon: Download,
+                  onSelect: exportGrid,
+                  disabled: exporting,
+                },
+              ]}
+            />
+            <Button
+              variant="icon"
+              title="Reset to Defaults"
+              aria-label="Reset to Defaults"
+              onClick={resetDefaults}
             >
-              {workspace.boards.map((item, index) => (
-                <button
-                  key={item.id}
-                  className="board-tab"
-                  role="tab"
-                  aria-selected={index === workspace.active}
-                  onClick={() => {
-                    setWorkspace((current) => ({ ...current, active: index }));
-                    setSelectedCellId(null);
-                  }}
-                >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  {item.name}
-                </button>
+              <RotateCcw aria-hidden="true" />
+            </Button>
+          </div>
+          <div className="canvas-area">
+            <div className="canvas-heading">
+              <div>
+                <span className="eyebrow">THE CANVAS</span>
+                <h1 id="canvas-title">{board.name}</h1>
+              </div>
+              <span id="board-summary" className="canvas-meta">
+                {board.columns} × {board.rows} /{" "}
+                {
+                  board.cells
+                    .slice(0, board.rows * board.columns)
+                    .filter((item) => item.assetId).length
+                }{" "}
+                images
+              </span>
+            </div>
+            <GridResizer
+              rows={board.rows}
+              columns={board.columns}
+              onResize={resize}
+              onUndo={resizeUndo ? undoResize : undefined}
+            >
+              <div
+                id="board-grid"
+                className="board-grid"
+                aria-label="Image grid"
+                style={
+                  {
+                    "--columns": board.columns,
+                    "--gap": `${board.gap}px`,
+                    "--board-bg": board.background,
+                    "--publisher-color": palette.color,
+                    "--publisher-text": palette.text,
+                    "--caption-color": palette.caption,
+                    "--heading-font": `"${board.headingFont}"`,
+                    "--cell-font": `"${board.cellFont}"`,
+                  } as CSSProperties
+                }
+              >
+                <BoardHeading board={board} />
+                {board.cells
+                  .slice(0, board.rows * board.columns)
+                  .map((item, index) => {
+                    const asset = workspace.assets.find(
+                      (asset) => asset.id === item.assetId,
+                    );
+                    return (
+                      <div
+                        key={item.id}
+                        className={`grid-cell${selectedCell === index ? " selected" : ""}`}
+                        data-index={index}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.currentTarget.classList.add("drag-over");
+                        }}
+                        onDragLeave={(event) => {
+                          if (
+                            !(event.relatedTarget instanceof Node) ||
+                            !event.currentTarget.contains(event.relatedTarget)
+                          )
+                            event.currentTarget.classList.remove("drag-over");
+                        }}
+                        onDrop={(event) => drop(event, index)}
+                      >
+                        <button
+                          className="cell-image-button"
+                          aria-label={`Select cell ${index + 1}${item.title ? `: ${item.title}` : ""}`}
+                          draggable={Boolean(asset)}
+                          onClick={() => setSelectedCell(index)}
+                          onDoubleClick={() => {
+                            setSelectedCell(index);
+                            replaceUpload.current?.click();
+                          }}
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData(
+                              "application/x-gridroom-cell",
+                              JSON.stringify({
+                                boardId: board.id,
+                                cellId: item.id,
+                              }),
+                            );
+                            event.dataTransfer.effectAllowed = "move";
+                          }}
+                        >
+                          {asset ? (
+                            <img
+                              src={asset.src}
+                              alt={item.title}
+                              style={{ objectFit: item.fit }}
+                              draggable={false}
+                            />
+                          ) : (
+                            <span className="empty-cell">
+                              <ImagePlus />
+                              <span>Add image</span>
+                            </span>
+                          )}
+                          <span className="cell-badge">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                        </button>
+                        <textarea
+                          className="cell-heading"
+                          rows={1}
+                          maxLength={120}
+                          value={item.title}
+                          placeholder="ADD HEADING"
+                          aria-label={`Heading for cell ${index + 1}`}
+                          onFocus={() => setSelectedCell(index)}
+                          onChange={(event) => {
+                            const title = event.target.value;
+                            updateBoard((current) => ({
+                              ...current,
+                              cells: current.cells.map((entry, position) =>
+                                position === index
+                                  ? { ...entry, title }
+                                  : entry,
+                              ),
+                            }));
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+            </GridResizer>
+            <div className="canvas-footer">
+              <span>
+                <Type />
+                <span id="font-summary">
+                  {`${board.headingFont} / ${board.cellFont}`.toUpperCase()}
+                </span>
+              </span>
+              <span id="canvas-dimensions">
+                {size.width} × {size.height} px
+              </span>
+            </div>
+            <RemovedCells
+              entries={board.overflow}
+              assets={workspace.assets}
+              onRecover={recoverCell}
+            />
+          </div>
+        </section>
+        <aside className="settings-panel">
+          <Accordion title="Grid settings">
+            <label className="field-label" htmlFor="board-name">
+              Grid name
+            </label>
+            <input
+              id="board-name"
+              maxLength={70}
+              value={board.name}
+              onChange={(event) => patchBoard({ name: event.target.value })}
+            />
+            <label className="field-label" htmlFor="image-heading">
+              Image heading
+            </label>
+            <Toggle
+              label="Show heading"
+              checked={board.headingVisible !== false}
+              onChange={(headingVisible) => patchBoard({ headingVisible })}
+            />
+            <input
+              id="image-heading"
+              maxLength={120}
+              placeholder="Heading"
+              value={board.heading}
+              onChange={(event) => patchBoard({ heading: event.target.value })}
+            />
+            <label className="field-label" htmlFor="publisher">
+              Publisher
+            </label>
+            <select
+              id="publisher"
+              value={board.publisher}
+              onChange={(event) =>
+                patchBoard({
+                  publisher: event.target.value as Board["publisher"],
+                })
+              }
+            >
+              <option value="none">None</option>
+              <option value="dc">DC</option>
+              <option value="marvel">Marvel</option>
+            </select>
+            <label className="field-label" htmlFor="heading-font">
+              Heading font
+            </label>
+            <select
+              id="heading-font"
+              value={board.headingFont}
+              onChange={(event) =>
+                patchBoard({ headingFont: event.target.value })
+              }
+            >
+              {fontOptions.map((font) => (
+                <option key={font}>{font}</option>
+              ))}
+            </select>
+            <label className="field-label" htmlFor="cell-font">
+              Cell font
+            </label>
+            <select
+              id="cell-font"
+              value={board.cellFont}
+              onChange={(event) => patchBoard({ cellFont: event.target.value })}
+            >
+              {fontOptions.map((font) => (
+                <option key={font}>{font}</option>
+              ))}
+            </select>
+            <div className="field-pair">
+              {(["rows", "columns"] as const).map((key) => (
+                <label key={key}>
+                  {key === "rows" ? "Rows" : "Columns"}
+                  <output id={key} className="tw:block tw:py-2">
+                    {board[key]}
+                  </output>
+                </label>
               ))}
             </div>
-            {board && (
-              <ActionMenu
-                buttonRef={boardActions}
-                actions={[
-                  {
-                    label: "Rename board",
-                    icon: Pencil,
-                    onSelect: () => {
-                      setDraftName(board.name);
-                      setRenaming(board.id);
-                    },
-                  },
-                  {
-                    label: "Download image",
-                    icon: Download,
-                    onSelect: () => exportBoards(),
-                    disabled: exporting,
-                  },
-                ]}
+            <label className="field-label" htmlFor="gap">
+              Grid spacing <output id="gap-value">{board.gap} px</output>
+            </label>
+            <input
+              id="gap"
+              type="range"
+              min="0"
+              max="40"
+              value={board.gap}
+              onChange={(event) =>
+                patchBoard({ gap: Number(event.target.value) })
+              }
+            />
+            <label className="field-label" htmlFor="background">
+              Background
+            </label>
+            <div className="color-field">
+              <input
+                id="background"
+                type="color"
+                value={board.background}
+                onChange={(event) =>
+                  patchBoard({ background: event.target.value })
+                }
               />
-            )}
-            {board && (
-              <Button
-                variant="icon"
-                aria-label={`Delete board: ${board.name}`}
-                title={`Delete board: ${board.name}`}
-                onClick={deleteActiveBoard}
-              >
-                <Trash2 aria-hidden="true" />
-              </Button>
-            )}
-            {deletedBoards.length > 0 && (
-              <Button
-                variant="icon"
-                aria-label="Undo board deletion"
-                title="Undo board deletion"
-                onClick={undoBoardDeletion}
-              >
-                <Undo2 aria-hidden="true" />
-              </Button>
-            )}
-            <button
-              id="add-board"
-              ref={addBoardButton}
-              className="icon-button"
-              title="Add board"
-              aria-label="Add board"
-              onClick={addBoard}
-            >
-              <Plus />
-            </button>
-          </div>
-          {board ? (
-            <div className="canvas-area">
-              <div className="canvas-heading">
-                <div>
-                  <span className="eyebrow">THE CANVAS</span>
-                  <h1 id="canvas-title">{board.name}</h1>
-                </div>
-                <span id="board-summary" className="canvas-meta">
-                  {board.columns} × {board.rows} /{" "}
-                  {
-                    board.cells
-                      .slice(0, board.rows * board.columns)
-                      .filter((item) => item.assetId).length
-                  }{" "}
-                  images
-                </span>
-              </div>
-              <GridResizer
-                rows={board.rows}
-                columns={board.columns}
-                onResize={resize}
-                onUndo={resizeUndo ? undoResize : undefined}
-              >
-                <div
-                  id="board-grid"
-                  className="board-grid"
-                  aria-label="Image grid"
-                  style={
-                    {
-                      "--columns": board.columns,
-                      "--gap": `${board.gap}px`,
-                      "--board-bg": board.background,
-                      "--publisher-color": palette.color,
-                      "--publisher-text": palette.text,
-                      "--caption-color": palette.caption,
-                      "--heading-font": `"${board.headingFont}"`,
-                      "--cell-font": `"${board.cellFont}"`,
-                    } as CSSProperties
-                  }
-                >
-                  <BoardHeading board={board} />
-                  {board.cells
-                    .slice(0, board.rows * board.columns)
-                    .map((item, index) => {
-                      const asset = workspace.assets.find(
-                        (asset) => asset.id === item.assetId,
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          className={`grid-cell${selectedCell === index ? " selected" : ""}`}
-                          data-index={index}
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            event.currentTarget.classList.add("drag-over");
-                          }}
-                          onDragLeave={(event) => {
-                            if (
-                              !(event.relatedTarget instanceof Node) ||
-                              !event.currentTarget.contains(event.relatedTarget)
-                            )
-                              event.currentTarget.classList.remove("drag-over");
-                          }}
-                          onDrop={(event) => drop(event, index)}
-                        >
-                          <button
-                            className="cell-image-button"
-                            aria-label={`Select cell ${index + 1}${item.title ? `: ${item.title}` : ""}`}
-                            draggable={Boolean(asset)}
-                            onClick={() => setSelectedCell(index)}
-                            onDoubleClick={() => {
-                              setSelectedCell(index);
-                              replaceUpload.current?.click();
-                            }}
-                            onDragStart={(event) => {
-                              event.dataTransfer.setData(
-                                "application/x-gridroom-cell",
-                                JSON.stringify({
-                                  boardId: board.id,
-                                  cellId: item.id,
-                                }),
-                              );
-                              event.dataTransfer.effectAllowed = "move";
-                            }}
-                          >
-                            {asset ? (
-                              <img
-                                src={asset.src}
-                                alt={item.title}
-                                style={{ objectFit: item.fit }}
-                                draggable={false}
-                              />
-                            ) : (
-                              <span className="empty-cell">
-                                <ImagePlus />
-                                <span>Add image</span>
-                              </span>
-                            )}
-                            <span className="cell-badge">
-                              {String(index + 1).padStart(2, "0")}
-                            </span>
-                          </button>
-                          <textarea
-                            className="cell-heading"
-                            rows={1}
-                            maxLength={120}
-                            value={item.title}
-                            placeholder="ADD HEADING"
-                            aria-label={`Heading for cell ${index + 1}`}
-                            onFocus={() => setSelectedCell(index)}
-                            onChange={(event) => {
-                              const title = event.target.value;
-                              updateBoard((current) => ({
-                                ...current,
-                                cells: current.cells.map((entry, position) =>
-                                  position === index
-                                    ? { ...entry, title }
-                                    : entry,
-                                ),
-                              }));
-                            }}
-                          />
-                        </div>
-                      );
-                    })}
-                </div>
-              </GridResizer>
-              <div className="canvas-footer">
-                <span>
-                  <Type />
-                  <span id="font-summary">
-                    {`${board.headingFont} / ${board.cellFont}`.toUpperCase()}
-                  </span>
-                </span>
-                <span id="canvas-dimensions">
-                  {size?.width} × {size?.height} px
-                </span>
-              </div>
-              <RemovedCells
-                entries={board.overflow}
-                assets={workspace.assets}
-                onRecover={recoverCell}
-              />
+              <span id="background-value">
+                {board.background.toUpperCase()}
+              </span>
             </div>
-          ) : (
-            <div className="canvas-area tw:grid tw:min-h-[360px] tw:place-content-center tw:justify-items-center tw:gap-4">
-              <PanelsTopLeft
-                aria-hidden="true"
-                className="tw:size-8 tw:text-[var(--muted)]"
-              />
-              <h1>No boards</h1>
-              <Button onClick={addBoard}>
-                <Plus aria-hidden="true" />
-                Add board
-              </Button>
+          </Accordion>
+          <section className="settings-section">
+            <div className="section-heading">
+              <span className="eyebrow">SELECTED CELL</span>
+              <span id="cell-number" className="count">
+                {String(selectedCell + 1).padStart(2, "0")}
+              </span>
             </div>
-          )}
-        </section>
-        {board && (
-          <aside className="settings-panel">
-            <Accordion title="Board settings">
-              <label className="field-label" htmlFor="board-name">
-                Board name
-              </label>
-              <input
-                id="board-name"
-                maxLength={70}
-                value={board.name}
-                onChange={(event) => patchBoard({ name: event.target.value })}
-              />
-              <label className="field-label" htmlFor="image-heading">
-                Image heading
-              </label>
-              <Toggle
-                label="Show heading"
-                checked={board.headingVisible !== false}
-                onChange={(headingVisible) => patchBoard({ headingVisible })}
-              />
-              <input
-                id="image-heading"
-                maxLength={120}
-                placeholder="Team name"
-                value={board.heading}
-                onChange={(event) =>
-                  patchBoard({ heading: event.target.value })
-                }
-              />
-              <label className="field-label" htmlFor="publisher">
-                Publisher
-              </label>
-              <select
-                id="publisher"
-                value={board.publisher}
-                onChange={(event) =>
-                  patchBoard({
-                    publisher: event.target.value as Board["publisher"],
-                  })
-                }
-              >
-                <option value="none">None</option>
-                <option value="dc">DC</option>
-                <option value="marvel">Marvel</option>
-              </select>
-              <label className="field-label" htmlFor="heading-font">
-                Heading font
-              </label>
-              <select
-                id="heading-font"
-                value={board.headingFont}
-                onChange={(event) =>
-                  patchBoard({ headingFont: event.target.value })
-                }
-              >
-                {fontOptions.map((font) => (
-                  <option key={font}>{font}</option>
-                ))}
-              </select>
-              <label className="field-label" htmlFor="cell-font">
-                Character font
-              </label>
-              <select
-                id="cell-font"
-                value={board.cellFont}
-                onChange={(event) =>
-                  patchBoard({ cellFont: event.target.value })
-                }
-              >
-                {fontOptions.map((font) => (
-                  <option key={font}>{font}</option>
-                ))}
-              </select>
-              <div className="field-pair">
-                {(["rows", "columns"] as const).map((key) => (
-                  <label key={key}>
-                    {key === "rows" ? "Rows" : "Columns"}
-                    <output id={key} className="tw:block tw:py-2">
-                      {board[key]}
-                    </output>
-                  </label>
-                ))}
-              </div>
-              <label className="field-label" htmlFor="gap">
-                Grid spacing <output id="gap-value">{board.gap} px</output>
-              </label>
-              <input
-                id="gap"
-                type="range"
-                min="0"
-                max="40"
-                value={board.gap}
-                onChange={(event) =>
-                  patchBoard({ gap: Number(event.target.value) })
-                }
-              />
-              <label className="field-label" htmlFor="background">
-                Background
-              </label>
-              <div className="color-field">
-                <input
-                  id="background"
-                  type="color"
-                  value={board.background}
-                  onChange={(event) =>
-                    patchBoard({ background: event.target.value })
-                  }
-                />
-                <span id="background-value">
-                  {board.background.toUpperCase()}
-                </span>
-              </div>
-            </Accordion>
-            <section className="settings-section">
-              <div className="section-heading">
-                <span className="eyebrow">SELECTED CELL</span>
-                <span id="cell-number" className="count">
-                  {String(selectedCell + 1).padStart(2, "0")}
-                </span>
-              </div>
-              <label className="field-label" htmlFor="cell-title">
-                Heading
-              </label>
-              <textarea
-                id="cell-title"
-                rows={2}
-                maxLength={120}
-                value={cell.title}
-                onChange={(event) => patchCell({ title: event.target.value })}
-              />
-              <span className="field-label">Image fit</span>
-              <div className="segmented" role="group" aria-label="Image fit">
-                <button
-                  id="fit-contain"
-                  aria-pressed={cell.fit === "contain"}
-                  onClick={() => patchCell({ fit: "contain" })}
-                >
-                  <Scan />
-                  Fit
-                </button>
-                <button
-                  id="fit-cover"
-                  aria-pressed={cell.fit === "cover"}
-                  onClick={() => patchCell({ fit: "cover" })}
-                >
-                  <Crop />
-                  Fill
-                </button>
-              </div>
-              <div className="cell-actions">
-                <button
-                  id="replace-image"
-                  className="text-button"
-                  onClick={() => replaceUpload.current?.click()}
-                >
-                  <ImagePlus />
-                  Replace
-                </button>
-                <button
-                  id="remove-image"
-                  className="icon-button"
-                  title="Clear selected cell"
-                  aria-label="Clear selected cell"
-                  onClick={() => patchCell(makeCell())}
-                >
-                  <Trash2 />
-                </button>
-              </div>
-              <input
-                ref={replaceUpload}
-                id="replace-upload"
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(event) => upload(event, selectedCell)}
-              />
-            </section>
-            <section className="settings-section export-section">
-              <span className="eyebrow">EXPORT</span>
-              <label className="field-label" htmlFor="format">
-                File format
-              </label>
-              <select
-                id="format"
-                value={format}
-                onChange={(event) =>
-                  setFormat(event.target.value as ImageFormat)
-                }
-              >
-                <option value="image/png">PNG</option>
-                <option value="image/jpeg">JPEG</option>
-                <option value="image/webp">WebP</option>
-              </select>
-              <label className="field-label" htmlFor="resolution">
-                Resolution
-              </label>
-              <select
-                id="resolution"
-                value={resolution}
-                onChange={(event) => setResolution(Number(event.target.value))}
-              >
-                <option value="150">150 px / image</option>
-                <option value="300">300 px / image</option>
-                <option value="600">600 px / image</option>
-                <option value="1200">1200 px / image</option>
-                <option value="1800">1800 px / image</option>
-              </select>
-              <label className="field-label quality-label" htmlFor="quality">
-                Quality <output id="quality-value">{quality}%</output>
-              </label>
-              <input
-                id="quality"
-                type="range"
-                min="50"
-                max="100"
-                value={quality}
-                disabled={format === "image/png"}
-                onChange={(event) => setQuality(Number(event.target.value))}
-              />
+            <label className="field-label" htmlFor="cell-title">
+              Heading
+            </label>
+            <textarea
+              id="cell-title"
+              rows={2}
+              maxLength={120}
+              value={cell.title}
+              onChange={(event) => patchCell({ title: event.target.value })}
+            />
+            <span className="field-label">Image fit</span>
+            <div className="segmented" role="group" aria-label="Image fit">
               <button
-                id="export-board"
-                className="button primary"
-                disabled={exporting}
-                onClick={() => exportBoards()}
+                id="fit-contain"
+                aria-pressed={cell.fit === "contain"}
+                onClick={() => patchCell({ fit: "contain" })}
               >
-                <Download />
-                Export board
+                <Scan />
+                Fit
               </button>
-            </section>
-          </aside>
-        )}
+              <button
+                id="fit-cover"
+                aria-pressed={cell.fit === "cover"}
+                onClick={() => patchCell({ fit: "cover" })}
+              >
+                <Crop />
+                Fill
+              </button>
+            </div>
+            <div className="cell-actions">
+              <button
+                id="replace-image"
+                className="text-button"
+                onClick={() => replaceUpload.current?.click()}
+              >
+                <ImagePlus />
+                Replace
+              </button>
+              <button
+                id="remove-image"
+                className="icon-button"
+                title="Clear selected cell"
+                aria-label="Clear selected cell"
+                onClick={() => patchCell(makeCell())}
+              >
+                <Trash2 />
+              </button>
+            </div>
+            <input
+              ref={replaceUpload}
+              id="replace-upload"
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => upload(event, selectedCell)}
+            />
+          </section>
+          <section className="settings-section export-section">
+            <span className="eyebrow">EXPORT</span>
+            <label className="field-label" htmlFor="format">
+              File format
+            </label>
+            <select
+              id="format"
+              value={format}
+              onChange={(event) =>
+                patchExport({ format: event.target.value as ImageFormat })
+              }
+            >
+              <option value="image/png">PNG</option>
+              <option value="image/jpeg">JPEG</option>
+              <option value="image/webp">WebP</option>
+            </select>
+            <label className="field-label" htmlFor="resolution">
+              Resolution
+            </label>
+            <select
+              id="resolution"
+              value={resolution}
+              onChange={(event) =>
+                patchExport({ resolution: Number(event.target.value) })
+              }
+            >
+              <option value="150">150 px / image</option>
+              <option value="300">300 px / image</option>
+              <option value="600">600 px / image</option>
+              <option value="1200">1200 px / image</option>
+              <option value="1800">1800 px / image</option>
+            </select>
+            <label className="field-label quality-label" htmlFor="quality">
+              Quality <output id="quality-value">{quality}%</output>
+            </label>
+            <input
+              id="quality"
+              type="range"
+              min="50"
+              max="100"
+              value={quality}
+              disabled={format === "image/png"}
+              onChange={(event) =>
+                patchExport({ quality: Number(event.target.value) })
+              }
+            />
+            <button
+              id="export-board"
+              className="button primary"
+              disabled={exporting}
+              onClick={exportGrid}
+            >
+              <Download />
+              Export grid
+            </button>
+          </section>
+        </aside>
       </main>
       <div id="toast" className="toast" role="status" hidden={!toast}>
         {toast}
@@ -990,7 +887,7 @@ export default function App() {
       <Modal
         open={renaming !== null}
         onClose={() => setRenaming(null)}
-        title="Rename board"
+        title="Rename grid"
         initialFocus={renameInput}
         returnFocus={boardActions}
       >
@@ -1001,9 +898,10 @@ export default function App() {
             if (!name) return;
             setWorkspace((current) => ({
               ...current,
-              boards: current.boards.map((item) =>
-                item.id === renaming ? { ...item, name } : item,
-              ),
+              grid:
+                current.grid.id === renaming
+                  ? { ...current.grid, name }
+                  : current.grid,
             }));
             setRenaming(null);
           }}
@@ -1012,7 +910,7 @@ export default function App() {
             htmlFor="rename-board-name"
             className="tw:mb-2 tw:block tw:text-sm tw:font-semibold"
           >
-            Board name
+            Grid name
           </label>
           <input
             ref={renameInput}
@@ -1034,6 +932,42 @@ export default function App() {
             </Button>
           </div>
         </form>
+      </Modal>
+      <Modal
+        open={exampleOpen}
+        onClose={() => !loadingExample && setExampleOpen(false)}
+        title="Load example"
+        returnFocus={exampleButton}
+      >
+        <div className="segmented" role="group" aria-label="Example">
+          {(["dc", "marvel"] as const).map((publisher) => (
+            <button
+              key={publisher}
+              type="button"
+              aria-pressed={examplePublisher === publisher}
+              onClick={() => setExamplePublisher(publisher)}
+              disabled={loadingExample}
+            >
+              {publisher === "dc" ? "DC" : "Marvel"}
+            </button>
+          ))}
+        </div>
+        <p>Replace the current grid? Images will stay in your library.</p>
+        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
+          <Button
+            onClick={() => setExampleOpen(false)}
+            disabled={loadingExample}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={loadExample}
+            disabled={loadingExample}
+          >
+            Use example
+          </Button>
+        </div>
       </Modal>
     </>
   );
