@@ -11,14 +11,12 @@ import {
 import {
   PanelsTopLeft,
   Download,
-  HardDrive,
   Type,
   ImagePlus,
   Trash2,
   RefreshCw,
   Images,
 } from "lucide-react";
-import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import {
   Button,
   ColorField,
@@ -50,20 +48,7 @@ import {
   type TemplateName,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
-import {
-  LocalWorkspaceStore,
-  LocalWorkspaceConflictError,
-  getBrowserStorageStatus,
-  requestPersistentStorage,
-  type BrowserStorageStatus,
-} from "./storage";
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return "Unavailable";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-}
+import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
 
 function BoardHeading({
   board,
@@ -203,20 +188,12 @@ export default function App() {
   const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [canSave, setCanSave] = useState(false);
-  const storageButton = useRef<HTMLButtonElement>(null);
-  const [storageOpen, setStorageOpen] = useState(false);
   const activeAssets = workspace.assets.filter(
     (asset) => asset.trashedAt === undefined && !asset.libraryHidden,
   );
-  const [storageInfo, setStorageInfo] = useState<
-    | (BrowserStorageStatus & {
-        images: { count: number; bytes: number } | null;
-      })
-    | null
-  >(null);
-  const [requestingPersistence, setRequestingPersistence] = useState(false);
   const [headingEditing, setHeadingEditing] = useState(false);
-  const [settingsTab, setSettingsTab] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
   const imageReturnFocus = useRef<HTMLButtonElement>(null);
   const uploadTarget = useRef<string | null>(null);
@@ -361,35 +338,6 @@ export default function App() {
       document.removeEventListener("visibilitychange", visibilityChange);
     };
   }, [workspace, canSave, loaded]);
-  useEffect(() => {
-    if (!storageOpen) return;
-    let cancelled = false;
-    Promise.all([
-      getBrowserStorageStatus(),
-      localStore.current?.usage().catch(() => null) ?? Promise.resolve(null),
-    ]).then(([browser, images]) => {
-      if (!cancelled) setStorageInfo({ ...browser, images });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [storageOpen, saveStatus]);
-  const requestPersistence = async () => {
-    if (requestingPersistence) return;
-    setRequestingPersistence(true);
-    const persisted = await requestPersistentStorage();
-    setStorageInfo((current) =>
-      current ? { ...current, persisted } : current,
-    );
-    setToast(
-      persisted === true
-        ? "Persistent storage granted."
-        : persisted === false
-          ? "Persistent storage not granted."
-          : "Persistent storage unavailable.",
-    );
-    setRequestingPersistence(false);
-  };
   const deleteImages = (assetIds: string[]) => {
     localStore.current?.scheduleImageDeletion(assetIds);
     dispatchDocument({ type: "assets/delete", assetIds });
@@ -557,6 +505,7 @@ export default function App() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setExportOpen(false);
       setToast("Grid exported.");
     } catch (error) {
       setToast(
@@ -581,7 +530,6 @@ export default function App() {
     setResizeHistory([]);
     setImageTarget(null);
     setFilter("All");
-    setSettingsTab(0);
     setResetOpen(false);
     setToast("Defaults restored. Images kept.");
   };
@@ -632,6 +580,9 @@ export default function App() {
           <span
             id="save-status"
             className="save-status"
+            hidden={
+              saveStatus === "Saved locally" || saveStatus === "Saving locally"
+            }
             title="Your grid is kept when you reload or reopen this page in the same browser. It is not synced to other devices."
           >
             {saveStatus === "Saved locally"
@@ -642,9 +593,12 @@ export default function App() {
           </span>
           <button
             id="export-grid-header"
+            ref={exportButton}
+            type="button"
+            aria-haspopup="dialog"
             className="button secondary"
             disabled={exporting}
-            onClick={exportGrid}
+            onClick={() => setExportOpen(true)}
           >
             <Download />
             <span>Export grid</span>
@@ -870,177 +824,106 @@ export default function App() {
             className="settings-panel tw:block!"
             aria-label="Grid settings"
           >
-            <div className="tw:flex tw:flex-wrap tw:gap-2 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3">
+            <h2 className="tw:m-0 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3 tw:text-sm tw:font-semibold">
+              Grid style
+            </h2>
+            <div className="tw:py-5">
+              <SelectField
+                id="theme-selector"
+                label="Theme"
+                value={selectedTemplate}
+                options={[...templates.map((item) => item.name), "Custom"].map(
+                  (name) => ({ value: name, label: name }),
+                )}
+                onChange={(name) => {
+                  const template = name as TemplateName;
+                  dispatchDocument({
+                    type: "grid/template",
+                    gridId: board.id,
+                    template,
+                    previousTemplate: selectedTemplate,
+                    defaults:
+                      templates.find((item) => item.name === template)?.style ??
+                      getEditorSettings(workspace).style,
+                  });
+                }}
+              />
+              {selectedTemplate === "Superhero" && (
+                <div>
+                  <span className="field-label">Sub-theme</span>
+                  <div
+                    className="segmented"
+                    role="group"
+                    aria-label="Superhero sub-theme"
+                  >
+                    {(["dc", "marvel"] as const).map((publisher) => (
+                      <button
+                        key={publisher}
+                        aria-pressed={board.publisher === publisher}
+                        onClick={() => patchBoard({ publisher })}
+                      >
+                        {publisher === "dc" ? "DC" : "Marvel"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Toggle
+                label="Show heading"
+                checked={board.headingVisible !== false}
+                onChange={(headingVisible) => patchBoard({ headingVisible })}
+              />
+              <SelectField
+                id="heading-font"
+                label="Heading font"
+                value={board.headingFont}
+                options={fontOptions.map((font) => ({
+                  value: font,
+                  label: font,
+                }))}
+                onChange={(headingFont) => patchBoard({ headingFont })}
+              />
+              <SelectField
+                id="cell-font"
+                label="Cell font"
+                value={board.cellFont}
+                options={fontOptions.map((font) => ({
+                  value: font,
+                  label: font,
+                }))}
+                onChange={(cellFont) => patchBoard({ cellFont })}
+              />
+              <label className="field-label" htmlFor="gap">
+                Grid spacing <output id="gap-value">{board.gap} px</output>
+              </label>
+              <input
+                id="gap"
+                type="range"
+                min="0"
+                max="40"
+                value={board.gap}
+                onChange={(event) =>
+                  patchBoard({ gap: Number(event.target.value) })
+                }
+              />
+              <ColorField
+                id="background"
+                label="Background"
+                value={board.background}
+                onChange={(background) => patchBoard({ background })}
+              />
+            </div>
+            <div className="tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:py-3">
               <Button
                 ref={resetButton}
+                className="tw:min-h-[44px] tw:w-full"
                 title="Restore default grid settings; keep library images and cell captions"
                 onClick={() => setResetOpen(true)}
               >
                 <PanelsTopLeft aria-hidden="true" />
                 Reset grid settings
               </Button>
-              <Button
-                aria-label="Local storage"
-                onClick={(event) => {
-                  storageButton.current = event.currentTarget;
-                  setStorageInfo(null);
-                  setStorageOpen(true);
-                }}
-              >
-                <HardDrive aria-hidden="true" />
-                Local storage
-              </Button>
             </div>
-            <TabGroup selectedIndex={settingsTab} onChange={setSettingsTab}>
-              <TabList className="tw:flex tw:gap-1 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3">
-                {["Templates", "Export"].map((label) => (
-                  <Tab
-                    key={label}
-                    className="tw:min-h-[44px] tw:border-0 tw:bg-transparent tw:px-2 tw:text-xs tw:text-(--muted) tw:data-selected:bg-(--bg) tw:data-selected:text-(--text) tw:enabled:hover:bg-(--line) tw:enabled:hover:text-(--text) tw:transition-colors"
-                  >
-                    {label}
-                  </Tab>
-                ))}
-              </TabList>
-              <TabPanels>
-                <TabPanel className="tw:py-5">
-                  <SelectField
-                    id="theme-selector"
-                    label="Theme"
-                    value={selectedTemplate}
-                    options={[
-                      ...templates.map((item) => item.name),
-                      "Custom",
-                    ].map((name) => ({ value: name, label: name }))}
-                    onChange={(name) => {
-                      const template = name as TemplateName;
-                      dispatchDocument({
-                        type: "grid/template",
-                        gridId: board.id,
-                        template,
-                        previousTemplate: selectedTemplate,
-                        defaults:
-                          templates.find((item) => item.name === template)
-                            ?.style ?? getEditorSettings(workspace).style,
-                      });
-                    }}
-                  />
-                  {selectedTemplate === "Superhero" && (
-                    <div>
-                      <span className="field-label">Sub-theme</span>
-                      <div
-                        className="segmented"
-                        role="group"
-                        aria-label="Superhero sub-theme"
-                      >
-                        {(["dc", "marvel"] as const).map((publisher) => (
-                          <button
-                            key={publisher}
-                            aria-pressed={board.publisher === publisher}
-                            onClick={() => patchBoard({ publisher })}
-                          >
-                            {publisher === "dc" ? "DC" : "Marvel"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <Toggle
-                    label="Show heading"
-                    checked={board.headingVisible !== false}
-                    onChange={(headingVisible) =>
-                      patchBoard({ headingVisible })
-                    }
-                  />
-                  <SelectField
-                    id="heading-font"
-                    label="Heading font"
-                    value={board.headingFont}
-                    options={fontOptions.map((font) => ({
-                      value: font,
-                      label: font,
-                    }))}
-                    onChange={(headingFont) => patchBoard({ headingFont })}
-                  />
-                  <SelectField
-                    id="cell-font"
-                    label="Cell font"
-                    value={board.cellFont}
-                    options={fontOptions.map((font) => ({
-                      value: font,
-                      label: font,
-                    }))}
-                    onChange={(cellFont) => patchBoard({ cellFont })}
-                  />
-                  <label className="field-label" htmlFor="gap">
-                    Grid spacing <output id="gap-value">{board.gap} px</output>
-                  </label>
-                  <input
-                    id="gap"
-                    type="range"
-                    min="0"
-                    max="40"
-                    value={board.gap}
-                    onChange={(event) =>
-                      patchBoard({ gap: Number(event.target.value) })
-                    }
-                  />
-                  <ColorField
-                    id="background"
-                    label="Background"
-                    value={board.background}
-                    onChange={(background) => patchBoard({ background })}
-                  />
-                </TabPanel>
-                <TabPanel className="settings-section export-section">
-                  <SelectField
-                    id="format"
-                    label="File format"
-                    value={format}
-                    options={[
-                      { value: "image/png", label: "PNG" },
-                      { value: "image/jpeg", label: "JPEG" },
-                      { value: "image/webp", label: "WebP" },
-                    ]}
-                    onChange={(format) =>
-                      patchExport({ format: format as ImageFormat })
-                    }
-                  />
-                  <SelectField
-                    id="resolution"
-                    label="Resolution"
-                    value={String(resolution)}
-                    options={[150, 300, 600, 1200, 1800].map((size) => ({
-                      value: String(size),
-                      label: `${size} px / image`,
-                    }))}
-                    onChange={(resolution) =>
-                      patchExport({ resolution: Number(resolution) })
-                    }
-                  />
-                  <label
-                    className="field-label quality-label"
-                    htmlFor="quality"
-                  >
-                    Quality <output id="quality-value">{quality}%</output>
-                  </label>
-                  <input
-                    id="quality"
-                    type="range"
-                    min="50"
-                    max="100"
-                    value={quality}
-                    disabled={format === "image/png"}
-                    onChange={(event) =>
-                      patchExport({ quality: Number(event.target.value) })
-                    }
-                  />
-                  <p className="tw:text-xs tw:text-(--muted)">
-                    {size.width} × {size.height} px
-                  </p>
-                </TabPanel>
-              </TabPanels>
-            </TabGroup>
           </aside>
         </EditorLayout>
       </main>
@@ -1055,6 +938,65 @@ export default function App() {
         hidden
         onChange={(event) => upload(event, uploadTarget.current)}
       />
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export grid"
+        returnFocus={exportButton}
+      >
+        <SelectField
+          id="format"
+          label="File format"
+          value={format}
+          options={[
+            { value: "image/png", label: "PNG" },
+            { value: "image/jpeg", label: "JPEG" },
+            { value: "image/webp", label: "WebP" },
+          ]}
+          onChange={(format) => patchExport({ format: format as ImageFormat })}
+        />
+        <SelectField
+          id="resolution"
+          label="Resolution"
+          value={String(resolution)}
+          options={[150, 300, 600, 1200, 1800].map((size) => ({
+            value: String(size),
+            label: `${size} px / image`,
+          }))}
+          onChange={(resolution) =>
+            patchExport({ resolution: Number(resolution) })
+          }
+        />
+        <label className="field-label quality-label" htmlFor="quality">
+          Quality <output id="quality-value">{quality}%</output>
+        </label>
+        <input
+          id="quality"
+          type="range"
+          min="50"
+          max="100"
+          value={quality}
+          disabled={format === "image/png"}
+          onChange={(event) =>
+            patchExport({ quality: Number(event.target.value) })
+          }
+        />
+        <p className="tw:text-sm tw:text-(--muted)">
+          {size.width} × {size.height} px
+        </p>
+        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+          <Button onClick={() => setExportOpen(false)}>Cancel</Button>
+          <Button
+            variant="primary"
+            className="tw:min-h-[44px]"
+            disabled={exporting}
+            onClick={exportGrid}
+          >
+            <Download aria-hidden="true" />
+            {exporting ? "Exporting..." : "Download image"}
+          </Button>
+        </div>
+      </Modal>
       <Modal
         open={imageTarget !== null}
         onClose={() => setImageTarget(null)}
@@ -1122,82 +1064,6 @@ export default function App() {
             Reload saved grid
           </Button>
         </div>
-      </Modal>
-      <Modal
-        open={storageOpen}
-        onClose={() => setStorageOpen(false)}
-        title="Local storage"
-        returnFocus={storageButton}
-      >
-        <>
-          <div aria-busy={storageInfo === null}>
-            {storageInfo === null ? (
-              <p role="status">Checking storage...</p>
-            ) : (
-              <>
-                <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
-                  <dt>Stored images</dt>
-                  <dd className="tw:m-0 tw:text-right">
-                    {storageInfo.images?.count ?? "Unavailable"}
-                  </dd>
-                  <dt>Image data</dt>
-                  <dd className="tw:m-0 tw:text-right">
-                    {formatBytes(storageInfo.images?.bytes)}
-                  </dd>
-                  <dt>Browser usage</dt>
-                  <dd className="tw:m-0 tw:text-right">
-                    {formatBytes(storageInfo.usage)}
-                  </dd>
-                  <dt>Browser quota</dt>
-                  <dd className="tw:m-0 tw:text-right">
-                    {formatBytes(storageInfo.quota)}
-                  </dd>
-                  <dt>Persistence</dt>
-                  <dd className="tw:m-0 tw:text-right">
-                    {storageInfo.persisted === true
-                      ? "Persistent"
-                      : storageInfo.persisted === false
-                        ? "Best-effort"
-                        : "Unavailable"}
-                  </dd>
-                </dl>
-                {storageInfo.quota !== null &&
-                  storageInfo.quota > 0 &&
-                  storageInfo.usage !== null && (
-                    <progress
-                      aria-label="Browser storage usage"
-                      value={Math.min(storageInfo.usage, storageInfo.quota)}
-                      max={storageInfo.quota}
-                      className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
-                    />
-                  )}
-              </>
-            )}
-          </div>
-          <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-            <Button
-              onClick={() => {
-                setStorageOpen(false);
-              }}
-            >
-              Close
-            </Button>
-            <Button
-              variant="primary"
-              onClick={requestPersistence}
-              disabled={
-                requestingPersistence ||
-                !storageInfo?.canRequestPersistence ||
-                storageInfo.persisted === true
-              }
-            >
-              <HardDrive aria-hidden="true" />
-              {requestingPersistence
-                ? "Requesting..."
-                : "Request persistent storage"}
-            </Button>
-          </div>
-        </>
       </Modal>
       <Modal
         open={resetOpen}

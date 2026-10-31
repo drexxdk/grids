@@ -25,41 +25,6 @@ const changeNotificationSchema = z.strictObject({
   id: z.literal("guest"),
   revision: z.uuid(),
 });
-export interface BrowserStorageStatus {
-  usage: number | null;
-  quota: number | null;
-  persisted: boolean | null;
-  canRequestPersistence: boolean;
-}
-export async function getBrowserStorageStatus(): Promise<BrowserStorageStatus> {
-  const storage = navigator.storage;
-  const [estimate, persisted] = await Promise.allSettled([
-    Promise.resolve().then(() => storage?.estimate?.()),
-    Promise.resolve().then(() => storage?.persisted?.()),
-  ]);
-  const capacity = estimate.status === "fulfilled" ? estimate.value : undefined;
-  const validBytes = (value: number | undefined) =>
-    typeof value === "number" && Number.isFinite(value) && value >= 0
-      ? value
-      : null;
-  return {
-    usage: validBytes(capacity?.usage),
-    quota: validBytes(capacity?.quota),
-    persisted:
-      persisted.status === "fulfilled" && typeof persisted.value === "boolean"
-        ? persisted.value
-        : null,
-    canRequestPersistence: typeof storage?.persist === "function",
-  };
-}
-export async function requestPersistentStorage(): Promise<boolean | null> {
-  try {
-    const result = await navigator.storage?.persist?.();
-    return typeof result === "boolean" ? result : null;
-  } catch {
-    return null;
-  }
-}
 const localDocumentSchema = z.strictObject({
   id: z.literal("guest"),
   version: z.literal(1),

@@ -91,8 +91,13 @@ async function reloadWorkspace(page) {
 }
 
 async function downloadBoard(page) {
+  const dialog = page.getByRole("dialog", { name: "Export grid", exact: true });
+  if (!(await dialog.isVisible()))
+    await page.locator("#export-grid-header").click();
   const promise = page.waitForEvent("download");
-  await page.locator("#export-grid-header").click();
+  await dialog
+    .getByRole("button", { name: "Download image", exact: true })
+    .click();
   return promise;
 }
 
@@ -196,6 +201,66 @@ test("theme selector remembers separate settings across switching and reload", a
   ).toBe(true);
 });
 
+test("header export combines settings and downloads on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("tab", { name: "Export", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Grid style", exact: true }),
+  ).toBeVisible();
+  const trigger = page.getByRole("button", {
+    name: "Export grid",
+    exact: true,
+  });
+  const dialog = page.getByRole("dialog", { name: "Export grid", exact: true });
+  for (const [format, extension, signature] of [
+    ["image/png", "png", [137, 80, 78, 71]],
+    ["image/jpeg", "jpg", [255, 216]],
+    ["image/webp", "webp", [82, 73, 70, 70]],
+  ]) {
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await selectField(page, "format", format);
+    await selectField(page, "resolution", "150");
+    if (format === "image/png")
+      await expect(dialog.locator("#quality")).toBeDisabled();
+    else {
+      await expect(dialog.locator("#quality")).toBeEnabled();
+      await dialog.locator("#quality").fill("80");
+    }
+    if (format === "image/png")
+      await page.screenshot({
+        path: testInfo.outputPath("export-dialog-desktop.png"),
+      });
+    const download = await downloadBoard(page);
+    expect(download.suggestedFilename()).toBe(`grid.${extension}`);
+    const bytes = await readFile(await download.path());
+    expect([...bytes.subarray(0, signature.length)]).toEqual(signature);
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+  await reloadWorkspace(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await trigger.click();
+  await expect(dialog.locator("#format")).toHaveText("WebP");
+  await expect(dialog.locator("#resolution")).toHaveText("150 px / image");
+  await expect(dialog.locator("#quality")).toHaveValue("80");
+  const bounds = await dialog.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await selectField(page, "format", "image/png");
+  await expect(dialog.locator("#quality")).toBeDisabled();
+  await page.screenshot({
+    path: testInfo.outputPath("export-dialog-mobile.png"),
+  });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
 test("editable hex color and Headless UI settings dropdowns synchronize and persist", async ({
   page,
 }, testInfo) => {
@@ -237,7 +302,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
     path: testInfo.outputPath("color-dropdowns-desktop.png"),
   });
   await page.getByRole("listbox").press("Escape");
-  await page.getByRole("tab", { name: "Export", exact: true }).click();
+  await page.locator("#export-grid-header").click();
   await expect(page.locator(".settings-panel select")).toHaveCount(0);
   await selectField(page, "format", "image/webp");
   await selectField(page, "resolution", "300");
@@ -298,17 +363,29 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
   await expect(picker).toHaveCount(0);
   await assertStable();
   await page.getByRole("button", { name: "Expand tools", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Local storage", exact: true })
-    .click();
-  const storage = page.getByRole("dialog", {
-    name: "Local storage",
+  await expect(
+    page.getByRole("button", { name: "Local storage", exact: true }),
+  ).toHaveCount(0);
+  const settings = page.getByRole("complementary", {
+    name: "Grid settings",
     exact: true,
   });
-  await expect(storage).toBeVisible();
+  await expect(
+    settings
+      .locator(":scope > :last-child")
+      .getByRole("button", { name: "Reset grid settings", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .click();
+  const reset = page.getByRole("dialog", {
+    name: "Reset grid settings",
+    exact: true,
+  });
+  await expect(reset).toBeVisible();
   await assertStable();
-  await storage.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(storage).toHaveCount(0);
+  await reset.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(reset).toHaveCount(0);
   await assertStable();
 });
 
@@ -420,6 +497,11 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
   ).toBeVisible();
   await expect(
     settings.getByRole("button", { name: "Local storage", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    settings
+      .locator(":scope > :last-child")
+      .getByRole("button", { name: "Reset grid settings", exact: true }),
   ).toBeVisible();
   await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
   await expect(page.locator("#upload")).toHaveCount(1);
@@ -1238,15 +1320,17 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
   });
   await page.goto("./");
   await savedWorkspace(page);
+  await expect(page.locator("#save-status")).toBeHidden();
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   await page.evaluate(() => {
     window.settingsWrites = 0;
   });
-  await page.locator("#cell-title").fill("First edit");
+  await page.locator(".cell-heading").first().fill("First edit");
   await page.clock.runFor(150);
-  await page.locator("#cell-title").fill("Latest edit");
-  await expect(page.locator("#save-status")).toHaveText("Saving locally");
+  await page.locator(".cell-heading").first().fill("Latest edit");
+  await expect(page.locator("#save-status")).toHaveText("Saving changes...");
+  await expect(page.locator("#save-status")).toBeHidden();
   await page.clock.runFor(299);
   expect(await page.evaluate(() => window.settingsWrites)).toBe(0);
   expect(
@@ -1258,6 +1342,7 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
   ).toBe(true);
   await page.clock.runFor(1);
   expect((await savedWorkspace(page)).grid.cells[0].title).toBe("Latest edit");
+  await expect(page.locator("#save-status")).toBeHidden();
   expect(await page.evaluate(() => window.settingsWrites)).toBe(1);
   expect(
     await page.evaluate(() => {
@@ -1266,7 +1351,7 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
       return event.defaultPrevented;
     }),
   ).toBe(false);
-  await page.locator("#cell-title").fill("Hide flush");
+  await page.locator(".cell-heading").first().fill("Hide flush");
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -1278,11 +1363,22 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
   expect(await page.evaluate(() => window.settingsWrites)).toBe(2);
   await page.clock.runFor(300);
   expect(await page.evaluate(() => window.settingsWrites)).toBe(2);
+  await page.evaluate(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-settings-v1")
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.locator(".cell-heading").first().fill("Unsaved edit");
+  await expect(page.locator("#save-status")).toHaveText("Save failed");
+  await expect(page.locator("#save-status")).toBeVisible();
 });
 
-test("storage dialog reports image bytes and requests persistence only on deliberate clicks", async ({
+test("automatic browser saves need no storage controls or persistence request", async ({
   page,
-}, testInfo) => {
+}) => {
   await page.addInitScript(() => {
     window.persistenceRequests = 0;
     window.grantPersistence = false;
@@ -1311,53 +1407,34 @@ test("storage dialog reports image bytes and requests persistence only on delibe
   });
   await expect(page.locator(".asset")).toHaveCount(1);
   await savedWorkspace(page);
-  const trigger = page.getByRole("button", {
-    name: "Local storage",
-    exact: true,
-  });
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Local storage" });
   await expect(
-    dialog.getByText(`${image.length} B`, { exact: true }),
-  ).toBeVisible();
-  await expect(dialog.getByText("2.0 KiB", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("64.0 KiB", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("Best-effort", { exact: true })).toBeVisible();
+    page.getByRole("button", {
+      name: "Local storage",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   expect(await page.evaluate(() => window.persistenceRequests)).toBe(0);
-  const request = dialog.getByRole("button", {
-    name: "Request persistent storage",
-    exact: true,
-  });
-  await request.click();
-  await expect(page.locator("#toast")).toContainText("not granted");
-  await expect(dialog.getByText("Best-effort", { exact: true })).toBeVisible();
-  await page.evaluate(() => {
-    window.grantPersistence = true;
-  });
-  await request.click();
-  await expect(dialog.getByText("Persistent", { exact: true })).toBeVisible();
-  await expect(request).toBeDisabled();
-  expect(await page.evaluate(() => window.persistenceRequests)).toBe(2);
-  await page.screenshot({ path: testInfo.outputPath("storage-desktop.png") });
+  await expect(
+    page.getByRole("button", {
+      name: "Request persistent storage",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  expect((await localDatabase(page)).images[0].size).toBe(image.length);
+  await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(1);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: testInfo.outputPath("storage-mobile.png") });
+  await expect(
+    page.getByRole("button", { name: "Local storage", exact: true }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.setViewportSize({ width: 1440, height: 1080 });
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await trigger.click();
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
 });
 
-test("storage dialog keeps unsupported browser estimates and persistence unavailable", async ({
+test("automatic saves work without browser estimates or persistence APIs", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -1371,18 +1448,12 @@ test("storage dialog keeps unsupported browser estimates and persistence unavail
     });
   });
   await page.goto("./");
-  await page
-    .getByRole("button", { name: "Local storage", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Local storage" });
-  await expect(dialog.getByText("Unavailable", { exact: true })).toHaveCount(3);
-  await expect(
-    dialog.getByRole("button", {
-      name: "Request persistent storage",
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await expect(dialog.getByRole("progressbar")).toHaveCount(0);
+  await page.locator("#gap").fill("23");
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.gap)
+    .toBe(23);
+  await reloadWorkspace(page);
+  await expect(page.locator("#gap")).toHaveValue("23");
 });
 
 test("IndexedDB stores image blobs and private grid content while localStorage holds settings only", async ({

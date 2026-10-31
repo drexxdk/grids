@@ -105,7 +105,7 @@ export function SelectField({
       <ListboxOptions
         anchor="bottom"
         modal={false}
-        className="tw:z-50 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]"
+        className="tw:z-70 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]"
       >
         {options.map((option) => (
           <ListboxOption
