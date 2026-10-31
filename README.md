@@ -66,6 +66,8 @@ No API keys or application secrets are needed for guest editing. Saved grids bel
 
 ## Editing And Export
 
+Saves coalesce edits over 300 ms and attempt a flush when the page becomes hidden. Unsaved or failed edits retain a leave-page warning; wait for Saved locally before closing because abrupt termination can still lose pending changes. The toolbar's Local storage tool reports stored-image size, browser-origin usage/quota, and persistence status. Persistent storage requires an intentional request and may be denied or unavailable; it is not permanent backup. Unused-media cleanup/trash remains pending.
+
 - Add/remove columns with right-edge plus/minus buttons and rows with bottom-edge buttons, from 1 to 12 in each direction. Existing cells stay at their coordinates, and removed cells are saved across reloads. Expanding restores them; the removed-cell tray can swap content with the selected cell. Undo grid resize restores prior dimensions during the current session without overwriting newer edits.
 - Reset to Defaults restores grid configuration and export preferences. Local images, captions, and placements are retained; cells outside the default 3x3 area remain recoverable by expanding the grid. Reset clears session resize Undo history, not the image library.
 - Drag a library image or an image file into a cell. Clicking a library image places it in the selected cell, including on touch devices.

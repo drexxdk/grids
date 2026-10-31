@@ -92,6 +92,166 @@ async function useComicExample(page, publisher = "dc") {
   );
 }
 
+test("debounced saves coalesce edits and flush on hide while guarding unsaved navigation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.settingsWrites = 0;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-settings-v1") window.settingsWrites++;
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.goto("./");
+  await savedWorkspace(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  await page.evaluate(() => {
+    window.settingsWrites = 0;
+  });
+  await page.locator("#cell-title").fill("First edit");
+  await page.clock.runFor(150);
+  await page.locator("#cell-title").fill("Latest edit");
+  await expect(page.locator("#save-status")).toHaveText("Saving locally");
+  await page.clock.runFor(299);
+  expect(await page.evaluate(() => window.settingsWrites)).toBe(0);
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  await page.clock.runFor(1);
+  expect((await savedWorkspace(page)).grid.cells[0].title).toBe("Latest edit");
+  expect(await page.evaluate(() => window.settingsWrites)).toBe(1);
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+  await page.locator("#cell-title").fill("Hide flush");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect((await savedWorkspace(page)).grid.cells[0].title).toBe("Hide flush");
+  expect(await page.evaluate(() => window.settingsWrites)).toBe(2);
+  await page.clock.runFor(300);
+  expect(await page.evaluate(() => window.settingsWrites)).toBe(2);
+});
+
+test("storage dialog reports image bytes and requests persistence only on deliberate clicks", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.persistenceRequests = 0;
+    window.grantPersistence = false;
+    window.persistedStorage = false;
+    Object.defineProperty(navigator, "storage", {
+      configurable: true,
+      value: {
+        estimate: async () => ({ usage: 2048, quota: 65536 }),
+        persisted: async () => window.persistedStorage,
+        persist: async () => {
+          window.persistenceRequests++;
+          window.persistedStorage = window.grantPersistence;
+          return window.persistedStorage;
+        },
+      },
+    });
+  });
+  await page.goto("./");
+  const image = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>',
+  );
+  await page.locator("#replace-upload").setInputFiles({
+    name: "storage.svg",
+    mimeType: "image/svg+xml",
+    buffer: image,
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await savedWorkspace(page);
+  const trigger = page.getByRole("button", {
+    name: "Local storage",
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Local storage" });
+  await expect(
+    dialog.getByText(`${image.length} B`, { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("2.0 KiB", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("64.0 KiB", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Best-effort", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.persistenceRequests)).toBe(0);
+  const request = dialog.getByRole("button", {
+    name: "Request persistent storage",
+    exact: true,
+  });
+  await request.click();
+  await expect(page.locator("#toast")).toContainText("not granted");
+  await expect(dialog.getByText("Best-effort", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    window.grantPersistence = true;
+  });
+  await request.click();
+  await expect(dialog.getByText("Persistent", { exact: true })).toBeVisible();
+  await expect(request).toBeDisabled();
+  expect(await page.evaluate(() => window.persistenceRequests)).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath("storage-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("storage-mobile.png") });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("storage dialog keeps unsupported browser estimates and persistence unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "storage", {
+      configurable: true,
+      value: {
+        estimate: async () => {
+          throw new Error("Estimate unavailable");
+        },
+      },
+    });
+  });
+  await page.goto("./");
+  await page
+    .getByRole("button", { name: "Local storage", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Local storage" });
+  await expect(dialog.getByText("Unavailable", { exact: true })).toHaveCount(3);
+  await expect(
+    dialog.getByRole("button", {
+      name: "Request persistent storage",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(dialog.getByRole("progressbar")).toHaveCount(0);
+});
+
 test("IndexedDB stores image blobs and private grid content while localStorage holds settings only", async ({
   page,
 }) => {

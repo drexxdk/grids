@@ -48,7 +48,19 @@ import {
   type Publisher,
 } from "./model";
 import { createExport, dimensions, fitTitle, loadImage } from "./export";
-import { LocalWorkspaceStore } from "./storage";
+import {
+  LocalWorkspaceStore,
+  getBrowserStorageStatus,
+  requestPersistentStorage,
+  type BrowserStorageStatus,
+} from "./storage";
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return "Unavailable";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
 
 function BoardHeading({ board }: { board: Board }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -91,8 +103,18 @@ export default function App() {
     makeWorkspace,
   );
   const localStore = useRef<LocalWorkspaceStore | null>(null);
+  const savedDocument = useRef(workspace);
   const [loaded, setLoaded] = useState(false);
   const [canSave, setCanSave] = useState(false);
+  const storageButton = useRef<HTMLButtonElement>(null);
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<
+    | (BrowserStorageStatus & {
+        images: { count: number; bytes: number } | null;
+      })
+    | null
+  >(null);
+  const [requestingPersistence, setRequestingPersistence] = useState(false);
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [toast, setToast] = useState("");
@@ -135,6 +157,7 @@ export default function App() {
       .load()
       .then((restored) => {
         if (cancelled) return;
+        savedDocument.current = restored;
         dispatchDocument({ type: "workspace/restore", workspace: restored });
         setCanSave(true);
         setLoaded(true);
@@ -156,23 +179,82 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!canSave || !localStore.current) return;
+    if (!loaded) return;
+    const store = localStore.current;
     let cancelled = false;
-    setSaveStatus("Saving locally");
-    localStore.current
-      .save(workspace)
-      .then(() => {
-        if (!cancelled) setSaveStatus("Saved locally");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setSaveStatus("Save failed");
-        setToast("Local save failed. Your current grid can still be exported.");
-      });
+    let started = false;
+    const save = () => {
+      if (started || !canSave || !store) return;
+      started = true;
+      store
+        .save(workspace)
+        .then(() => {
+          if (cancelled) return;
+          savedDocument.current = workspace;
+          setSaveStatus("Saved locally");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSaveStatus("Save failed");
+          setToast(
+            "Local save failed. Your current grid can still be exported.",
+          );
+        });
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (savedDocument.current === workspace) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const visibilityChange = () => {
+      if (document.visibilityState === "hidden") save();
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (canSave && store) {
+      setSaveStatus("Saving locally");
+      if (document.visibilityState === "hidden") save();
+      else timer = setTimeout(save, 300);
+    }
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", visibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener("pagehide", save);
+      document.removeEventListener("visibilitychange", visibilityChange);
+    };
+  }, [workspace, canSave, loaded]);
+  useEffect(() => {
+    if (!storageOpen) return;
+    let cancelled = false;
+    Promise.all([
+      getBrowserStorageStatus(),
+      localStore.current?.usage().catch(() => null) ?? Promise.resolve(null),
+    ]).then(([browser, images]) => {
+      if (!cancelled) setStorageInfo({ ...browser, images });
+    });
     return () => {
       cancelled = true;
     };
-  }, [workspace, canSave]);
+  }, [storageOpen, saveStatus]);
+  const requestPersistence = async () => {
+    if (requestingPersistence) return;
+    setRequestingPersistence(true);
+    const persisted = await requestPersistentStorage();
+    setStorageInfo((current) =>
+      current ? { ...current, persisted } : current,
+    );
+    setToast(
+      persisted === true
+        ? "Persistent storage granted."
+        : persisted === false
+          ? "Persistent storage not granted."
+          : "Persistent storage unavailable.",
+    );
+    setRequestingPersistence(false);
+  };
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4500);
@@ -531,6 +613,18 @@ export default function App() {
               onClick={resetDefaults}
             >
               <RotateCcw aria-hidden="true" />
+            </Button>
+            <Button
+              ref={storageButton}
+              variant="icon"
+              aria-label="Local storage"
+              title="Local storage"
+              onClick={() => {
+                setStorageInfo(null);
+                setStorageOpen(true);
+              }}
+            >
+              <HardDrive aria-hidden="true" />
             </Button>
           </div>
           <div className="canvas-area">
@@ -914,6 +1008,74 @@ export default function App() {
       <div id="toast" className="toast" role="status" hidden={!toast}>
         {toast}
       </div>
+      <Modal
+        open={storageOpen}
+        onClose={() => setStorageOpen(false)}
+        title="Local storage"
+        returnFocus={storageButton}
+      >
+        <div aria-busy={storageInfo === null}>
+          {storageInfo === null ? (
+            <p role="status">Checking storage...</p>
+          ) : (
+            <>
+              <dl className="tw:m-0 tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-x-4 tw:gap-y-3 tw:text-sm">
+                <dt>Stored images</dt>
+                <dd className="tw:m-0 tw:text-right">
+                  {storageInfo.images?.count ?? "Unavailable"}
+                </dd>
+                <dt>Image data</dt>
+                <dd className="tw:m-0 tw:text-right">
+                  {formatBytes(storageInfo.images?.bytes)}
+                </dd>
+                <dt>Browser usage</dt>
+                <dd className="tw:m-0 tw:text-right">
+                  {formatBytes(storageInfo.usage)}
+                </dd>
+                <dt>Browser quota</dt>
+                <dd className="tw:m-0 tw:text-right">
+                  {formatBytes(storageInfo.quota)}
+                </dd>
+                <dt>Persistence</dt>
+                <dd className="tw:m-0 tw:text-right">
+                  {storageInfo.persisted === true
+                    ? "Persistent"
+                    : storageInfo.persisted === false
+                      ? "Best-effort"
+                      : "Unavailable"}
+                </dd>
+              </dl>
+              {storageInfo.quota !== null &&
+                storageInfo.quota > 0 &&
+                storageInfo.usage !== null && (
+                  <progress
+                    aria-label="Browser storage usage"
+                    value={Math.min(storageInfo.usage, storageInfo.quota)}
+                    max={storageInfo.quota}
+                    className="tw:mt-4 tw:h-2 tw:w-full tw:accent-(--accent)"
+                  />
+                )}
+            </>
+          )}
+        </div>
+        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+          <Button onClick={() => setStorageOpen(false)}>Close</Button>
+          <Button
+            variant="primary"
+            onClick={requestPersistence}
+            disabled={
+              requestingPersistence ||
+              !storageInfo?.canRequestPersistence ||
+              storageInfo.persisted === true
+            }
+          >
+            <HardDrive aria-hidden="true" />
+            {requestingPersistence
+              ? "Requesting..."
+              : "Request persistent storage"}
+          </Button>
+        </div>
+      </Modal>
       <Modal
         open={renaming !== null}
         onClose={() => setRenaming(null)}
