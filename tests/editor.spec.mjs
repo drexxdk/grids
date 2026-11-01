@@ -129,6 +129,49 @@ async function selectField(page, id, value) {
   await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
 }
 
+test("canvas resizing commits fitted dimensions before the next paint", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("./");
+  await savedWorkspace(page);
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => {
+    window.resizeFrames = [];
+    window.addEventListener("resize", () => {
+      requestAnimationFrame(() => {
+        const viewport = document.querySelector("[data-canvas-viewport]");
+        window.resizeFrames.push({
+          width: innerWidth,
+          scrollHeight: viewport.scrollHeight,
+          clientHeight: viewport.clientHeight,
+          horizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+        });
+      });
+    });
+  });
+  for (const width of [1380, 1280, 1400, 1170, 1440, 1260, 1350, 1200, 1440]) {
+    const count = await page.evaluate(() => window.resizeFrames.length);
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(() => page.evaluate(() => window.resizeFrames.length))
+      .toBeGreaterThan(count);
+  }
+  const frames = await page.evaluate(() => window.resizeFrames);
+  expect(frames.length).toBeGreaterThanOrEqual(9);
+  expect(
+    frames.filter(
+      (frame) =>
+        frame.scrollHeight > frame.clientHeight || frame.horizontalOverflow,
+    ),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("canvas preview fits both row and column changes without resizing controls", async ({
   page,
 }, testInfo) => {
@@ -202,11 +245,9 @@ test("canvas preview fits both row and column changes without resizing controls"
         expect(bounds.width).toBe(44);
         expect(bounds.height).toBe(44);
       }
-      await page
-        .locator("[data-resize-frame]")
-        .screenshot({
-          path: testInfo.outputPath(`fit-${dimension}-${viewport.width}.png`),
-        });
+      await page.locator("[data-resize-frame]").screenshot({
+        path: testInfo.outputPath(`fit-${dimension}-${viewport.width}.png`),
+      });
       await page
         .getByRole("button", { name: "Undo grid resize", exact: true })
         .click();
@@ -267,17 +308,15 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   page,
 }, testInfo) => {
   await page.goto("./");
-  await page
-    .locator("#upload")
-    .setInputFiles(
-      ["One", "Two", "Three"].map((name) => ({
-        name: `${name}.svg`,
-        mimeType: "image/svg+xml",
-        buffer: Buffer.from(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
-        ),
-      })),
-    );
+  await page.locator("#upload").setInputFiles(
+    ["One", "Two", "Three"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
   await expect(page.locator(".asset")).toHaveCount(3);
   await savedWorkspace(page);
   for (const width of [1440, 960]) {
@@ -633,15 +672,13 @@ test("empty headings use faded inline placeholders and reserve no export bands",
   page,
 }, testInfo) => {
   await page.goto("./");
-  await page
-    .locator("#upload")
-    .setInputFiles({
-      name: "Original.svg",
-      mimeType: "image/svg+xml",
-      buffer: Buffer.from(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
-      ),
-    });
+  await page.locator("#upload").setInputFiles({
+    name: "Original.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
   await page
     .locator("[data-library-thumbnail]")
     .first()
@@ -699,11 +736,9 @@ test("empty headings use faded inline placeholders and reserve no export bands",
     await heading.fill("");
     await heading.press("Enter");
     await expect(placeholder).toHaveText("Add heading");
-    await page
-      .locator("#board-grid")
-      .screenshot({
-        path: testInfo.outputPath(`empty-heading-placeholders-${width}.png`),
-      });
+    await page.locator("#board-grid").screenshot({
+      path: testInfo.outputPath(`empty-heading-placeholders-${width}.png`),
+    });
   }
   await page.evaluate(() => {
     const original = CanvasRenderingContext2D.prototype.fillText;

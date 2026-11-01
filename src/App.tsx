@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type DragEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   PanelsTopLeft,
   Download,
@@ -349,13 +350,14 @@ export default function App() {
           : next,
       );
     };
-    const observer = new ResizeObserver(fit);
+    const fitBeforePaint = () => flushSync(fit);
+    const observer = new ResizeObserver(fitBeforePaint);
     observer.observe(container);
-    window.addEventListener("resize", fit);
+    window.addEventListener("resize", fitBeforePaint);
     fit();
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", fit);
+      window.removeEventListener("resize", fitBeforePaint);
     };
   }, [
     previewFrame,
