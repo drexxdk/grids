@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { ImagePlus, LoaderCircle } from "lucide-react";
 import { useState, type Ref } from "react";
 import { cellGeometry, type GridStyle } from "../model";
@@ -7,7 +8,7 @@ export function UploadTile({
   progress,
   gridStyle,
   captionRows,
-  className = "tw:self-start tw:w-full",
+  className = "self-start w-full",
   onClick,
   onDropFiles,
   ref,
@@ -27,10 +28,10 @@ export function UploadTile({
       ref={ref}
       data-upload-tile
       type="button"
-      aria-label="Add images"
+      aria-label={t("common.actions.addImages", { count: 2 })}
       disabled={progress !== null}
-      title="Add or drop images"
-      className={`image-card tw:@container tw:relative tw:shrink-0 tw:rounded-(--card-radius)! tw:border! tw:border-solid! tw:p-0! tw:text-(--muted) tw:outline-none! tw:[--card-frame-color:transparent] tw:data-[image-hovered]:[--card-frame-color:var(--accent)] tw:focus-visible:[--card-frame-color:var(--accent)] tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! ${className}`}
+      title={t("common.actions.addOrDropImages", { count: 2 })}
+      className={`image-card @container relative shrink-0 rounded-(--card-radius)! border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! disabled:text-(--text)! ${className}`}
       style={{
         aspectRatio: `600 / ${geometry.height}`,
         backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
@@ -60,21 +61,21 @@ export function UploadTile({
       <span
         data-card-content
         style={{ backgroundColor: gridStyle.cellBackgroundColor ?? "#111315" }}
-        className="tw:absolute tw:inset-0 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-[3cqw] tw:overflow-hidden tw:rounded-[calc(var(--card-radius)-1px)] tw:[&_svg]:size-[18cqw]!"
+        className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[calc(var(--card-radius)-1px)] [&_svg]:size-[18cqw]!"
       >
         {progress ? (
           <>
             <LoaderCircle
               aria-hidden="true"
-              className="tw:animate-spin tw:motion-reduce:animate-none"
+              className="animate-spin motion-reduce:animate-none"
             />
             <span
               role="status"
               aria-live="polite"
-              className="tw:flex tw:flex-col tw:items-center tw:gap-[3cqw]"
+              className="flex flex-col items-center gap-[3cqw]"
             >
-              <span className="tw:text-[8.5cqw]">Importing...</span>
-              <span className="tw:text-[7cqw]">
+              <span className="text-[8.5cqw]">{t("library.importing")}</span>
+              <span className="text-[7cqw]">
                 {progress.completed} / {progress.total}
               </span>
             </span>
@@ -82,11 +83,11 @@ export function UploadTile({
         ) : (
           <>
             <ImagePlus aria-hidden="true" />
-            <span data-upload-label className="tw:text-[8.5cqw]">
-              Add images
+            <span data-upload-label className="text-[8.5cqw]">
+              {t("common.actions.addImages", { count: 2 })}
             </span>
-            <span data-upload-label className="tw:text-[7cqw]">
-              Drop here
+            <span data-upload-label className="text-[7cqw]">
+              {t("common.actions.dropHere")}
             </span>
           </>
         )}

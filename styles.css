@@ -1,6 +1,6 @@
 @layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme) prefix(tw);
-@import "tailwindcss/utilities.css" layer(utilities) prefix(tw);
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
 
 @layer components {
   .image-frame {
@@ -74,7 +74,7 @@
   --accent: #d8f36a;
   --mint: #80cab1;
   font-family: "Manrope", sans-serif;
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 0;
   color: var(--text);
   background: var(--bg);

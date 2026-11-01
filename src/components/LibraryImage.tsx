@@ -14,7 +14,7 @@ export function LibraryImage({
   moving,
   dragAffected,
   onSelect,
-  className = "tw:max-[900px]:w-[82px] tw:max-[900px]:shrink-0",
+  className = "max-[900px]:w-20.5 max-[900px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;
@@ -36,7 +36,7 @@ export function LibraryImage({
   className?: string;
 }) {
   return (
-    <div data-library-image className={`tw:relative tw:min-w-0 ${className}`}>
+    <div data-library-image className={`relative min-w-0 ${className}`}>
       <GridCell
         cell={
           cell ?? {

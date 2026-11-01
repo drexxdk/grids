@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import App from "./App";
 import { publishScrollbarWidth } from "./browser/scrollbar";
+import "./i18n";
 import "../styles.css";
 
 const cleanupScrollbar = publishScrollbarWidth();

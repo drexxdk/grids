@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import {
   useEffect,
   useLayoutEffect,
@@ -69,7 +70,7 @@ import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
 const previewCardMinWidth = 128;
 const previewCardMaxWidth = 320;
 const pickerGridClassName =
-  "tw:grid tw:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] tw:gap-4 tw:[&>*]:max-w-(--picker-card-max-width)";
+  "grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] gap-4 *:max-w-(--picker-card-max-width)";
 
 function BoardHeading({
   board,
@@ -85,7 +86,7 @@ function BoardHeading({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const fieldClass =
-    "board-heading-text tw:border-0! tw:rounded-none! tw:bg-transparent tw:p-0! tw:text-inherit tw:[font:inherit] tw:cursor-text! tw:outline-none! tw:hover:bg-white/8! tw:focus:bg-white/12! tw:placeholder:text-(--muted)/35 tw:focus:placeholder:text-(--muted)/80";
+    "board-heading-text border-0! rounded-none! bg-transparent p-0! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-(--muted)/35 focus:placeholder:text-(--muted)/80";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
@@ -126,7 +127,7 @@ function BoardHeading({
   return (
     <h2
       ref={headingRef}
-      className="board-export-heading tw:group tw:overflow-hidden tw:p-0!"
+      className="board-export-heading group overflow-hidden p-0!"
       style={{
         fontWeight: resolveFontWeight(
           board.headingFont,
@@ -148,10 +149,10 @@ function BoardHeading({
         <input
           ref={input}
           className={fieldClass}
-          aria-label="Grid heading"
+          aria-label={t("editor.headingLabel")}
           maxLength={120}
           value={board.heading}
-          placeholder="Add heading"
+          placeholder={t("editor.headingPlaceholder")}
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => onEdit(false)}
           onKeyDown={(event) => {
@@ -173,7 +174,7 @@ function BoardHeading({
       ) : (
         <button
           className={fieldClass}
-          aria-label="Edit grid heading"
+          aria-label={t("editor.editHeading")}
           onClick={() => onEdit(true)}
         >
           {board.heading.trim() ? (
@@ -181,9 +182,9 @@ function BoardHeading({
           ) : (
             <span
               data-heading-placeholder
-              className="tw:normal-case tw:text-(--muted) tw:opacity-35 tw:group-hover:opacity-80 tw:group-focus-within:opacity-80"
+              className="normal-case text-(--muted) opacity-35 group-hover:opacity-80 group-focus-within:opacity-80"
             >
-              Add heading
+              {t("editor.headingPlaceholder")}
             </span>
           )}
         </button>
@@ -779,33 +780,30 @@ export default function App() {
   };
   if (!loaded) {
     return (
-      <main
-        className="tw:grid tw:min-h-dvh tw:place-items-center"
-        aria-busy="true"
-      >
-        <p role="status">Loading grid...</p>
+      <main className="grid min-h-dvh place-items-center" aria-busy="true">
+        <p role="status">{t("editor.loading")}</p>
       </main>
     );
   }
   return (
     <>
-      <main className="app-layout tw:min-h-dvh! tw:min-[901px]:grid-cols-[250px_minmax(0,1fr)_250px]! tw:max-[900px]:block! tw:max-[900px]:pb-[var(--editor-drawer-height,160px)]">
+      <main className="app-layout min-h-dvh! min-[901px]:grid-cols-[250px_minmax(0,1fr)_250px]! max-[900px]:block! max-[900px]:pb-(--editor-drawer-height,160px)">
         <EditorLayout
           actions={
-            <div className="tw:flex tw:flex-col tw:items-end tw:gap-2 tw:max-[900px]:contents">
+            <div className="flex flex-col items-end gap-2 max-[900px]:contents">
               <span
                 id="save-status"
-                className="save-status tw:max-[900px]:col-span-3 tw:max-[900px]:row-start-2 tw:max-[900px]:min-w-0 tw:max-[900px]:break-words"
+                className="save-status max-[900px]:col-span-3 max-[900px]:row-start-2 max-[900px]:min-w-0 max-[900px]:wrap-break-word"
                 hidden={
                   saveStatus === "Saved locally" ||
                   saveStatus === "Saving locally"
                 }
-                title="Your grid is kept when you reload or reopen this page in the same browser. It is not synced to other devices."
+                title={t("save.tooltip")}
               >
                 {saveStatus === "Saved locally"
-                  ? "Saved in this browser"
+                  ? t("save.saved")
                   : saveStatus === "Saving locally"
-                    ? "Saving changes..."
+                    ? t("save.saving")
                     : saveStatus}
               </span>
               <button
@@ -813,22 +811,22 @@ export default function App() {
                 ref={exportButton}
                 type="button"
                 aria-haspopup="dialog"
-                title="Export grid"
-                aria-label="Export grid"
-                className="button secondary tw:min-[901px]:w-full tw:max-[900px]:col-start-3 tw:max-[900px]:row-start-1 tw:max-[900px]:h-[44px] tw:max-[900px]:w-[44px] tw:max-[900px]:p-0"
+                title={t("export.title")}
+                aria-label={t("export.title")}
+                className="button secondary min-[901px]:w-full max-[900px]:col-start-3 max-[900px]:row-start-1 max-[900px]:h-11 max-[900px]:w-11 max-[900px]:p-0"
                 disabled={exporting}
                 onClick={() => setExportOpen(true)}
               >
                 <Download />
-                <span className="tw:max-[900px]:hidden">Export grid</span>
+                <span className="max-[900px]:hidden">{t("export.title")}</span>
               </button>
             </div>
           }
         >
           {(drawerToggle, toolsExpanded) => (
             <aside
-              className={`asset-panel tw:min-[901px]:p-0! tw:min-[901px]:sticky tw:min-[901px]:top-0 tw:min-[901px]:h-dvh tw:min-[901px]:self-start tw:min-[901px]:overflow-hidden tw:min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
-              aria-label="Image library drop zone"
+              className={`asset-panel min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
+              aria-label={t("library.dropZone")}
               aria-busy={importProgress !== null}
               onDragOver={(event) => {
                 if (event.dataTransfer.types.includes("Files")) {
@@ -853,7 +851,7 @@ export default function App() {
             >
               <div
                 data-sidebar-header
-                className="tw:flex tw:min-h-[76px] tw:shrink-0 tw:items-center tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:px-[16px] tw:py-[16px] tw:max-[900px]:hidden"
+                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 max-[900px]:hidden"
               >
                 <a className="brand" href="./">
                   <span className="brand-mark">
@@ -864,18 +862,18 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="tw:contents tw:min-[901px]:flex tw:min-[901px]:min-h-0 tw:min-[901px]:flex-1 tw:min-[901px]:flex-col tw:min-[901px]:overflow-y-auto tw:min-[901px]:overflow-x-hidden tw:min-[901px]:px-[16px] tw:min-[901px]:pt-4 tw:min-[901px]:pb-[26px] tw:min-[901px]:[scrollbar-gutter:stable] tw:min-[901px]:[&>*]:shrink-0"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pt-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="tw:mb-1 tw:flex tw:items-center tw:justify-between tw:gap-2">
+                <div className="mb-1 flex items-center justify-between gap-2">
                   <TabGroup>
                     <ImageTabs
-                      label="Image source"
+                      label={t("library.source.label")}
                       tabs={[
-                        { label: "Imported" },
+                        { label: t("library.source.imported") },
                         {
-                          label: "Online",
+                          label: t("library.source.online"),
                           disabled: true,
-                          title: "Online providers are not available yet",
+                          title: t("library.source.unavailable"),
                         },
                       ]}
                     />
@@ -888,7 +886,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="tw:self-start tw:w-full tw:max-[900px]:w-[82px]"
+                    className="self-start w-full max-[900px]:w-20.5"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);
@@ -935,13 +933,13 @@ export default function App() {
                 />
                 {toolsExpanded && activeAssets.length > 0 && (
                   <Button
-                    className="tw:mt-2 tw:min-h-[44px] tw:w-full"
+                    className="mt-2 min-h-11 w-full"
                     onClick={() =>
                       deleteImages(activeAssets.map((asset) => asset.id))
                     }
                   >
                     <Trash2 aria-hidden="true" />
-                    Clear all images
+                    {t("library.clearAll")}
                   </Button>
                 )}
               </div>
@@ -949,65 +947,67 @@ export default function App() {
           )}
           {(canvasActions) => (
             <section
-              className="workspace tw:flex tw:h-dvh tw:flex-col tw:overflow-hidden tw:max-[900px]:h-[calc(100dvh-var(--editor-drawer-height,160px))]"
+              className="workspace flex h-dvh flex-col overflow-hidden max-[900px]:h-[calc(100dvh-var(--editor-drawer-height,160px))]"
               style={
                 {
                   backgroundColor: "#121415",
                 } as CSSProperties
               }
-              aria-label="Grid editor"
+              aria-label={t("editor.region")}
             >
               {conflict && (
                 <div
                   role="alert"
-                  className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:p-4"
+                  className="flex flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) p-4"
                 >
-                  <p className="tw:m-0 tw:min-w-0 tw:text-sm">
-                    Another tab saved a newer grid. This tab is not saving.
-                  </p>
+                  <p className="m-0 min-w-0 text-sm">{t("save.conflict")}</p>
                   <Button
                     ref={reloadButton}
                     onClick={() => setReloadOpen(true)}
                   >
                     <RefreshCw aria-hidden="true" />
-                    Reload saved grid
+                    {t("save.reload")}
                   </Button>
                 </div>
               )}
-              <div className="canvas-area tw:m-0! tw:flex tw:min-h-0 tw:w-full tw:flex-1 tw:flex-col tw:justify-center tw:p-[12px]! tw:max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
+              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
                 <div
                   role="toolbar"
-                  aria-label="Grid appearance"
-                  className="tw:mx-auto tw:mb-3 tw:grid tw:max-w-full tw:shrink-0 tw:grid-cols-[44px_minmax(0,1fr)_44px] tw:items-start tw:gap-[8px]"
+                  aria-label={t("editor.appearance")}
+                  className="mx-auto mb-3 grid max-w-full shrink-0 grid-cols-[44px_minmax(0,1fr)_44px] items-start"
                   style={{ width: previewSize?.width }}
                 >
                   {canvasActions}
                   <div
-                    className="tw:col-start-2 tw:row-start-1 tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:justify-center tw:gap-2 tw:translate-x-[var(--row-control-offset,0px)]"
+                    className="col-start-2 row-start-1 translate-x-(--row-control-offset,0px) flex min-w-0 flex-wrap items-center justify-center gap-2"
                     style={
                       {
                         "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
                       } as CSSProperties
                     }
                   >
-                    <div className="tw:w-[116px] tw:max-[600px]:w-[60px]">
+                    <div className="w-29 max-[600px]:w-15">
                       <SelectField
                         compact
                         id="image-shape"
-                        label="Image shape"
+                        label={t("editor.imageShape.label")}
                         value={board.imageAspect ?? "square"}
                         options={[
                           {
                             value: "portrait",
-                            label: "Portrait",
+                            label: t("editor.imageShape.portrait"),
                             icon: RectangleVertical,
                           },
                           {
                             value: "landscape",
-                            label: "Landscape",
+                            label: t("editor.imageShape.landscape"),
                             icon: RectangleHorizontal,
                           },
-                          { value: "square", label: "Square", icon: Square },
+                          {
+                            value: "square",
+                            label: t("editor.imageShape.square"),
+                            icon: Square,
+                          },
                         ]}
                         onChange={(imageAspect) =>
                           patchBoard({
@@ -1018,11 +1018,11 @@ export default function App() {
                         }
                       />
                     </div>
-                    <div className="tw:w-[148px] tw:max-[600px]:w-[60px]">
+                    <div className="w-37 max-[600px]:w-15">
                       <SelectField
                         compact
                         id="caption-position"
-                        label="Caption position"
+                        label={t("editor.captionPosition.label")}
                         value={
                           board.captionPlacement === "overlay"
                             ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
@@ -1031,22 +1031,22 @@ export default function App() {
                         options={[
                           {
                             value: "above",
-                            label: "Above image",
+                            label: t("editor.captionPosition.above"),
                             icon: PanelTop,
                           },
                           {
                             value: "below",
-                            label: "Below image",
+                            label: t("editor.captionPosition.below"),
                             icon: PanelBottom,
                           },
                           {
                             value: "overlay-top",
-                            label: "Overlay top",
+                            label: t("editor.captionPosition.overlayTop"),
                             icon: PanelTopDashed,
                           },
                           {
                             value: "overlay-bottom",
-                            label: "Overlay bottom",
+                            label: t("editor.captionPosition.overlayBottom"),
                             icon: PanelBottomDashed,
                           },
                         ]}
@@ -1110,7 +1110,7 @@ export default function App() {
                   <div
                     id="board-grid"
                     className="board-grid"
-                    aria-label="Image grid"
+                    aria-label={t("editor.gridLabel")}
                     style={
                       {
                         width: previewSize?.boardWidth,
@@ -1223,37 +1223,37 @@ export default function App() {
           )}
           {(settingsActions) => (
             <aside
-              className="settings-panel tw:block! tw:min-[901px]:flex! tw:min-[901px]:flex-col tw:min-[901px]:p-0! tw:min-[901px]:sticky tw:min-[901px]:top-0 tw:min-[901px]:h-dvh tw:min-[901px]:self-start tw:min-[901px]:overflow-hidden"
-              aria-label="Grid settings"
+              className="settings-panel min-[901px]:flex! min-[901px]:flex-col min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden"
+              aria-label={t("settings.title")}
             >
               {settingsActions && (
                 <div
                   data-sidebar-header
-                  className="tw:min-h-[76px] tw:shrink-0 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:p-[16px]"
+                  className="min-h-19 shrink-0 border-0 border-b border-solid border-(--line) py-3"
                 >
                   {settingsActions}
                 </div>
               )}
               <div
                 data-sidebar-content
-                className="tw:contents tw:min-[901px]:block tw:min-[901px]:min-h-0 tw:min-[901px]:flex-1 tw:min-[901px]:overflow-y-auto tw:min-[901px]:overflow-x-hidden tw:min-[901px]:px-[16px] tw:min-[901px]:[scrollbar-gutter:stable]"
+                className="contents rounded-md min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="tw:flex tw:flex-col tw:gap-3 tw:py-3">
+                <div className="flex flex-col gap-3 border">
                   <fieldset
-                    className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#3c4248] tw:bg-[#24282c] tw:p-3"
-                    aria-label="Canvas style"
+                    className="m-0 min-w-0 rounded-md border border-[#3c4248] bg-[#24282c] border-solid p-3 font-semibold"
+                    aria-label={t("settings.canvas")}
                   >
-                    <h3 className="tw:mt-0 tw:text-sm tw:font-semibold">
-                      Canvas style
+                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                      {t("settings.canvas")}
                     </h3>
                     <ColorField
                       id="background"
-                      label="Background"
+                      label={t("settings.fields.background")}
                       value={board.background}
                       onChange={(background) => patchBoard({ background })}
                     />
                     <label className="field-label" htmlFor="canvas-padding">
-                      Padding{" "}
+                      {t("settings.fields.padding")}{" "}
                       <output id="canvas-padding-value">
                         {Math.round(((board.canvasPadding ?? 12) / 6) * 10) /
                           10}
@@ -1274,7 +1274,7 @@ export default function App() {
                       }
                     />
                     <label className="field-label" htmlFor="gap">
-                      Gap{" "}
+                      {t("settings.fields.gap")}{" "}
                       <output id="gap-value">
                         {Math.round((board.gap / 6) * 10) / 10}%
                       </output>
@@ -1292,16 +1292,16 @@ export default function App() {
                     />
                   </fieldset>
                   <fieldset
-                    className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#3a4b3e] tw:bg-[#202a24] tw:p-3"
-                    aria-label="Heading style"
+                    className="m-0 min-w-0 rounded-md border border-solid border-[#4b3b45] bg-[#2b2328] p-3 font-semibold"
+                    aria-label={t("settings.heading")}
                   >
-                    <h3 className="tw:mt-0 tw:text-sm tw:font-semibold">
-                      Heading style
+                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                      {t("settings.heading")}
                     </h3>
                     <SelectField
                       id="heading-font"
                       largeFontPreview
-                      label="Font"
+                      label={t("settings.fields.font")}
                       value={board.headingFont}
                       options={fontOptions.map((font) => ({
                         value: font,
@@ -1326,7 +1326,7 @@ export default function App() {
                       className="field-label"
                       htmlFor="heading-font-weight"
                     >
-                      Font weight{" "}
+                      {t("settings.fields.fontWeight")}{" "}
                       <output>
                         {resolveFontWeight(
                           board.headingFont,
@@ -1361,7 +1361,8 @@ export default function App() {
                       }
                     />
                     <label className="field-label" htmlFor="heading-font-size">
-                      Font size <output>{board.headingFontSize ?? 18}%</output>
+                      {t("settings.fields.fontSize")}
+                      <output>{board.headingFontSize ?? 18}%</output>
                     </label>
                     <input
                       id="heading-font-size"
@@ -1377,7 +1378,7 @@ export default function App() {
                     />
                     <ColorField
                       id="heading-text-color"
-                      label="Text color"
+                      label={t("settings.fields.textColor")}
                       value={board.headingTextColor ?? palette.text}
                       onChange={(headingTextColor) =>
                         patchBoard({ headingTextColor })
@@ -1385,7 +1386,7 @@ export default function App() {
                     />
                     <ColorField
                       id="heading-background-color"
-                      label="Background"
+                      label={t("settings.fields.background")}
                       value={
                         board.headingBackgroundColor ??
                         (!board.heading.trim()
@@ -1400,16 +1401,16 @@ export default function App() {
                     />
                   </fieldset>
                   <fieldset
-                    className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#4b3b45] tw:bg-[#2b2328] tw:p-3"
-                    aria-label="Card style"
+                    className="m-0 min-w-0 rounded-md border border-[#3a4b3e] bg-[#202a24] border-solid p-3 font-semibold"
+                    aria-label={t("settings.card")}
                   >
-                    <h3 className="tw:mt-0 tw:text-sm tw:font-semibold">
-                      Card style
+                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                      {t("settings.card")}
                     </h3>
                     <SelectField
                       id="cell-font"
                       largeFontPreview
-                      label="Font"
+                      label={t("settings.fields.font")}
                       value={board.cellFont}
                       options={fontOptions.map((font) => ({
                         value: font,
@@ -1431,7 +1432,7 @@ export default function App() {
                       }
                     />
                     <label className="field-label" htmlFor="cell-font-weight">
-                      Font weight{" "}
+                      {t("settings.fields.fontWeight")}{" "}
                       <output>
                         {resolveFontWeight(
                           board.cellFont,
@@ -1466,7 +1467,8 @@ export default function App() {
                       }
                     />
                     <label className="field-label" htmlFor="cell-font-size">
-                      Font size <output>{board.cellFontSize ?? 11}%</output>
+                      {t("settings.fields.fontSize")}
+                      <output>{board.cellFontSize ?? 11}%</output>
                     </label>
                     <input
                       id="cell-font-size"
@@ -1480,7 +1482,7 @@ export default function App() {
                     />
                     <ColorField
                       id="cell-text-color"
-                      label="Text color"
+                      label={t("settings.fields.textColor")}
                       value={board.cellTextColor ?? "#f4f4ef"}
                       onChange={(cellTextColor) =>
                         patchBoard({ cellTextColor })
@@ -1488,7 +1490,7 @@ export default function App() {
                     />
                     <ColorField
                       id="cell-background-color"
-                      label="Background"
+                      label={t("settings.fields.background")}
                       value={board.cellBackgroundColor ?? "#111315"}
                       onChange={(cellBackgroundColor) =>
                         patchBoard({ cellBackgroundColor })
@@ -1496,14 +1498,14 @@ export default function App() {
                     />
                     <ColorField
                       id="caption-overlay"
-                      label="Overlay color"
+                      label={t("settings.fields.overlayColor")}
                       value={board.captionOverlayColor ?? "#000000"}
                       onChange={(captionOverlayColor) =>
                         patchBoard({ captionOverlayColor })
                       }
                     />
                     <label className="field-label" htmlFor="caption-opacity">
-                      Overlay opacity{" "}
+                      {t("settings.fields.overlayOpacity")}{" "}
                       <output>{board.captionOverlayOpacity ?? 60}%</output>
                     </label>
                     <input
@@ -1520,15 +1522,15 @@ export default function App() {
                     />
                   </fieldset>
                 </div>
-                <div className="tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:py-3">
+                <div className="mt-4 shrink-0 border-0 border-t border-solid border-(--line) py-4">
                   <Button
                     ref={resetButton}
-                    className="tw:min-h-[44px] tw:w-full"
-                    title="Restore default grid settings; keep library images and cell captions"
+                    className="min-h-11 w-full"
+                    title={t("settings.reset.tooltip")}
                     onClick={() => setResetOpen(true)}
                   >
                     <PanelsTopLeft aria-hidden="true" />
-                    Reset grid settings
+                    {t("settings.reset.title")}
                   </Button>
                 </div>
               </div>
@@ -1542,7 +1544,7 @@ export default function App() {
             aria-hidden="true"
             inert
             data-drag-floating
-            className="tw:pointer-events-none tw:fixed tw:z-[100] tw:opacity-100"
+            className="z-100 opacity-100 mt-5 justify-end"
             style={{
               width: cardDrag.visual.width,
               height: cardDrag.visual.height,
@@ -1591,12 +1593,12 @@ export default function App() {
       <Modal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Export grid"
+        title={t("export.title")}
         returnFocus={exportButton}
       >
         <SelectField
           id="format"
-          label="File format"
+          label={t("export.format")}
           value={format}
           options={[
             { value: "image/png", label: "PNG" },
@@ -1607,18 +1609,19 @@ export default function App() {
         />
         <SelectField
           id="resolution"
-          label="Resolution"
+          label={t("export.resolution")}
           value={String(resolution)}
           options={[150, 300, 600, 1200, 1800].map((size) => ({
             value: String(size),
-            label: `${size} px / image`,
+            label: t("export.imageResolution", { value1: size }),
           }))}
           onChange={(resolution) =>
             patchExport({ resolution: Number(resolution) })
           }
         />
         <label className="field-label quality-label" htmlFor="quality">
-          Quality <output id="quality-value">{quality}%</output>
+          {t("export.quality")}
+          <output id="quality-value">{quality}%</output>
         </label>
         <input
           id="quality"
@@ -1631,26 +1634,29 @@ export default function App() {
             patchExport({ quality: Number(event.target.value) })
           }
         />
-        <p className="tw:text-sm tw:text-(--muted)">
-          {size.width} × {size.height} px
+        <p className="text-sm text-(--muted)">
+          {size.width} × {size.height}
+          {t("export.pixelUnit")}
         </p>
-        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-          <Button onClick={() => setExportOpen(false)}>Cancel</Button>
+        <div className="mb-4 flex flex-wrap justify-end gap-2">
+          <Button onClick={() => setExportOpen(false)}>
+            {t("common.actions.cancel")}
+          </Button>
           <Button
             variant="primary"
-            className="tw:min-h-[44px]"
+            className="min-h-11"
             disabled={exporting}
             onClick={exportGrid}
           >
             <Download aria-hidden="true" />
-            {exporting ? "Exporting..." : "Download image"}
+            {exporting ? t("export.progress") : t("export.download")}
           </Button>
         </div>
       </Modal>
       <Modal
         open={imageTarget !== null}
         onClose={closeImagePicker}
-        title="Choose image"
+        title={t("cell.actions.chooseImage")}
         returnFocus={imageReturnFocus}
         size="wide"
       >
@@ -1662,15 +1668,15 @@ export default function App() {
             } as CSSProperties
           }
         >
-          <div className="tw:mb-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <ImageTabs
-              label="Image source"
+              label={t("library.source.label")}
               tabs={[
-                { label: "Imported" },
+                { label: t("library.source.imported") },
                 {
-                  label: "Online",
+                  label: t("library.source.online"),
                   disabled: true,
-                  title: "Online providers are not available yet",
+                  title: t("library.source.unavailable"),
                 },
               ]}
             />
@@ -1726,16 +1732,16 @@ export default function App() {
                   closeImagePicker();
                 }}
               />
-              {activeAssets.length === 0 && <p>No images yet.</p>}
+              {activeAssets.length === 0 && <p>{t("library.empty")}</p>}
               {activeAssets.length > 0 && (
                 <Button
-                  className="tw:mt-2 tw:min-h-[44px] tw:w-full"
+                  className="mt-2 min-h-11 w-full"
                   onClick={() =>
                     deleteImages(activeAssets.map((asset) => asset.id))
                   }
                 >
                   <Trash2 aria-hidden="true" />
-                  Clear all images
+                  {t("library.clearAll")}
                 </Button>
               )}
             </TabPanel>
@@ -1745,15 +1751,14 @@ export default function App() {
       <Modal
         open={reloadOpen}
         onClose={() => setReloadOpen(false)}
-        title="Reload saved grid"
+        title={t("save.reload")}
         returnFocus={reloadButton}
       >
-        <p>
-          Reloading replaces this tab's grid and unsaved images with the saved
-          version.
-        </p>
-        <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-          <Button onClick={() => setReloadOpen(false)}>Cancel</Button>
+        <p>{t("save.reloadPrompt")}</p>
+        <div className="mb-4 flex flex-wrap justify-end gap-2">
+          <Button onClick={() => setReloadOpen(false)}>
+            {t("common.actions.cancel")}
+          </Button>
           <Button
             variant="primary"
             onClick={() => {
@@ -1762,29 +1767,25 @@ export default function App() {
             }}
           >
             <RefreshCw aria-hidden="true" />
-            Reload saved grid
+            {t("save.reload")}
           </Button>
         </div>
       </Modal>
       <Modal
         open={resetOpen}
         onClose={() => setResetOpen(false)}
-        title="Reset grid settings"
+        title={t("settings.reset.title")}
         returnFocus={resetButton}
       >
-        <p>
-          Restore the default 3x3 layout, styling and export settings, and clear
-          the banner heading?
-        </p>
-        <p>
-          Library images, cell captions and placements are kept. Cells outside
-          3x3 remain recoverable.
-        </p>
-        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
-          <Button onClick={() => setResetOpen(false)}>Cancel</Button>
+        <p>{t("settings.reset.prompt")}</p>
+        <p>{t("settings.reset.retention")}</p>
+        <div className="mb-4 flex justify-end gap-2">
+          <Button onClick={() => setResetOpen(false)}>
+            {t("common.actions.cancel")}
+          </Button>
           <Button variant="primary" onClick={resetDefaults}>
             <PanelsTopLeft aria-hidden="true" />
-            Reset settings
+            {t("settings.reset.confirm")}
           </Button>
         </div>
       </Modal>

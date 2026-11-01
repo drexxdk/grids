@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { build } from "vite";
 import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+import { createInstance } from "i18next";
+import ICU from "i18next-icu";
 
 let model;
 test.beforeAll(async () => {
@@ -22,6 +25,62 @@ test.beforeAll(async () => {
   model = await import(
     `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`
   );
+});
+
+test("English messages have short grouped keys and single-key plurals", async () => {
+  const en = JSON.parse(
+    await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"),
+  );
+  const i18n = createInstance();
+  await i18n
+    .use(
+      new ICU({
+        parseErrorHandler: (error) => {
+          throw error;
+        },
+      }),
+    )
+    .init({
+      lng: "en",
+      fallbackLng: "en",
+      initAsync: false,
+      resources: { en: { translation: en } },
+    });
+  function validate(messages, prefix = "") {
+    for (const [key, message] of Object.entries(messages)) {
+      expect(key).toMatch(/^[a-z][a-zA-Z]*$/);
+      expect(key.length).toBeLessThanOrEqual(24);
+      expect(key).not.toMatch(/_(one|other)$/);
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+      if (typeof message === "string") {
+        expect(fullKey.split(".").length).toBeLessThanOrEqual(3);
+        expect(
+          typeof i18n.t(fullKey, {
+            count: 2,
+            value1: "Image {title}",
+            value2: "Square",
+          }),
+        ).toBe("string");
+      } else validate(message, fullKey);
+    }
+  }
+  validate(en);
+  for (const count of [0, 1, 2]) {
+    expect(i18n.t("common.counts.images", { count })).toBe(
+      `${count} ${count === 1 ? "image" : "images"}`,
+    );
+    expect(i18n.t("common.actions.addImages", { count })).toBe(
+      count === 1 ? "Add image" : "Add images",
+    );
+    expect(i18n.t("common.actions.addOrDropImages", { count })).toBe(
+      count === 1 ? "Add or drop an image" : "Add or drop images",
+    );
+  }
+  expect(i18n.t("editor.tools")).toBe("Tools");
+  expect(i18n.t("cell.actions.useImage", { value1: "Image {title}" })).toBe(
+    "Use Image {title}",
+  );
+  expect(i18n.exists("save.tooltip")).toBe(true);
 });
 
 function localWorkspace() {

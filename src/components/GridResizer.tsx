@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import {
   useLayoutEffect,
@@ -60,9 +61,9 @@ export function GridResizer({
       ref={ref}
       style={style}
       data-resize-frame
-      className="tw:grid tw:grid-cols-[44px_minmax(0,1fr)_44px] tw:grid-rows-[minmax(0,1fr)_44px] tw:gap-[8px]"
+      className="grid grid-cols-[44px_minmax(0,1fr)_44px] grid-rows-[minmax(0,1fr)_44px] gap-2"
     >
-      <div className="tw:col-start-2 tw:row-start-1 tw:flex tw:min-h-0 tw:min-w-0 tw:items-center tw:justify-center">
+      <div className="col-start-2 row-start-1 flex min-h-0 min-w-0 items-center justify-center">
         <div
           ref={contentRef}
           data-preview-content
@@ -71,22 +72,22 @@ export function GridResizer({
             maxWidth: "100%",
             paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
           }}
-          className="tw:relative tw:isolate tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--heading-gap,0px)] tw:[container-type:inline-size]"
+          className="relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container"
         >
           <span
             aria-hidden="true"
             data-image-canvas-background
-            className="tw:pointer-events-none tw:absolute tw:inset-y-0 tw:left-0 tw:right-[var(--preview-scrollbar-width,0px)] tw:-z-10 tw:bg-(--board-bg)"
+            className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
           />
           {heading && (
-            <div className="tw:overflow-hidden tw:px-[var(--canvas-inset,0px)] tw:[scrollbar-gutter:stable]">
+            <div className="overflow-hidden px-(--canvas-inset,0px) scrollbar-gutter-stable">
               {heading}
             </div>
           )}
           <div
             ref={viewportRef}
             data-canvas-viewport
-            className="tw:min-w-0 tw:overflow-auto tw:overscroll-contain tw:[scrollbar-gutter:stable]"
+            className="min-w-0 overflow-auto overscroll-contain scrollbar-gutter-stable"
             style={{ height: viewportHeight }}
           >
             {children}
@@ -99,13 +100,17 @@ export function GridResizer({
           ref={dimension === "columns" ? columnControlsRef : undefined}
           className={
             dimension === "columns"
-              ? "tw:pointer-events-none tw:col-start-3 tw:row-start-1 tw:flex tw:items-center tw:justify-center tw:translate-y-[var(--column-control-offset,0px)]"
-              : "tw:col-start-2 tw:row-start-2 tw:flex tw:items-center tw:justify-center tw:translate-x-[var(--row-control-offset,0px)]"
+              ? "pointer-events-none col-start-3 row-start-1 flex items-center justify-center translate-y-(--column-control-offset,0px)"
+              : "col-start-2 row-start-2 flex items-center justify-center translate-x-(--row-control-offset,0px)"
           }
         >
           <ButtonGroup
-            className="tw:pointer-events-auto"
-            label={dimension === "columns" ? "Column controls" : "Row controls"}
+            className="pointer-events-auto"
+            label={
+              dimension === "columns"
+                ? t("editor.resize.columns")
+                : t("editor.resize.rows")
+            }
             orientation={dimension === "columns" ? "vertical" : "horizontal"}
           >
             {(dimension === "columns" ? [1, -1] : [-1, 1]).map((change) => {
@@ -137,7 +142,7 @@ export function GridResizer({
                     onResize(dimension, dimensions[dimension] + change)
                   }
                 >
-                  <Arrow aria-hidden="true" className="tw:size-[22px]!" />
+                  <Arrow aria-hidden="true" className="size-5.5!" />
                 </Button>
               );
             })}

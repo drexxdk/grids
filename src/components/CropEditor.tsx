@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import Cropper, { type Area } from "react-easy-crop";
 import { Check, Grid3X3, RotateCcw } from "lucide-react";
 import { useState, type RefObject } from "react";
@@ -50,16 +51,13 @@ export function CropEditor({
     <Modal
       fullscreen
       open={open}
-      title="Crop image"
+      title={t("crop.title")}
       onClose={() => setOpen(false)}
       onExited={onClose}
       returnFocus={returnFocus}
     >
-      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
-        <div
-          className="tw:relative tw:min-h-0 tw:flex-1 tw:bg-[#101112]"
-          data-crop-stage
-        >
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative min-h-0 flex-1 bg-[#101112]" data-crop-stage>
           <Cropper
             image={asset.src}
             crop={position}
@@ -81,20 +79,20 @@ export function CropEditor({
           {error && (
             <p
               role="alert"
-              className="tw:absolute tw:inset-x-0 tw:top-4 tw:z-10 tw:m-0 tw:text-center"
+              className="absolute inset-x-0 top-4 z-10 m-0 text-center"
             >
-              Image could not load.
+              {t("crop.loadError")}
             </p>
           )}
         </div>
-        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3 tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-3 tw:pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="tw:flex tw:min-w-[160px] tw:flex-1 tw:items-center tw:gap-3 tw:max-[600px]:basis-full">
-            <label htmlFor="crop-zoom" className="tw:shrink-0">
-              Zoom
+        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-(--line) bg-(--panel) p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+          <div className="flex min-w-40 flex-1 items-center gap-3 max-[600px]:basis-full">
+            <label htmlFor="crop-zoom" className="shrink-0">
+              {t("crop.zoom")}
             </label>
             <input
               id="crop-zoom"
-              className="tw:h-[44px] tw:min-w-0 tw:flex-1"
+              className="h-11 min-w-0 flex-1"
               type="range"
               min="1"
               max="8"
@@ -102,15 +100,15 @@ export function CropEditor({
               value={zoom}
               onChange={(event) => setZoom(Number(event.target.value))}
             />
-            <output className="tw:w-12 tw:shrink-0 tw:text-right">
+            <output className="w-12 shrink-0 text-right">
               {Math.round(zoom * 100)}%
             </output>
           </div>
-          <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-3 tw:max-[600px]:w-full tw:max-[600px]:justify-end">
+          <div className="flex shrink-0 items-center gap-3 max-[600px]:w-full max-[600px]:justify-end">
             <Button
               variant="icon"
-              title="Toggle crop guides"
-              aria-label="Toggle crop guides"
+              title={t("crop.guides")}
+              aria-label={t("crop.guides")}
               aria-pressed={grid}
               onClick={() => setGrid(!grid)}
             >
@@ -118,8 +116,8 @@ export function CropEditor({
             </Button>
             <Button
               variant="icon"
-              title="Reset crop"
-              aria-label="Reset crop"
+              title={t("crop.reset")}
+              aria-label={t("crop.reset")}
               onClick={() => {
                 setInitialArea(undefined);
                 setPosition({ x: 0, y: 0 });
@@ -128,11 +126,11 @@ export function CropEditor({
             >
               <RotateCcw aria-hidden="true" />
             </Button>
-            <Button className="tw:min-h-[44px]" onClick={() => setOpen(false)}>
-              Cancel
+            <Button className="min-h-11" onClick={() => setOpen(false)}>
+              {t("common.actions.cancel")}
             </Button>
             <Button
-              className="tw:min-h-[44px]"
+              className="min-h-11"
               variant="primary"
               disabled={!ready || error || !draft}
               onClick={() => {
@@ -143,7 +141,7 @@ export function CropEditor({
               }}
             >
               <Check aria-hidden="true" />
-              Apply crop
+              {t("crop.apply")}
             </Button>
           </div>
         </div>

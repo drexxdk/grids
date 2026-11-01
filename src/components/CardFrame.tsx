@@ -3,10 +3,10 @@ export function CardFrame() {
     <span
       aria-hidden="true"
       data-cell-image-frame
-      className="tw:pointer-events-none tw:absolute tw:inset-(--card-frame-edge) tw:z-50 tw:[--frame-color:var(--card-frame-color)]"
+      className="pointer-events-none absolute inset-(--card-frame-edge) z-50 [--frame-color:var(--card-frame-color)]"
     >
       <svg
-        className="tw:absolute tw:inset-0 tw:h-full! tw:w-full! tw:overflow-visible"
+        className="absolute inset-0 h-full! w-full! overflow-visible"
         aria-hidden="true"
       >
         <rect

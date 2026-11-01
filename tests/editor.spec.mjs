@@ -866,7 +866,9 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   await expect(dialog).toHaveCount(0);
   expect(await settings.boundingBox()).toEqual(settingsBounds);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   await expect(page.locator(".settings-panel")).toHaveCSS("direction", "ltr");
   await expect(page.locator(".settings-panel")).toHaveCSS(
     "scrollbar-gutter",
@@ -1041,7 +1043,9 @@ test("font previews and independent weights persist and match exports without th
   });
   expect(settings).not.toHaveProperty("themeSettings");
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   await page.locator("#cell-font-weight").fill("600");
   await expect(page.locator("#board-grid .cell-heading").first()).toHaveCSS(
     "font-weight",
@@ -1170,7 +1174,7 @@ test("heading and card typography controls are independent across previews, expo
     await verify();
     if (width <= 900)
       await page
-        .getByRole("button", { name: "Expand tools", exact: true })
+        .getByRole("button", { name: "Tools", expanded: false, exact: true })
         .click();
     const sectionColors = [];
     for (const name of ["Canvas style", "Heading style", "Card style"]) {
@@ -2163,7 +2167,7 @@ test("hovering another header clears the previous card outline without moving fo
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Expand tools", exact: true })
+        .getByRole("button", { name: "Tools", expanded: false, exact: true })
         .click();
     await selectField(page, "caption-position", "above");
     for (const selector of width > 900
@@ -2220,7 +2224,7 @@ test("movable cards show a move cursor without changing editing and action curso
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Expand tools", exact: true })
+        .getByRole("button", { name: "Tools", expanded: false, exact: true })
         .click();
     const movable = page.locator('[draggable="true"]');
     await expect(movable).toHaveCount(width > 900 ? 4 : 2);
@@ -2784,7 +2788,7 @@ test("small library caption clicks retain caret focus after image hover", async 
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Expand tools", exact: true })
+        .getByRole("button", { name: "Tools", expanded: false, exact: true })
         .click();
     await selectField(page, "image-shape", "landscape");
     for (const placement of [
@@ -2796,7 +2800,8 @@ test("small library caption clicks retain caret focus after image hover", async 
       await selectField(page, "caption-position", placement);
       if (width <= 900) {
         const collapse = page.getByRole("button", {
-          name: "Collapse tools",
+          name: "Tools",
+          expanded: true,
           exact: true,
         });
         if (await collapse.count()) await collapse.click();
@@ -2837,7 +2842,11 @@ test("small library caption clicks retain caret focus after image hover", async 
           .click();
         if (expanded)
           await page
-            .getByRole("button", { name: "Expand tools", exact: true })
+            .getByRole("button", {
+              name: "Tools",
+              expanded: false,
+              exact: true,
+            })
             .click();
       }
     }
@@ -2873,7 +2882,7 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Expand tools", exact: true })
+        .getByRole("button", { name: "Tools", expanded: false, exact: true })
         .click();
     await expect(thumbnail).toBeVisible();
     await expect
@@ -3052,7 +3061,7 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       expect(marks.some((mark) => !mark)).toBe(true);
       if (expanded)
         await page
-          .getByRole("button", { name: "Collapse tools", exact: true })
+          .getByRole("button", { name: "Tools", expanded: true, exact: true })
           .click();
       await expect
         .poll(
@@ -3100,7 +3109,7 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
       if (expanded) {
         await page
-          .getByRole("button", { name: "Expand tools", exact: true })
+          .getByRole("button", { name: "Tools", expanded: false, exact: true })
           .click();
         await expect(thumbnail).toBeInViewport({ ratio: 1 });
       }
@@ -4058,7 +4067,9 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   await expect(cardStyle.locator("#caption-overlay-value")).toBeVisible();
   await expect(cardStyle.locator("#caption-opacity")).toBeEnabled();
   expect(
@@ -4323,7 +4334,9 @@ test("appearance toolbar preserves content and matches exported ratios and capti
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   const color = page.getByRole("textbox", {
     name: "Overlay color hex value",
     exact: true,
@@ -4334,7 +4347,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   expect(colorBounds.x).toBeGreaterThanOrEqual(0);
   expect(colorBounds.x + colorBounds.width).toBeLessThanOrEqual(390);
   await page
-    .getByRole("button", { name: "Collapse tools", exact: true })
+    .getByRole("button", { name: "Tools", expanded: true, exact: true })
     .click();
   await selectField(page, "image-shape", "landscape");
   await selectField(page, "caption-position", "overlay-bottom");
@@ -4483,7 +4496,9 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
   await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   await page.locator("#heading-font").click();
   await expect(async () => {
     const menuBox = await page.getByRole("listbox").boundingBox();
@@ -4551,7 +4566,9 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
     .click();
   await expect(picker).toHaveCount(0);
   await assertStable();
-  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .click();
   await expect(drawer.locator(".section-heading")).toBeHidden();
   await expect.poll(gutter).toBeCloseTo(collapsedGutter, 0);
   await assertStable();
@@ -4654,7 +4671,8 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
   await page.goto(testInfo.project.use.baseURL);
   const drawer = page.locator("[data-editor-drawer]");
   const expand = page.getByRole("button", {
-    name: "Expand tools",
+    name: "Tools",
+    expanded: false,
     exact: true,
   });
   await expect(expand).toHaveAttribute("aria-expanded", "false");
@@ -4740,7 +4758,8 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
   await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
   await expand.tap();
   const collapse = page.getByRole("button", {
-    name: "Collapse tools",
+    name: "Tools",
+    expanded: true,
     exact: true,
   });
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
@@ -6876,7 +6895,9 @@ test("touch dialogs do not autofocus text inputs", async ({
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
       "INPUT",
     );
-    await page.getByRole("button", { name: "Expand tools", exact: true }).tap();
+    await page
+      .getByRole("button", { name: "Tools", expanded: false, exact: true })
+      .tap();
     await page
       .getByRole("button", { name: "Reset grid settings", exact: true })
       .tap();
@@ -7429,14 +7450,14 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     await expect
       .poll(async () => (await panel.boundingBox()).width)
       .toBe(Math.min(800, availableWidth));
-    const grid = picker.getByRole("tabpanel").locator('[class~="tw:grid"]');
+    const grid = picker.getByRole("tabpanel").locator('[class~="grid"]');
     await expect(
       grid.locator(":scope > [data-upload-tile]").first(),
     ).toBeVisible();
     await expect(grid.locator(":scope > [data-library-image]")).toHaveCount(8);
     const layout = await picker
       .getByRole("tabpanel")
-      .locator('[class~="tw:grid"]')
+      .locator('[class~="grid"]')
       .evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -7520,7 +7541,7 @@ test("mobile picker has clear all images without deletion mode and preserves can
   const drawer = page.locator("[data-editor-drawer]");
   await expect(drawer.getByRole("button")).toHaveCount(1);
   await expect(
-    drawer.getByRole("button", { name: "Expand tools", exact: true }),
+    drawer.getByRole("button", { name: "Tools", expanded: false, exact: true }),
   ).toBeVisible();
   const openPicker = async () => {
     await page
@@ -7918,7 +7939,8 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
       .poll(async () => (await drawer.boundingBox()).height)
       .toBeLessThanOrEqual(72);
     const expand = drawer.getByRole("button", {
-      name: "Expand tools",
+      name: "Tools",
+      expanded: false,
       exact: true,
     });
     await expect(expand).toHaveCSS("border-bottom-left-radius", "0px");
@@ -7958,7 +7980,7 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
       })
       .toBeLessThan(1);
     await drawer
-      .getByRole("button", { name: "Expand tools", exact: true })
+      .getByRole("button", { name: "Tools", expanded: false, exact: true })
       .tap();
     await expect(
       drawer.locator(".asset-panel, .asset-library, img"),
@@ -7967,7 +7989,8 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
       drawer.getByRole("group", { name: "Card style", exact: true }),
     ).toBeVisible();
     const collapse = drawer.getByRole("button", {
-      name: "Collapse tools",
+      name: "Tools",
+      expanded: true,
       exact: true,
     });
     await expect(collapse).toHaveCSS("border-bottom-width", "0px");

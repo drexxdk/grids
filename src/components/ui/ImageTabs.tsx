@@ -10,14 +10,14 @@ export function ImageTabs({
   return (
     <TabList
       aria-label={label}
-      className="tw:flex tw:w-fit tw:overflow-hidden tw:rounded-[4px] tw:border tw:border-solid tw:border-(--line) tw:max-[600px]:[&>button]:px-2! tw:max-[600px]:[&>button]:text-[11px]"
+      className="flex w-fit overflow-hidden rounded-sm border border-solid border-(--line) max-[600px]:[&>button]:px-2! max-[600px]:[&>button]:text-[11px]"
     >
       {tabs.map((tab, index) => (
         <Tab
           key={tab.label}
           disabled={tab.disabled}
           title={tab.title}
-          className={`tw:min-h-[44px] tw:border-0 tw:bg-transparent tw:px-3 tw:text-(--muted) tw:data-selected:bg-(--line) tw:data-selected:text-(--accent) tw:focus-visible:outline-2 tw:focus-visible:outline-(--accent) tw:focus-visible:-outline-offset-2! tw:disabled:cursor-default tw:disabled:opacity-50 ${index < tabs.length - 1 ? "tw:border-r tw:border-solid tw:border-(--line)" : ""}`}
+          className={`min-h-11 border-0 bg-transparent px-3 text-(--muted) data-selected:bg-(--line) data-selected:text-(--accent) focus-visible:outline-2 focus-visible:outline-(--accent) focus-visible:-outline-offset-2! disabled:cursor-default disabled:opacity-50 ${index < tabs.length - 1 ? "border-r border-solid border-(--line)" : ""}`}
         >
           {tab.label}
         </Tab>

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   DataInteractive,
   Disclosure,
@@ -45,15 +46,15 @@ export function MotionDiv({
 }
 
 const buttonStyles = cva(
-  "tw:inline-flex tw:items-center tw:justify-center tw:gap-2 tw:rounded-md tw:border tw:border-solid tw:px-3 tw:py-2 tw:font-semibold tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)] tw:disabled:cursor-default tw:disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50",
   {
     variants: {
       variant: {
         secondary:
-          "tw:border-[var(--line)] tw:bg-transparent tw:text-[var(--text)] tw:enabled:hover:border-[var(--accent)]",
+          "border-(--line) bg-transparent text-(--text) enabled:hover:border-(--accent)",
         primary:
-          "tw:border-[var(--accent)] tw:bg-[var(--accent)] tw:text-[#19200d] tw:enabled:hover:brightness-110",
-        icon: "tw:size-[44px] tw:shrink-0 tw:border-[var(--line)] tw:bg-transparent tw:p-0 tw:enabled:hover:border-[var(--accent)]!",
+          "border-(--accent) bg-(--accent) text-[#19200d] enabled:hover:brightness-110",
+        icon: "size-11 shrink-0 border-(--line) bg-transparent p-0 enabled:hover:border-(--accent)!",
       },
     },
     defaultVariants: { variant: "secondary" },
@@ -95,10 +96,10 @@ export function ButtonGroup({
       aria-label={label}
       data-button-group={orientation}
       className={clsx(
-        "tw:inline-flex tw:gap-0 tw:rounded-[6px] tw:bg-[#111315] tw:[&>button]:relative tw:[&>button]:rounded-none! tw:[&>button]:bg-[#111315]! tw:[&>button[aria-pressed=true]]:bg-(--line)! tw:[&>button[aria-pressed=true]:enabled:hover]:border-(--line)! tw:[&>button[aria-pressed=true]]:cursor-default! tw:[&>button:not([aria-pressed=true]):hover]:z-10 tw:[&>button:focus-visible]:z-20",
+        "inline-flex gap-0 rounded-md bg-[#111315] [&>button]:relative [&>button]:rounded-none! [&>button]:bg-[#111315]! [&>button[aria-pressed=true]]:bg-(--line)! [&>button[aria-pressed=true]:enabled:hover]:border-(--line)! [&>button[aria-pressed=true]]:cursor-default! [&>button:not([aria-pressed=true]):hover]:z-10 [&>button:focus-visible]:z-20",
         orientation === "vertical"
-          ? "tw:flex-col tw:[&>button+button]:mt-[-1px] tw:[&>button:first-child]:rounded-t-[6px]! tw:[&>button:last-child]:rounded-b-[6px]!"
-          : "tw:[&>button+button]:ml-[-1px] tw:[&>button:first-child]:rounded-l-[6px]! tw:[&>button:last-child]:rounded-r-[6px]!",
+          ? "flex-col [&>button+button]:-mt-px [&>button:first-child]:rounded-t-md! [&>button:last-child]:rounded-b-md!"
+          : "[&>button+button]:-ml-px [&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!",
         className,
       )}
     >
@@ -134,23 +135,27 @@ export function SelectField({
   const SelectedIcon = selected?.icon;
   return (
     <Listbox value={value} onChange={onChange}>
-      <ListboxLabel className={compact ? "tw:sr-only" : "field-label"}>
+      <ListboxLabel className={compact ? "sr-only" : "field-label"}>
         {label}
       </ListboxLabel>
       <ListboxButton
         id={id}
-        title={compact ? `${label}: ${selected?.label ?? value}` : undefined}
+        title={
+          compact
+            ? t("common.fields.value", {
+                value1: label,
+                value2: selected?.label ?? value,
+              })
+            : undefined
+        }
         className={clsx(
-          "tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:data-hover:border-(--accent)",
-          largeFontPreview && "tw:py-0!",
-          compact && "tw:h-[44px] tw:px-2! tw:py-0!",
+          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left data-hover:border-(--accent)",
+          largeFontPreview && "py-0!",
+          compact && "h-11 px-2! py-0!",
         )}
       >
         {SelectedIcon && (
-          <SelectedIcon
-            aria-hidden="true"
-            className="tw:size-[18px] tw:shrink-0"
-          />
+          <SelectedIcon aria-hidden="true" className="size-4.5 shrink-0" />
         )}
         <span
           style={{
@@ -161,21 +166,21 @@ export function SelectField({
           }}
           className={clsx(
             compact
-              ? "tw:min-w-0 tw:truncate tw:text-[12px] tw:max-[600px]:sr-only"
-              : "tw:min-w-0 tw:break-words",
-            largeFontPreview && "tw:text-[20px] tw:leading-[28px]",
+              ? "min-w-0 truncate text-[12px] max-[600px]:sr-only"
+              : "min-w-0 wrap-break-word",
+            largeFontPreview && "text-[20px] leading-7",
           )}
         >
           {selected?.label ?? value}
         </span>
-        <ChevronDown aria-hidden="true" className="tw:size-4 tw:shrink-0" />
+        <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
       </ListboxButton>
       <ListboxOptions
         anchor="bottom"
         modal={false}
         className={clsx(
-          "tw:z-70 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]",
-          compact && "tw:min-w-[170px]",
+          "z-70 w-(--button-width) max-w-[calc(100vw-24px)] rounded-sm border border-solid border-(--line) bg-(--panel) p-1 [--anchor-gap:4px] [--anchor-padding:12px]",
+          compact && "min-w-42.5",
         )}
       >
         {options.map((option) => {
@@ -192,16 +197,12 @@ export function SelectField({
                 fontWeight: option.fontWeight,
               }}
               className={clsx(
-                "tw:flex tw:min-h-[44px] tw:items-center tw:gap-2 tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)",
-                largeFontPreview &&
-                  "tw:py-0! tw:text-[20px]! tw:leading-[28px]",
+                "flex min-h-11 items-center gap-2 cursor-pointer px-3 py-2 text-sm wrap-break-word data-focus:bg-(--line) data-selected:text-(--accent)",
+                largeFontPreview && "py-0! text-[20px]! leading-7",
               )}
             >
               {OptionIcon && (
-                <OptionIcon
-                  aria-hidden="true"
-                  className="tw:size-[18px] tw:shrink-0"
-                />
+                <OptionIcon aria-hidden="true" className="size-4.5 shrink-0" />
               )}
               {option.label}
             </ListboxOption>
@@ -236,28 +237,28 @@ export function ColorField({
       </label>
       <DataInteractive
         as="div"
-        className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:data-hover:border-(--accent) tw:focus-within:border-(--accent) tw:transition-colors"
+        className="flex w-full min-w-0 items-center rounded-sm border border-solid border-(--line) bg-(--panel) data-hover:border-(--accent) focus-within:border-(--accent) transition-colors"
       >
         <DataInteractive
           as="input"
           id={id}
           type="color"
           value={value}
-          aria-label={`${label} color picker`}
-          title={`${label} color picker`}
-          className="tw:h-[44px] tw:w-[64px] tw:shrink-0 tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-1 tw:data-hover:bg-(--line) tw:transition-colors"
+          aria-label={t("common.fields.colorPicker", { value1: label })}
+          title={t("common.fields.colorPicker", { value1: label })}
+          className="h-11 w-16 shrink-0 cursor-pointer border-0 bg-transparent p-1 data-hover:bg-(--line) transition-colors"
           onChange={(event) => onChange(event.target.value)}
         />
         <DataInteractive
           as="input"
           id={`${id}-value`}
           type="text"
-          aria-label={`${label} hex value`}
+          aria-label={t("common.fields.hexValue", { value1: label })}
           value={draft}
           spellCheck={false}
           autoComplete="off"
           maxLength={7}
-          className="tw:h-[44px]! tw:w-full tw:min-w-0 tw:flex-1 tw:rounded-none! tw:border-0! tw:bg-transparent! tw:px-2 tw:text-(--text) tw:outline-none tw:data-hover:bg-(--line)! tw:transition-colors"
+          className="h-11! w-full min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-2 text-(--text) outline-none data-hover:bg-(--line)! transition-colors"
           onChange={(event) => {
             setDraft(event.target.value);
             const color = normalize(event.target.value);
@@ -290,15 +291,15 @@ export function Toggle({
 }) {
   const reduced = useReducedMotion();
   return (
-    <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:py-3">
-      <span className="tw:text-sm tw:font-semibold">{label}</span>
+    <div className="flex items-center justify-between gap-3 py-3">
+      <span className="text-sm font-semibold">{label}</span>
       <Switch
         checked={checked}
         onChange={onChange}
         aria-label={label}
         className={clsx(
-          "tw:relative tw:h-[24px] tw:w-[44px] tw:shrink-0 tw:rounded-full tw:border-0 tw:p-0 tw:after:absolute tw:after:-inset-y-[10px] tw:after:inset-x-0 tw:after:content-[''] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-[var(--accent)] tw:enabled:hover:brightness-110 tw:enabled:hover:ring-2 tw:enabled:hover:ring-(--accent)/40 tw:transition-[filter,box-shadow] tw:motion-reduce:transition-none",
-          checked ? "tw:bg-[var(--accent)]" : "tw:bg-[var(--line)]",
+          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) enabled:hover:brightness-110 enabled:hover:ring-2 enabled:hover:ring-(--accent)/40 transition-[filter,box-shadow] motion-reduce:transition-none",
+          checked ? "bg-(--accent)" : "bg-(--line)",
         )}
       >
         <m.span
@@ -306,7 +307,7 @@ export function Toggle({
           initial={false}
           animate={{ x: checked ? 20 : 0 }}
           transition={{ duration: reduced ? 0 : 0.16 }}
-          className="tw:absolute tw:top-[4px] tw:left-[4px] tw:size-[16px] tw:rounded-full tw:bg-[var(--panel)]"
+          className="absolute top-1 left-1 size-4 rounded-full bg-(--panel)"
         />
       </Switch>
     </div>
@@ -326,7 +327,7 @@ function AccordionPanel({ children }: { children: ReactNode }) {
       animate={{ height: "auto", opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
       motionTransition={{ duration: reduced ? 0 : 0.18 }}
-      className="tw:overflow-hidden"
+      className="overflow-hidden"
     >
       {children}
     </DisclosurePanel>
@@ -345,7 +346,7 @@ export function Accordion({
     <Disclosure as="section" defaultOpen className="settings-section">
       {({ open }) => (
         <>
-          <DisclosureButton className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left">
+          <DisclosureButton className="flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left">
             <span className="eyebrow">{title}</span>
             <m.span
               animate={{ rotate: open ? 180 : 0 }}
@@ -385,7 +386,7 @@ export function TemplateAccordion({
     <Disclosure
       as="section"
       defaultOpen={expanded}
-      className="tw:border-0 tw:border-b tw:border-solid tw:border-(--line)"
+      className="border-0 border-b border-solid border-(--line)"
     >
       {({ open }) => (
         <>
@@ -397,21 +398,19 @@ export function TemplateAccordion({
                 trigger.current?.getAttribute("aria-expanded") !== "true";
               if (next !== expanded) onToggle(next);
             }}
-            className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:py-3 tw:text-left tw:text-sm tw:aria-pressed:text-(--accent) tw:enabled:hover:bg-(--line) tw:transition-colors"
+            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-(--accent) enabled:hover:bg-(--line) transition-colors"
           >
             <span>{title}</span>
             <ChevronDown
               aria-hidden="true"
               className={clsx(
-                "tw:size-4 tw:transition-transform",
-                open && "tw:rotate-180",
+                "size-4 transition-transform",
+                open && "rotate-180",
               )}
             />
           </DisclosureButton>
           {open && expanded && (
-            <DisclosurePanel className="tw:px-2 tw:pb-4">
-              {children}
-            </DisclosurePanel>
+            <DisclosurePanel className="px-2 pb-4">{children}</DisclosurePanel>
           )}
         </>
       )}
@@ -441,14 +440,14 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
       motionTransition={{ duration: reduced ? 0 : 0.14 }}
-      className="tw:z-50 tw:w-48 tw:max-w-[calc(100vw-2rem)] tw:rounded-md tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-1 tw:shadow-xl tw:outline-none tw:[--anchor-gap:8px]"
+      className="z-50 w-48 max-w-[calc(100vw-2rem)] rounded-md border border-solid border-(--line) bg-(--panel) p-1 shadow-xl outline-none [--anchor-gap:8px]"
     >
       {actions.map(({ label, icon: Icon, onSelect, disabled }) => (
         <MenuItem key={label} disabled={disabled}>
           <button
             type="button"
             onClick={onSelect}
-            className="tw:flex tw:w-full tw:items-center tw:gap-2 tw:rounded tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:text-left tw:data-focus:bg-[var(--line)] tw:data-disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left data-focus:bg-(--line) data-disabled:opacity-50"
           >
             <Icon aria-hidden="true" />
             {label}
@@ -474,8 +473,8 @@ export function ActionMenu({
             as={Button}
             variant="icon"
             ref={buttonRef}
-            aria-label="Grid actions"
-            title="Grid actions"
+            aria-label={t("editor.actions")}
+            title={t("editor.actions")}
           >
             <MoreHorizontal aria-hidden="true" />
           </MenuButton>

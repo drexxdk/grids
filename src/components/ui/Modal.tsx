@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   Dialog,
   DialogBackdrop,
@@ -73,34 +74,34 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           motionTransition={{ duration: reduced ? 0 : 0.18 }}
-          className="tw:fixed tw:inset-0 tw:z-60"
+          className="fixed inset-0 z-60"
         >
-          <DialogBackdrop className="tw:fixed tw:inset-0 tw:bg-black/60" />
+          <DialogBackdrop className="fixed inset-0 bg-black/60" />
           <div
             data-modal-scroll
-            className={`tw:fixed tw:inset-0 tw:overflow-y-auto tw:overscroll-contain ${fullscreen ? "" : "tw:p-4"}`}
+            className={`fixed inset-0 overflow-y-auto overscroll-contain ${fullscreen ? "" : "p-4"}`}
           >
-            <div className="tw:flex tw:min-h-full tw:items-center tw:justify-center">
+            <div className="flex min-h-full items-center justify-center">
               <DialogPanel
                 className={
                   fullscreen
-                    ? "tw:flex tw:h-dvh tw:w-full tw:flex-col tw:bg-(--panel)"
-                    : `tw:w-full ${size === "wide" ? "tw:max-w-[800px]" : "tw:max-w-md"} tw:rounded-lg tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-5 tw:shadow-xl`
+                    ? "flex h-dvh w-full flex-col bg-(--panel)"
+                    : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
                 }
               >
                 <InitialTouchFocus target={closeButton} enabled={touch} />
                 <div
-                  className={`tw:flex tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 ${fullscreen ? "tw:p-3 tw:pt-[max(12px,env(safe-area-inset-top))]" : "tw:mb-4"}`}
+                  className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
                 >
-                  <DialogTitle className="tw:text-lg tw:font-semibold">
+                  <DialogTitle className="text-lg font-semibold">
                     {title}
                   </DialogTitle>
                   <Button
                     ref={closeButton}
                     variant="icon"
                     onClick={onClose}
-                    aria-label="Close dialog"
-                    title="Close dialog"
+                    aria-label={t("common.actions.closeDialog")}
+                    title={t("common.actions.closeDialog")}
                   >
                     <X aria-hidden="true" />
                   </Button>

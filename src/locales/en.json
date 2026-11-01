@@ -1,0 +1,127 @@
+{
+  "common": {
+    "actions": {
+      "cancel": "Cancel",
+      "closeDialog": "Close dialog",
+      "dropHere": "Drop here",
+      "addImages": "{count, plural, one {Add image} other {Add images}}",
+      "addOrDropImages": "{count, plural, one {Add or drop an image} other {Add or drop images}}"
+    },
+    "counts": {
+      "images": "{count, plural, one {# image} other {# images}}",
+      "cells": "{count, plural, one {# cell} other {# cells}}"
+    },
+    "fields": {
+      "value": "{value1}: {value2}",
+      "colorPicker": "{value1} color picker",
+      "hexValue": "{value1} hex value"
+    }
+  },
+  "editor": {
+    "tools": "Tools",
+    "region": "Grid editor",
+    "headingLabel": "Grid heading",
+    "headingPlaceholder": "Add heading",
+    "editHeading": "Edit grid heading",
+    "loading": "Loading grid...",
+    "appearance": "Grid appearance",
+    "gridLabel": "Image grid",
+    "actions": "Grid actions",
+    "imageShape": {
+      "label": "Image shape",
+      "portrait": "Portrait",
+      "landscape": "Landscape",
+      "square": "Square"
+    },
+    "captionPosition": {
+      "label": "Caption position",
+      "above": "Above image",
+      "below": "Below image",
+      "overlayTop": "Overlay top",
+      "overlayBottom": "Overlay bottom"
+    },
+    "resize": {
+      "columns": "Column controls",
+      "rows": "Row controls"
+    }
+  },
+  "library": {
+    "dropZone": "Image library drop zone",
+    "clearAll": "Clear all images",
+    "empty": "No images yet.",
+    "importing": "Importing...",
+    "source": {
+      "label": "Image source",
+      "imported": "Imported",
+      "online": "Online",
+      "unavailable": "Online providers are not available yet"
+    }
+  },
+  "cell": {
+    "actions": {
+      "useImage": "Use {value1}",
+      "imageOptions": "Image options: {value1}",
+      "options": "Cell options {value1}{value2}",
+      "addImage": "Add image to cell {value1}",
+      "tools": "Cell tools",
+      "chooseImage": "Choose image",
+      "replaceImage": "Replace image",
+      "deleteImage": "Delete {value1}",
+      "clear": "Clear cell"
+    },
+    "caption": {
+      "libraryLabel": "Library heading: {value1}",
+      "label": "Heading for cell {value1}"
+    }
+  },
+  "settings": {
+    "title": "Grid settings",
+    "canvas": "Canvas style",
+    "heading": "Heading style",
+    "card": "Card style",
+    "fields": {
+      "background": "Background",
+      "padding": "Padding",
+      "gap": "Gap",
+      "font": "Font",
+      "fontWeight": "Font weight",
+      "fontSize": "Font size",
+      "textColor": "Text color",
+      "overlayColor": "Overlay color",
+      "overlayOpacity": "Overlay opacity"
+    },
+    "reset": {
+      "title": "Reset grid settings",
+      "confirm": "Reset settings",
+      "tooltip": "Restore default grid settings; keep library images and cell captions",
+      "prompt": "Restore the default 3x3 layout, styling and export settings, and clear the banner heading?",
+      "retention": "Library images, cell captions and placements are kept. Cells outside 3x3 remain recoverable."
+    }
+  },
+  "export": {
+    "title": "Export grid",
+    "format": "File format",
+    "resolution": "Resolution",
+    "quality": "Quality",
+    "pixelUnit": "px",
+    "progress": "Exporting...",
+    "download": "Download image",
+    "imageResolution": "{value1} px / image"
+  },
+  "crop": {
+    "title": "Crop image",
+    "loadError": "Image could not load.",
+    "zoom": "Zoom",
+    "guides": "Toggle crop guides",
+    "reset": "Reset crop",
+    "apply": "Apply crop"
+  },
+  "save": {
+    "conflict": "Another tab saved a newer grid. This tab is not saving.",
+    "reload": "Reload saved grid",
+    "reloadPrompt": "Reloading replaces this tab's grid and unsaved images with the saved version.",
+    "tooltip": "Your grid is kept when you reload or reopen this page in the same browser. It is not synced to other devices.",
+    "saved": "Saved in this browser",
+    "saving": "Saving changes..."
+  }
+}
