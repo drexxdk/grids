@@ -518,15 +518,14 @@ h1 {
   outline-offset: 3px;
   z-index: 1;
 }
-.image-card:not([data-drag-source]):has([data-card-image]:hover),
+.image-card[data-image-hovered]:not([data-drag-source]),
 .image-card:not([data-drag-source]):has([data-card-image] button:focus-visible),
 .image-card[data-drag-affected]:not([data-drag-source]),
 .grid-cell.drag-over {
   background: transparent !important;
   border-color: transparent !important;
 }
-.image-card:not([data-drag-source]):has([data-card-image]:hover)
-  > [data-card-content],
+.image-card[data-image-hovered]:not([data-drag-source]) > [data-card-content],
 .image-card:not([data-drag-source]):has([data-card-image] button:focus-visible)
   > [data-card-content],
 .image-card[data-drag-affected]:not([data-drag-source]) > [data-card-content] {

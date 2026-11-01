@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import {
   useLayoutEffect,
   useRef,
@@ -18,7 +18,6 @@ export function GridResizer({
   rows,
   columns,
   onResize,
-  onUndo,
   children,
 }: {
   ref?: Ref<HTMLDivElement>;
@@ -29,7 +28,6 @@ export function GridResizer({
   rows: number;
   columns: number;
   onResize: (dimension: "rows" | "columns", value: number) => void;
-  onUndo?: () => void;
   children: ReactNode;
 }) {
   const dimensions = { rows, columns };
@@ -146,17 +144,6 @@ export function GridResizer({
           </ButtonGroup>
         </div>
       ))}
-      {onUndo && (
-        <Button
-          variant="icon"
-          className="tw:col-start-3 tw:row-start-2"
-          aria-label="Undo grid resize"
-          title="Undo grid resize"
-          onClick={onUndo}
-        >
-          <Undo2 aria-hidden="true" />
-        </Button>
-      )}
     </div>
   );
 }

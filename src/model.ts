@@ -225,8 +225,7 @@ export type DocumentCommand =
       gridId: string;
       cellId: string | null;
       assets: Asset[];
-    }
-  | { type: "grid/replace"; grid: Board; assets: Asset[] };
+    };
 type CellFactory = (row: number, column: number) => Cell;
 const clampGridSize = (value: number) =>
   Math.max(1, Math.min(gridLimit, Math.round(Number(value) || 1)));
@@ -843,12 +842,6 @@ export function documentReducer(
         },
       };
     }
-    case "grid/replace":
-      return {
-        ...workspace,
-        assets: mergeAssets(workspace.assets, command.assets),
-        grid: command.grid,
-      };
     default: {
       const exhaustive: never = command;
       return exhaustive;

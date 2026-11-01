@@ -548,7 +548,7 @@ test("settings boundary applies configuration while preserving local content and
   expect(workspace).toEqual(original);
   defaults.style.gap = 40;
   defaults.exportSettings.quality = 50;
-  expect(applied.grid.gap).toBe(12);
+  expect(applied.grid.gap).toBe(60);
   expect(applied.exportSettings.quality).toBe(95);
 });
 
@@ -687,11 +687,7 @@ test("document import commands use latest cell IDs and retain media for stale de
   const retained = model.documentReducer(removed, command);
   expect(retained.assets).toEqual([asset]);
   expect(retained.grid).toBe(removed.grid);
-  const replaced = model.documentReducer(workspace, {
-    type: "grid/replace",
-    grid: model.makeBoard("Example"),
-    assets: [],
-  });
+  const replaced = { ...workspace, grid: model.makeBoard("Another grid") };
   const stale = model.documentReducer(replaced, command);
   expect(stale.assets).toEqual([asset]);
   expect(stale.grid).toBe(replaced.grid);
@@ -708,7 +704,7 @@ test("document import commands use latest cell IDs and retain media for stale de
   expect(model.workspaceSchema.safeParse(stale).success).toBe(true);
 });
 
-test("document batch imports and example replacement retain latest media and preferences", () => {
+test("document batch imports retain latest media and preferences", () => {
   const workspace = model.makeWorkspace();
   const assets = Array.from({ length: 3 }, (_, index) => ({
     id: crypto.randomUUID(),
@@ -734,16 +730,9 @@ test("document batch imports and example replacement retain latest media and pre
     type: "export/patch",
     patch: { quality: 85 },
   });
-  const example = {
-    type: "grid/replace",
-    grid: model.makeBoard("Example"),
-    assets: [assets[0]],
-  };
-  const replaced = model.documentReducer(updated, example);
-  expect(replaced.assets).toEqual(assets);
-  expect(replaced.exportSettings.quality).toBe(85);
-  expect(replaced.grid.name).toBe("Example");
-  expect(model.workspaceSchema.safeParse(replaced).success).toBe(true);
+  expect(updated.assets).toEqual(assets);
+  expect(updated.exportSettings.quality).toBe(85);
+  expect(model.workspaceSchema.safeParse(updated).success).toBe(true);
   expect(workspace.assets).toEqual([]);
 });
 

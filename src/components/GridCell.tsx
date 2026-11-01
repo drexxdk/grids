@@ -89,6 +89,7 @@ export function GridCell({
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => () => dragPreview.current?.remove(), []);
   const [cropTarget, setCropTarget] = useState<string | null>(null);
+  const [imageHovered, setImageHovered] = useState(false);
   const [hoverTools, setHoverTools] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -165,7 +166,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card tw:@container tw:relative tw:min-w-0 tw:rounded-(--card-radius)! tw:border! tw:border-solid! tw:outline-offset-[-2px] tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${previewOnly ? "drag-preview-card tw:h-full tw:w-full" : library ? "asset tw:cursor-move tw:w-full!" : "grid-cell"}`}
+      className={`image-card tw:@container tw:relative tw:min-w-0 tw:rounded-(--card-radius)! tw:border! tw:border-solid! tw:outline-offset-[-2px] tw:[--card-frame-color:transparent] tw:data-[image-hovered]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${previewOnly ? "drag-preview-card tw:h-full tw:w-full" : library ? "asset tw:cursor-move tw:w-full!" : "grid-cell"}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -175,6 +176,7 @@ export function GridCell({
         } as React.CSSProperties
       }
       data-index={index}
+      data-image-hovered={imageHovered && !moving ? "" : undefined}
       data-drag-affected={dragAffected ? "" : undefined}
       data-drag-source={dragSource ? "" : undefined}
       onDragOver={(event) => {
@@ -196,7 +198,17 @@ export function GridCell({
           onMoveLeave?.();
         }
       }}
-      onDrop={onDrop}
+      onDrop={(event) => {
+        const image = event.currentTarget.querySelector("[data-card-image]");
+        setImageHovered(
+          Boolean(
+            image?.contains(
+              document.elementFromPoint(event.clientX, event.clientY),
+            ),
+          ),
+        );
+        onDrop(event);
+      }}
     >
       {({ open, close }) => (
         <>
@@ -212,10 +224,12 @@ export function GridCell({
                 {
                   top: `${(geometry.imageTop / geometry.height) * 100}%`,
                   height: `${(geometry.imageHeight / geometry.height) * 100}%`,
-                  "--cell-tool-space": `calc(${(toolSpace / 600) * 100}cqw - 4px)`,
+                  "--cell-tool-space": `calc(${(toolSpace / 600) * 100}cqw - 3cqw)`,
                 } as React.CSSProperties
               }
               onPointerEnter={(event) => {
+                if (event.pointerType === "mouse" && !moving && !previewOnly)
+                  setImageHovered(true);
                 if (
                   event.pointerType === "mouse" &&
                   asset &&
@@ -229,6 +243,7 @@ export function GridCell({
               }}
               onPointerLeave={(event) => {
                 if (event.pointerType === "mouse") {
+                  setImageHovered(false);
                   setHoverTools(false);
                   close(event.currentTarget);
                 }
@@ -249,6 +264,7 @@ export function GridCell({
                   onMouseDownCapture={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
                     if (!asset || previewOnly) return;
+                    setImageHovered(false);
                     setHoverTools(false);
                     close();
                     if (library && asset) {
@@ -335,14 +351,14 @@ export function GridCell({
                   className={`${previewOnly ? "drag-preview-image" : "cell-image-button"} tw:peer/image tw:outline-none!`}
                   style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                   aria-label={`Add image to cell ${index + 1}`}
-                  title="Add or drop an image"
+                  title={imageHovered ? "Add or drop an image" : undefined}
                   onClick={() => {
                     if (canChoose && trigger.current) onChoose(trigger.current);
                     else onUpload();
                   }}
                 >
                   <span
-                    className="empty-cell tw:absolute tw:inset-x-0 tw:gap-[4px]! tw:[&_svg]:size-[min(24px,50cqw,90cqh)]!"
+                    className="empty-cell tw:absolute tw:inset-x-0 tw:gap-[3cqw]! tw:text-[8.5cqw]! tw:[&_svg]:size-[min(18cqw,90cqh)]!"
                     style={{
                       containerType: "size",
                       top: `${overlay && alignment === "top" ? (geometry.captionHeight / geometry.imageHeight) * 100 : 0}%`,
@@ -363,7 +379,7 @@ export function GridCell({
                       className={
                         overlay && alignment === "middle"
                           ? "tw:hidden"
-                          : "tw:hidden tw:text-[9px] tw:@min-[120px]:block"
+                          : "tw:hidden tw:text-[7cqw] tw:@min-[120px]:block"
                       }
                     >
                       Drop here
@@ -380,7 +396,7 @@ export function GridCell({
                 >
                   {!library && (
                     <div
-                      className="tw:pointer-events-none tw:absolute tw:inset-x-0 tw:bottom-0 tw:flex tw:flex-wrap tw:justify-center tw:gap-[2px] tw:p-[2px] tw:[&_button]:pointer-events-auto"
+                      className="tw:pointer-events-none tw:absolute tw:inset-x-0 tw:bottom-0 tw:flex tw:flex-wrap tw:justify-center tw:gap-[1.5cqw] tw:p-[1.5cqw] tw:[&_button]:pointer-events-auto"
                       style={{
                         bottom:
                           overlay &&
@@ -391,7 +407,7 @@ export function GridCell({
                     >
                       <Button
                         variant="icon"
-                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                        className="tw:size-[min(25cqw,var(--cell-tool-space))]! tw:p-0! tw:rounded-[2cqw]! tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[40%]!"
                         aria-label={asset ? "Replace image" : "Choose image"}
                         title={asset ? "Replace image" : "Choose image"}
                         onClick={() => {
@@ -404,7 +420,7 @@ export function GridCell({
                       </Button>
                       <Button
                         variant="icon"
-                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                        className="tw:size-[min(25cqw,var(--cell-tool-space))]! tw:p-0! tw:rounded-[2cqw]! tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[40%]!"
                         aria-label="Crop image"
                         title="Crop image"
                         onClick={() => {
@@ -420,18 +436,17 @@ export function GridCell({
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
-                      className="tw:pointer-events-auto tw:absolute tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                      className="tw:pointer-events-auto tw:absolute tw:size-[min(25cqw,var(--cell-tool-space))]! tw:p-0! tw:rounded-[2cqw]! tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[40%]!"
                       aria-label={
                         library ? `Delete ${asset?.title}` : "Clear cell"
                       }
                       disabled={library?.disabled}
                       style={{
-                        right:
-                          "calc(var(--card-radius) / 2 + var(--card-paint-inset, 0px))",
+                        right: "calc(4.5cqw + var(--card-paint-inset, 0px))",
                         top:
                           overlay && gridStyle.captionAlignment === "top"
-                            ? `calc(${(geometry.captionHeight / geometry.imageHeight) * 100}% + var(--card-radius) / 2 + var(--card-paint-inset, 0px))`
-                            : "calc(var(--card-radius) / 2 + var(--card-paint-inset, 0px))",
+                            ? `calc(${(geometry.captionHeight / geometry.imageHeight) * 100}% + 4.5cqw + var(--card-paint-inset, 0px))`
+                            : "calc(4.5cqw + var(--card-paint-inset, 0px))",
                       }}
                       title={library ? `Delete ${asset?.title}` : "Clear cell"}
                       onClick={() => {

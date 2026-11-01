@@ -16,7 +16,6 @@ import {
   ImagePlus,
   Trash2,
   RefreshCw,
-  Images,
   LoaderCircle,
   RectangleVertical,
   RectangleHorizontal,
@@ -55,7 +54,6 @@ import {
   type GridPatch,
   type ImageFormat,
   type ExportSettings,
-  type Publisher,
   type GridStyle,
 } from "./model";
 import {
@@ -257,24 +255,14 @@ export default function App() {
     total: number;
     pending: number;
   } | null>(null);
-  const localExamples = ["localhost", "127.0.0.1", "[::1]"].includes(
-    window.location.hostname,
-  );
   const [saveStatus, setSaveStatus] = useState("Saved locally");
   const { format, resolution, quality } = workspace.exportSettings;
   const patchExport = (patch: Partial<ExportSettings>) =>
     dispatchDocument({ type: "export/patch", patch });
   const [exporting, setExporting] = useState(false);
-  const [loadingExample, setLoadingExample] = useState(false);
-  const [exampleOpen, setExampleOpen] = useState(false);
-  const [examplePublisher, setExamplePublisher] = useState<Publisher>("dc");
-  const exampleButton = useRef<HTMLButtonElement>(null);
   const replaceUpload = useRef<HTMLInputElement>(null);
   const resetButton = useRef<HTMLButtonElement>(null);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resizeHistory, setResizeHistory] = useState<
-    { boardId: string; rows: number; columns: number }[]
-  >([]);
   const board = workspace.grid;
   const [captionRows, setCaptionRows] = useState(1);
   const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
@@ -438,10 +426,6 @@ export default function App() {
     board.cellFontWeight,
     workspace.assets,
   ]);
-  const resizeUndo = resizeHistory
-    .slice()
-    .reverse()
-    .find((entry) => entry.boardId === board.id);
   const palette = publishers[board.publisher];
   const size = dimensions(
     board,
@@ -575,24 +559,7 @@ export default function App() {
     if (value === board[key]) return;
     const rows = key === "rows" ? value : board.rows;
     const columns = key === "columns" ? value : board.columns;
-    setResizeHistory((current) => [
-      ...current,
-      {
-        boardId: board.id,
-        rows: board.rows,
-        columns: board.columns,
-      },
-    ]);
     dispatchDocument(createResizeCommand(board.id, rows, columns));
-  };
-  const undoResize = () => {
-    if (!resizeUndo) return;
-    dispatchDocument(
-      createResizeCommand(board.id, resizeUndo.rows, resizeUndo.columns),
-    );
-    setResizeHistory((current) =>
-      current.filter((entry) => entry !== resizeUndo),
-    );
   };
   const importFiles = async (
     files: FileList | null,
@@ -754,31 +721,8 @@ export default function App() {
   };
   const resetDefaults = () => {
     dispatchDocument(createResetCommand());
-    setResizeHistory([]);
     setImageTarget(null);
     setResetOpen(false);
-  };
-  const loadExample = async () => {
-    if (!localExamples || loadingExample) return;
-    setLoadingExample(true);
-    try {
-      const { loadComicExample } = await import("./demo/comics");
-      const example = loadComicExample(workspace, examplePublisher);
-      dispatchDocument({
-        type: "grid/replace",
-        grid: example.grid,
-        assets: example.assets,
-      });
-      setResizeHistory([]);
-      setImageTarget(null);
-      setExampleOpen(false);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Example could not be loaded.",
-      );
-    } finally {
-      setLoadingExample(false);
-    }
   };
   if (!loaded) {
     return (
@@ -869,21 +813,6 @@ export default function App() {
                 data-sidebar-content
                 className="tw:contents tw:min-[901px]:flex tw:min-[901px]:min-h-0 tw:min-[901px]:flex-1 tw:min-[901px]:flex-col tw:min-[901px]:overflow-y-auto tw:min-[901px]:overflow-x-hidden tw:min-[901px]:px-[16px] tw:min-[901px]:pt-4 tw:min-[901px]:pb-[26px] tw:min-[901px]:[scrollbar-gutter:stable] tw:min-[901px]:[&>*]:shrink-0"
               >
-                <div className="section-heading">
-                  <h2>Image library</h2>
-                  {localExamples && (
-                    <Button
-                      ref={exampleButton}
-                      variant="icon"
-                      aria-label="Load example"
-                      title="Load example: Legacy comics"
-                      disabled={loadingExample}
-                      onClick={() => setExampleOpen(true)}
-                    >
-                      <Images aria-hidden="true" />
-                    </Button>
-                  )}
-                </div>
                 <div className="tw:mb-1 tw:flex tw:items-center tw:justify-between tw:gap-2">
                   <TabGroup>
                     <TabList
@@ -912,37 +841,42 @@ export default function App() {
                     aria-label="Add images"
                     disabled={importProgress !== null}
                     title="Add or drop images"
-                    className={`image-frame tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-[4px] tw:border-0 tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:focus-visible:[--frame-color:var(--accent)] tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:[--frame-color:var(--accent)] ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                    className={`image-frame tw:@container tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-0 tw:rounded-[4px] tw:border-0 tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:[&_svg]:size-[18cqw]! tw:focus-visible:[--frame-color:var(--accent)] tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:[--frame-color:var(--accent)] ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
                     onClick={() => document.getElementById("upload")?.click()}
                   >
-                    {importProgress ? (
-                      <>
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="tw:animate-spin tw:motion-reduce:animate-none"
-                        />
-                        <span
-                          role="status"
-                          aria-live="polite"
-                          className="tw:flex tw:flex-col tw:items-center tw:gap-1"
-                        >
-                          <span className="tw:text-[11px]">Importing...</span>
-                          <span className="tw:text-[9px]">
-                            {importProgress.completed} / {importProgress.total}
+                    <span className="tw:flex tw:flex-col tw:items-center tw:gap-[3cqw]">
+                      {importProgress ? (
+                        <>
+                          <LoaderCircle
+                            aria-hidden="true"
+                            className="tw:animate-spin tw:motion-reduce:animate-none"
+                          />
+                          <span
+                            role="status"
+                            aria-live="polite"
+                            className="tw:flex tw:flex-col tw:items-center tw:gap-[3cqw]"
+                          >
+                            <span className="tw:text-[8.5cqw]">
+                              Importing...
+                            </span>
+                            <span className="tw:text-[7cqw]">
+                              {importProgress.completed} /{" "}
+                              {importProgress.total}
+                            </span>
                           </span>
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <ImagePlus aria-hidden="true" />
-                        <span data-upload-label className="tw:text-[11px]">
-                          Add images
-                        </span>
-                        <span data-upload-label className="tw:text-[9px]">
-                          Drop here
-                        </span>
-                      </>
-                    )}
+                        </>
+                      ) : (
+                        <>
+                          <ImagePlus aria-hidden="true" />
+                          <span data-upload-label className="tw:text-[8.5cqw]">
+                            Add images
+                          </span>
+                          <span data-upload-label className="tw:text-[7cqw]">
+                            Drop here
+                          </span>
+                        </>
+                      )}
+                    </span>
                   </button>
                   {activeAssets.map((asset) => (
                     <LibraryImage
@@ -960,7 +894,7 @@ export default function App() {
                           title,
                         })
                       }
-                      disabled={loadingExample}
+                      disabled={false}
                       moving={cardDrag !== null}
                       dragAffected={
                         cardDrag?.source.kind === "asset" &&
@@ -984,7 +918,6 @@ export default function App() {
                 {toolsExpanded && activeAssets.length > 0 && (
                   <Button
                     className="tw:mt-2 tw:min-h-[44px] tw:w-full"
-                    disabled={loadingExample}
                     onClick={() =>
                       deleteImages(activeAssets.map((asset) => asset.id))
                     }
@@ -1154,7 +1087,6 @@ export default function App() {
                   rows={board.rows}
                   columns={board.columns}
                   onResize={resize}
-                  onUndo={resizeUndo ? undoResize : undefined}
                 >
                   <div
                     id="board-grid"
@@ -1782,42 +1714,6 @@ export default function App() {
           <Button variant="primary" onClick={resetDefaults}>
             <PanelsTopLeft aria-hidden="true" />
             Reset settings
-          </Button>
-        </div>
-      </Modal>
-      <Modal
-        open={exampleOpen}
-        onClose={() => !loadingExample && setExampleOpen(false)}
-        title="Load example"
-        returnFocus={exampleButton}
-      >
-        <div className="segmented" role="group" aria-label="Example">
-          {(["dc", "marvel"] as const).map((publisher) => (
-            <button
-              key={publisher}
-              type="button"
-              aria-pressed={examplePublisher === publisher}
-              onClick={() => setExamplePublisher(publisher)}
-              disabled={loadingExample}
-            >
-              {publisher === "dc" ? "DC" : "Marvel"}
-            </button>
-          ))}
-        </div>
-        <p>Replace the current grid? Images will stay in your library.</p>
-        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
-          <Button
-            onClick={() => setExampleOpen(false)}
-            disabled={loadingExample}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={loadExample}
-            disabled={loadingExample}
-          >
-            Use example
           </Button>
         </div>
       </Modal>
