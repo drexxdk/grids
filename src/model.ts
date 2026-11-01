@@ -71,6 +71,10 @@ export interface GridStyle {
   headingVisible: boolean;
   headingFont: string;
   cellFont: string;
+  headingFontSize?: number;
+  cellFontSize?: number;
+  headingTextColor?: string;
+  cellTextColor?: string;
   gap: number;
   background: string;
   imageAspect?: "portrait" | "landscape" | "square";
@@ -79,7 +83,7 @@ export interface GridStyle {
   captionOverlayColor?: string;
   captionOverlayOpacity?: number;
 }
-export function cellGeometry(style: GridStyle, width: number) {
+export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
   const aspectRatio =
     style.imageAspect === "portrait"
       ? 3 / 4
@@ -87,7 +91,17 @@ export function cellGeometry(style: GridStyle, width: number) {
         ? 4 / 3
         : 1;
   const imageHeight = Math.round(width / aspectRatio);
-  const captionHeight = Math.round(width * 0.23);
+  const captionHeight =
+    captionRows === 0
+      ? 0
+      : Math.max(
+          Math.round(width * 0.23),
+          Math.ceil(
+            width *
+              (((style.cellFontSize ?? 11) / 100) * 1.05 * captionRows + 0.11),
+          ),
+        );
+  const overlayHeight = Math.max(imageHeight, captionHeight);
   const placement = style.captionPlacement ?? "below";
   const captionTop =
     placement === "above"
@@ -97,15 +111,21 @@ export function cellGeometry(style: GridStyle, width: number) {
         : style.captionAlignment === "top"
           ? 0
           : style.captionAlignment === "middle"
-            ? Math.round((imageHeight - captionHeight) / 2)
-            : imageHeight - captionHeight;
+            ? Math.round((overlayHeight - captionHeight) / 2)
+            : overlayHeight - captionHeight;
   return {
     aspectRatio,
     imageHeight,
     captionHeight,
     captionTop,
-    imageTop: placement === "above" ? captionHeight : 0,
-    height: imageHeight + (placement === "overlay" ? 0 : captionHeight),
+    imageTop:
+      placement === "above"
+        ? captionHeight
+        : placement === "overlay"
+          ? Math.round((overlayHeight - imageHeight) / 2)
+          : 0,
+    height:
+      placement === "overlay" ? overlayHeight : imageHeight + captionHeight,
   };
 }
 export function captionPadding(width: number) {
@@ -290,6 +310,16 @@ const styleSchema = z.strictObject({
   headingVisible: z.boolean(),
   headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
   cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+  headingFontSize: z.number().min(6).max(36).optional(),
+  cellFontSize: z.number().min(6).max(36).optional(),
+  headingTextColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  cellTextColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
   gap: z.number().min(0).max(40),
   background: z.string().regex(/^#[0-9a-f]{6}$/i),
   imageAspect: z.enum(["portrait", "landscape", "square"]).optional(),
@@ -339,6 +369,18 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       headingVisible: grid.headingVisible,
       headingFont: grid.headingFont,
       cellFont: grid.cellFont,
+      ...(grid.headingFontSize !== undefined
+        ? { headingFontSize: grid.headingFontSize }
+        : {}),
+      ...(grid.cellFontSize !== undefined
+        ? { cellFontSize: grid.cellFontSize }
+        : {}),
+      ...(grid.headingTextColor !== undefined
+        ? { headingTextColor: grid.headingTextColor }
+        : {}),
+      ...(grid.cellTextColor !== undefined
+        ? { cellTextColor: grid.cellTextColor }
+        : {}),
       gap: grid.gap,
       background: grid.background,
       ...(grid.imageAspect !== undefined
@@ -373,6 +415,10 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
     captionAlignment: style.captionAlignment,
     captionOverlayColor: style.captionOverlayColor,
     captionOverlayOpacity: style.captionOverlayOpacity,
+    headingFontSize: style.headingFontSize,
+    cellFontSize: style.cellFontSize,
+    headingTextColor: style.headingTextColor,
+    cellTextColor: style.cellTextColor,
     ...style,
   };
 }

@@ -11,7 +11,6 @@ import {
 import {
   PanelsTopLeft,
   Download,
-  Type,
   ImagePlus,
   Trash2,
   RefreshCw,
@@ -38,9 +37,9 @@ import {
 } from "@headlessui/react";
 import {
   Button,
+  ButtonGroup,
   ColorField,
   SelectField,
-  Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer, RemovedCells } from "./components/GridResizer";
@@ -56,6 +55,7 @@ import {
   documentReducer,
   publishers,
   getEditorSettings,
+  cellGeometry,
   type Asset,
   type Board,
   type GridPatch,
@@ -66,7 +66,13 @@ import {
   type GridStyle,
   type TemplateName,
 } from "./model";
-import { createExport, dimensions, fitTitle, loadImage } from "./export";
+import {
+  createExport,
+  dimensions,
+  fitTitle,
+  loadImage,
+  sharedCaptionRows,
+} from "./export";
 import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
 
 function BoardHeading({
@@ -82,6 +88,8 @@ function BoardHeading({
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const fieldClass =
+    "board-heading-text tw:border-0! tw:rounded-none! tw:bg-transparent tw:p-0! tw:text-inherit tw:[font:inherit] tw:cursor-text! tw:outline-none! tw:hover:bg-white/8! tw:focus:bg-white/12! tw:placeholder:text-(--muted)/35 tw:focus:placeholder:text-(--muted)/80";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
@@ -90,11 +98,13 @@ function BoardHeading({
     if (!heading || !heading.parentElement) return;
     let cancelled = false;
     const fit = () => {
-      if (cancelled || heading.hidden) return;
+      if (cancelled) return;
       const context = document.createElement("canvas").getContext("2d");
       if (!context || !heading.firstElementChild) return;
       context.letterSpacing = "0.5px";
-      heading.style.fontSize = `${fitTitle(context, board.heading, board.headingFont, (heading.clientHeight * 0.18) / 0.28, heading.firstElementChild.clientWidth * 0.92, heading.clientHeight * 0.82).fontSize}px`;
+      const fontRatio = (board.headingFontSize ?? 18) / 100;
+      const heightRatio = Math.max(0.28, fontRatio * 1.4);
+      heading.style.fontSize = `${fitTitle(context, board.heading || "Add heading", board.headingFont, (heading.clientHeight * fontRatio) / heightRatio, heading.firstElementChild.clientWidth * 0.92, heading.clientHeight * 0.82).fontSize}px`;
     };
     const observer = new ResizeObserver(fit);
     observer.observe(heading.parentElement);
@@ -108,24 +118,32 @@ function BoardHeading({
   }, [
     board.heading,
     board.headingFont,
-    board.headingVisible,
+    board.headingFontSize,
     board.columns,
     editing,
   ]);
   return (
     <h2
       ref={headingRef}
-      className="board-export-heading"
-      hidden={
-        board.headingVisible === false || (!board.heading.trim() && !editing)
-      }
+      className="board-export-heading tw:group"
+      style={{
+        height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${Math.max(0.28, (board.headingFontSize ?? 18) * 0.014)})`,
+        ...(!board.heading.trim()
+          ? {
+              background: publishers[board.publisher].caption,
+              borderRadius: "6px",
+            }
+          : {}),
+      }}
     >
       {editing ? (
         <input
           ref={input}
+          className={fieldClass}
           aria-label="Grid heading"
           maxLength={120}
           value={board.heading}
+          placeholder="Add heading"
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => onEdit(false)}
           onKeyDown={(event) => {
@@ -146,11 +164,20 @@ function BoardHeading({
         />
       ) : (
         <button
-          className="board-heading-text tw:border-0 tw:bg-transparent tw:p-0 tw:text-inherit tw:[font:inherit] tw:cursor-text"
+          className={fieldClass}
           aria-label="Edit grid heading"
           onClick={() => onEdit(true)}
         >
-          {board.heading}
+          {board.heading.trim() ? (
+            board.heading
+          ) : (
+            <span
+              data-heading-placeholder
+              className="tw:normal-case tw:text-(--muted) tw:opacity-35 tw:group-hover:opacity-80 tw:group-focus-within:opacity-80"
+            >
+              Add heading
+            </span>
+          )}
         </button>
       )}
     </h2>
@@ -243,6 +270,116 @@ export default function App() {
     { boardId: string; rows: number; columns: number }[]
   >([]);
   const board = workspace.grid;
+  const [captionRows, setCaptionRows] = useState(1);
+  const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
+  const [previewSize, setPreviewSize] = useState<{
+    width: number;
+    height: number;
+    boardWidth: number;
+    cellWidth: number;
+    gap: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const frame = previewFrame;
+    const container = frame?.parentElement;
+    if (!frame || !container) return;
+    const fit = () => {
+      const padding = getComputedStyle(container);
+      const availableWidth =
+        container.clientWidth -
+        parseFloat(padding.paddingLeft) -
+        parseFloat(padding.paddingRight) -
+        52;
+      const top = frame.getBoundingClientRect().top + window.scrollY;
+      const availableHeight = Math.max(
+        100,
+        window.innerHeight - top - 52 - (window.innerWidth <= 900 ? 160 : 28),
+      );
+      const gapRatio = board.gap / 600;
+      const widthRatio = board.columns + (board.columns + 1) * gapRatio;
+      const headingRatio = Math.max(
+        0.28,
+        (board.headingFontSize ?? 18) * 0.014,
+      );
+      const boardHeightRatio =
+        (board.rows * cellGeometry(board, 600, captionRows).height) / 600 +
+        (board.rows + 1) * gapRatio;
+      const heightRatio = boardHeightRatio + headingRatio + gapRatio;
+      const viewport = frame.querySelector<HTMLElement>(
+        "[data-canvas-viewport]",
+      );
+      const scrollbarWidth = viewport
+        ? viewport.offsetWidth - viewport.clientWidth
+        : 0;
+      const cellWidth = Math.max(
+        128,
+        Math.min(
+          (availableWidth - scrollbarWidth) / widthRatio,
+          availableHeight / heightRatio,
+        ),
+      );
+      const boardWidth = cellWidth * widthRatio;
+      const viewportWidth = Math.max(
+        1,
+        Math.min(availableWidth, boardWidth + scrollbarWidth),
+      );
+      const horizontalScrollbar =
+        boardWidth > viewportWidth - scrollbarWidth ? scrollbarWidth : 0;
+      const next = {
+        width: viewportWidth + 52,
+        height: Math.max(
+          1,
+          Math.min(
+            availableHeight - cellWidth * (headingRatio + gapRatio),
+            cellWidth * boardHeightRatio + horizontalScrollbar,
+          ),
+        ),
+        boardWidth,
+        cellWidth,
+        gap: cellWidth * gapRatio,
+      };
+      setPreviewSize((previous) =>
+        previous &&
+        Math.abs(previous.width - next.width) < 0.01 &&
+        Math.abs(previous.height - next.height) < 0.01 &&
+        Math.abs(previous.boardWidth - next.boardWidth) < 0.01 &&
+        Math.abs(previous.cellWidth - next.cellWidth) < 0.01 &&
+        Math.abs(previous.gap - next.gap) < 0.01
+          ? previous
+          : next,
+      );
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    window.addEventListener("resize", fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, [
+    previewFrame,
+    board.rows,
+    board.columns,
+    board.gap,
+    board.imageAspect,
+    board.captionPlacement,
+    board.captionAlignment,
+    board.headingFontSize,
+    captionRows,
+  ]);
+  useLayoutEffect(() => {
+    let active = true;
+    const update = () => {
+      if (active)
+        setCaptionRows(sharedCaptionRows(board, workspace.assets, true));
+    };
+    update();
+    void document.fonts.load(`48px "${board.cellFont}"`).then(update);
+    return () => {
+      active = false;
+    };
+  }, [board.cells, board.cellFont, board.cellFontSize, workspace.assets]);
   const matchedTemplate = templates.find((template) =>
     Object.entries(template.style).every(([key, value]) =>
       key === "publisher" && template.name === "Superhero"
@@ -256,7 +393,11 @@ export default function App() {
     .reverse()
     .find((entry) => entry.boardId === board.id);
   const palette = publishers[board.publisher];
-  const size = dimensions(board, resolution);
+  const size = dimensions(
+    board,
+    resolution,
+    sharedCaptionRows(board, workspace.assets),
+  );
   useEffect(() => {
     let cancelled = false;
     const store = new LocalWorkspaceStore(() => {
@@ -450,7 +591,11 @@ export default function App() {
           if (localStore.current !== store) return;
           asset = store.createAsset(
             file,
-            file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+            file.name
+              .replace(/\.[^.]+$/, "")
+              .replace(/[-_]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim(),
           );
           await loadImage(asset.src);
           if (localStore.current !== store) return;
@@ -647,11 +792,11 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="app-layout tw:max-[900px]:block! tw:max-[900px]:pb-[160px]">
+      <main className="app-layout tw:min-[901px]:grid-cols-[250px_minmax(0,1fr)_250px]! tw:max-[900px]:block! tw:max-[900px]:pb-[160px]">
         <EditorLayout>
           {(drawerToggle, toolsExpanded) => (
             <aside
-              className={`asset-panel ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
+              className={`asset-panel tw:min-[901px]:px-[16px]! tw:min-[901px]:sticky tw:min-[901px]:top-0 tw:min-[901px]:h-[calc(100dvh-80px)] tw:min-[901px]:self-start tw:min-[901px]:overflow-y-auto tw:min-[901px]:overflow-x-hidden tw:min-[901px]:[scrollbar-gutter:stable] tw:min-[901px]:[&>*]:shrink-0 tw:min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "tw:outline-2 tw:outline-offset-[-2px] tw:outline-(--mint)" : ""}`}
               aria-label="Image library drop zone"
               aria-busy={importProgress !== null}
               onDragOver={(event) => {
@@ -756,6 +901,7 @@ export default function App() {
                     asset={asset}
                     cell={board.cells.find((cell) => cell.assetId === asset.id)}
                     gridStyle={board}
+                    captionRows={captionRows}
                     onTitle={(title) =>
                       dispatchDocument({
                         type: "asset/title",
@@ -790,7 +936,10 @@ export default function App() {
               )}
             </aside>
           )}
-          <section className="workspace" aria-label="Grid editor">
+          <section
+            className="workspace tw:min-[901px]:h-[calc(100dvh-80px)] tw:min-[901px]:overflow-y-auto tw:min-[901px]:[scrollbar-gutter:stable]"
+            aria-label="Grid editor"
+          >
             {conflict && (
               <div
                 role="alert"
@@ -811,11 +960,7 @@ export default function App() {
                 aria-label="Grid appearance"
                 className="tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-3"
               >
-                <div
-                  role="group"
-                  aria-label="Image aspect ratio"
-                  className="tw:flex tw:gap-1"
-                >
+                <ButtonGroup label="Image aspect ratio">
                   {(
                     [
                       ["portrait", RectangleVertical],
@@ -837,12 +982,8 @@ export default function App() {
                       <Icon aria-hidden="true" />
                     </Button>
                   ))}
-                </div>
-                <div
-                  role="group"
-                  aria-label="Caption placement"
-                  className="tw:flex tw:gap-1"
-                >
+                </ButtonGroup>
+                <ButtonGroup label="Caption placement">
                   {(
                     [
                       ["above", PanelTop, "Text above image"],
@@ -864,14 +1005,10 @@ export default function App() {
                       <Icon aria-hidden="true" />
                     </Button>
                   ))}
-                </div>
+                </ButtonGroup>
                 {board.captionPlacement === "overlay" && (
                   <>
-                    <div
-                      role="group"
-                      aria-label="Caption alignment"
-                      className="tw:flex tw:gap-1"
-                    >
+                    <ButtonGroup label="Caption alignment">
                       {(
                         [
                           ["top", AlignStartVertical],
@@ -894,7 +1031,7 @@ export default function App() {
                           <Icon aria-hidden="true" />
                         </Button>
                       ))}
-                    </div>
+                    </ButtonGroup>
                     <Popover>
                       <PopoverButton
                         as={Button}
@@ -940,20 +1077,32 @@ export default function App() {
                   </>
                 )}
               </div>
-              {(!board.heading.trim() || !board.headingVisible) &&
-                !headingEditing && (
-                  <Button
-                    className="tw:mb-3 tw:border-0 tw:bg-transparent tw:text-(--muted)"
-                    onClick={() => {
-                      patchBoard({ headingVisible: true });
-                      setHeadingEditing(true);
-                    }}
-                  >
-                    <Type aria-hidden="true" />
-                    Add heading
-                  </Button>
-                )}
               <GridResizer
+                ref={setPreviewFrame}
+                viewportHeight={previewSize?.height}
+                heading={
+                  <BoardHeading
+                    board={board}
+                    editing={headingEditing}
+                    onEdit={setHeadingEditing}
+                    onChange={(heading) => patchBoard({ heading })}
+                  />
+                }
+                style={
+                  {
+                    width: previewSize?.width,
+                    maxWidth: "100%",
+                    marginInline: "auto",
+                    "--columns": board.columns,
+                    "--gap": `${previewSize?.gap ?? board.gap}px`,
+                    "--preview-cell-width": previewSize
+                      ? `${previewSize.cellWidth}px`
+                      : undefined,
+                    "--heading-font": `"${board.headingFont}"`,
+                    "--publisher-color": palette.color,
+                    "--publisher-text": board.headingTextColor ?? palette.text,
+                  } as CSSProperties
+                }
                 rows={board.rows}
                 columns={board.columns}
                 onResize={resize}
@@ -965,23 +1114,22 @@ export default function App() {
                   aria-label="Image grid"
                   style={
                     {
+                      width: previewSize?.boardWidth,
                       "--columns": board.columns,
-                      "--gap": `${board.gap}px`,
+                      "--gap": `${previewSize?.gap ?? board.gap}px`,
+                      "--preview-cell-width": previewSize
+                        ? `${previewSize.cellWidth}px`
+                        : undefined,
                       "--board-bg": board.background,
                       "--publisher-color": palette.color,
-                      "--publisher-text": palette.text,
+                      "--publisher-text":
+                        board.headingTextColor ?? palette.text,
                       "--caption-color": palette.caption,
                       "--heading-font": `"${board.headingFont}"`,
                       "--cell-font": `"${board.cellFont}"`,
                     } as CSSProperties
                   }
                 >
-                  <BoardHeading
-                    board={board}
-                    editing={headingEditing}
-                    onEdit={setHeadingEditing}
-                    onChange={(heading) => patchBoard({ heading })}
-                  />
                   {board.cells
                     .slice(0, board.rows * board.columns)
                     .map((item, index) => {
@@ -997,6 +1145,7 @@ export default function App() {
                           index={index}
                           gridId={board.id}
                           gridStyle={board}
+                          captionRows={captionRows}
                           onCrop={(crop, assetId) =>
                             dispatchDocument({
                               type: "cell/crop",
@@ -1051,98 +1200,155 @@ export default function App() {
             </div>
           </section>
           <aside
-            className="settings-panel tw:block!"
+            className="settings-panel tw:block! tw:min-[901px]:px-[16px]! tw:min-[901px]:sticky tw:min-[901px]:top-0 tw:min-[901px]:h-[calc(100dvh-80px)] tw:min-[901px]:self-start tw:min-[901px]:overflow-y-auto tw:min-[901px]:overflow-x-hidden tw:min-[901px]:[scrollbar-gutter:stable]"
             aria-label="Grid settings"
           >
-            <h2 className="tw:m-0 tw:border-0 tw:border-b tw:border-solid tw:border-(--line) tw:py-3 tw:text-sm tw:font-semibold">
-              Grid style
-            </h2>
-            <div className="tw:py-5">
-              <SelectField
-                id="theme-selector"
-                label="Theme"
-                value={selectedTemplate}
-                options={[...templates.map((item) => item.name), "Custom"].map(
-                  (name) => ({ value: name, label: name }),
-                )}
-                onChange={(name) => {
-                  const template = name as TemplateName;
-                  dispatchDocument({
-                    type: "grid/template",
-                    gridId: board.id,
-                    template,
-                    previousTemplate: selectedTemplate,
-                    defaults:
-                      templates.find((item) => item.name === template)?.style ??
-                      getEditorSettings(workspace).style,
-                  });
-                }}
-              />
-              {selectedTemplate === "Superhero" && (
-                <div>
-                  <span className="field-label">Sub-theme</span>
-                  <div
-                    className="segmented"
-                    role="group"
-                    aria-label="Superhero sub-theme"
-                  >
-                    {(["dc", "marvel"] as const).map((publisher) => (
-                      <button
-                        key={publisher}
-                        className="tw:enabled:hover:bg-(--line)! tw:enabled:hover:text-(--accent)! tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-(--accent)"
-                        aria-pressed={board.publisher === publisher}
-                        onClick={() => patchBoard({ publisher })}
-                      >
-                        {publisher === "dc" ? "DC" : "Marvel"}
-                      </button>
-                    ))}
+            <div className="tw:flex tw:flex-col tw:gap-3 tw:py-3">
+              <fieldset
+                className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#35424b] tw:bg-[#1d252b] tw:p-3"
+                aria-label="Grid style"
+              >
+                <h2 className="tw:mt-0 tw:text-sm tw:font-semibold">
+                  Grid style
+                </h2>
+                <SelectField
+                  id="theme-selector"
+                  label="Theme"
+                  value={selectedTemplate}
+                  options={[
+                    ...templates.map((item) => item.name),
+                    "Custom",
+                  ].map((name) => ({ value: name, label: name }))}
+                  onChange={(name) => {
+                    const template = name as TemplateName;
+                    dispatchDocument({
+                      type: "grid/template",
+                      gridId: board.id,
+                      template,
+                      previousTemplate: selectedTemplate,
+                      defaults:
+                        templates.find((item) => item.name === template)
+                          ?.style ?? getEditorSettings(workspace).style,
+                    });
+                  }}
+                />
+                {selectedTemplate === "Superhero" && (
+                  <div>
+                    <span className="field-label">Sub-theme</span>
+                    <div
+                      className="segmented"
+                      role="group"
+                      aria-label="Superhero sub-theme"
+                    >
+                      {(["dc", "marvel"] as const).map((publisher) => (
+                        <button
+                          key={publisher}
+                          className="tw:enabled:hover:bg-(--line)! tw:enabled:hover:text-(--accent)! tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-(--accent)"
+                          aria-pressed={board.publisher === publisher}
+                          onClick={() => patchBoard({ publisher })}
+                        >
+                          {publisher === "dc" ? "DC" : "Marvel"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              <Toggle
-                label="Show heading"
-                checked={board.headingVisible !== false}
-                onChange={(headingVisible) => patchBoard({ headingVisible })}
-              />
-              <SelectField
-                id="heading-font"
-                label="Heading font"
-                value={board.headingFont}
-                options={fontOptions.map((font) => ({
-                  value: font,
-                  label: font,
-                }))}
-                onChange={(headingFont) => patchBoard({ headingFont })}
-              />
-              <SelectField
-                id="cell-font"
-                label="Cell font"
-                value={board.cellFont}
-                options={fontOptions.map((font) => ({
-                  value: font,
-                  label: font,
-                }))}
-                onChange={(cellFont) => patchBoard({ cellFont })}
-              />
-              <label className="field-label" htmlFor="gap">
-                Grid spacing <output id="gap-value">{board.gap} px</output>
-              </label>
-              <input
-                id="gap"
-                type="range"
-                min="0"
-                max="40"
-                value={board.gap}
-                onChange={(event) =>
-                  patchBoard({ gap: Number(event.target.value) })
-                }
-              />
-              <ColorField
-                id="background"
-                label="Background"
-                value={board.background}
-                onChange={(background) => patchBoard({ background })}
-              />
+                )}
+                <label className="field-label" htmlFor="gap">
+                  Spacing <output id="gap-value">{board.gap} px</output>
+                </label>
+                <input
+                  id="gap"
+                  type="range"
+                  min="0"
+                  max="40"
+                  value={board.gap}
+                  onChange={(event) =>
+                    patchBoard({ gap: Number(event.target.value) })
+                  }
+                />
+                <ColorField
+                  id="background"
+                  label="Background"
+                  value={board.background}
+                  onChange={(background) => patchBoard({ background })}
+                />
+              </fieldset>
+              <fieldset
+                className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#3a4b3e] tw:bg-[#202a24] tw:p-3"
+                aria-label="Heading style"
+              >
+                <h3 className="tw:mt-0 tw:text-sm tw:font-semibold">
+                  Heading style
+                </h3>
+                <SelectField
+                  id="heading-font"
+                  label="Font"
+                  value={board.headingFont}
+                  options={fontOptions.map((font) => ({
+                    value: font,
+                    label: font,
+                  }))}
+                  onChange={(headingFont) => patchBoard({ headingFont })}
+                />
+                <label className="field-label" htmlFor="heading-font-size">
+                  Font size <output>{board.headingFontSize ?? 18}%</output>
+                </label>
+                <input
+                  id="heading-font-size"
+                  type="range"
+                  min="6"
+                  max="36"
+                  value={board.headingFontSize ?? 18}
+                  onChange={(event) =>
+                    patchBoard({ headingFontSize: Number(event.target.value) })
+                  }
+                />
+                <ColorField
+                  id="heading-text-color"
+                  label="Text color"
+                  value={board.headingTextColor ?? palette.text}
+                  onChange={(headingTextColor) =>
+                    patchBoard({ headingTextColor })
+                  }
+                />
+              </fieldset>
+              <fieldset
+                className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#4b3b45] tw:bg-[#2b2328] tw:p-3"
+                aria-label="Card style"
+              >
+                <h3 className="tw:mt-0 tw:text-sm tw:font-semibold">
+                  Card style
+                </h3>
+                <SelectField
+                  id="cell-font"
+                  label="Font"
+                  value={board.cellFont}
+                  options={fontOptions.map((font) => ({
+                    value: font,
+                    label: font,
+                  }))}
+                  onChange={(cellFont) => patchBoard({ cellFont })}
+                />
+                <label className="field-label" htmlFor="cell-font-size">
+                  Font size <output>{board.cellFontSize ?? 11}%</output>
+                </label>
+                <input
+                  id="cell-font-size"
+                  type="range"
+                  min="6"
+                  max="36"
+                  value={board.cellFontSize ?? 11}
+                  onChange={(event) =>
+                    patchBoard({ cellFontSize: Number(event.target.value) })
+                  }
+                />
+                <ColorField
+                  id="cell-text-color"
+                  label="Text color"
+                  value={board.cellTextColor ?? "#f4f4ef"}
+                  onChange={(cellTextColor) => patchBoard({ cellTextColor })}
+                />
+              </fieldset>
             </div>
             <div className="tw:border-0 tw:border-t tw:border-solid tw:border-(--line) tw:py-3">
               <Button

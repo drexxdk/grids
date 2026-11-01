@@ -1,15 +1,23 @@
 import { Minus, Plus, Undo2 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { gridLimit, type Asset, type OverflowCell } from "../model";
-import { Button } from "./ui/controls";
+import { Button, ButtonGroup } from "./ui/controls";
 
 export function GridResizer({
+  ref,
+  style,
+  viewportHeight,
+  heading,
   rows,
   columns,
   onResize,
   onUndo,
   children,
 }: {
+  ref?: Ref<HTMLDivElement>;
+  style?: CSSProperties;
+  viewportHeight?: number;
+  heading?: ReactNode;
   rows: number;
   columns: number;
   onResize: (dimension: "rows" | "columns", value: number) => void;
@@ -19,49 +27,61 @@ export function GridResizer({
   const dimensions = { rows, columns };
   return (
     <div
+      ref={ref}
+      style={style}
       data-resize-frame
       className="tw:grid tw:grid-cols-[minmax(0,1fr)_44px] tw:gap-[8px]"
     >
-      {children}
+      <div className="tw:col-start-1 tw:row-start-1 tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--gap,0px)] tw:[container-type:inline-size]">
+        {heading}
+        <div
+          data-canvas-viewport
+          className="tw:min-w-0 tw:overflow-auto tw:overscroll-contain tw:[scrollbar-gutter:stable]"
+          style={{ height: viewportHeight }}
+        >
+          {children}
+        </div>
+      </div>
       {(["columns", "rows"] as const).map((dimension) => (
         <div
           key={dimension}
-          role="group"
-          aria-label={
-            dimension === "columns" ? "Column controls" : "Row controls"
-          }
           className={
             dimension === "columns"
-              ? "tw:col-start-2 tw:row-start-1 tw:flex tw:flex-col tw:items-center tw:justify-center tw:gap-[8px]"
-              : "tw:col-start-1 tw:row-start-2 tw:flex tw:items-center tw:justify-center tw:gap-[8px]"
+              ? "tw:col-start-2 tw:row-start-1 tw:flex tw:items-center tw:justify-center"
+              : "tw:col-start-1 tw:row-start-2 tw:flex tw:items-center tw:justify-center"
           }
         >
-          {(dimension === "columns" ? [1, -1] : [-1, 1]).map((change) => {
-            const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
-            const limited =
-              change > 0
-                ? dimensions[dimension] >= gridLimit
-                : dimensions[dimension] <= 1;
-            const limit =
-              change > 0
-                ? `Maximum ${gridLimit} ${dimension}`
-                : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
-            const Icon = change > 0 ? Plus : Minus;
-            return (
-              <Button
-                key={change}
-                variant="icon"
-                aria-label={label}
-                title={limited ? limit : label}
-                disabled={limited}
-                onClick={() =>
-                  onResize(dimension, dimensions[dimension] + change)
-                }
-              >
-                <Icon aria-hidden="true" />
-              </Button>
-            );
-          })}
+          <ButtonGroup
+            label={dimension === "columns" ? "Column controls" : "Row controls"}
+            orientation={dimension === "columns" ? "vertical" : "horizontal"}
+          >
+            {(dimension === "columns" ? [1, -1] : [-1, 1]).map((change) => {
+              const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
+              const limited =
+                change > 0
+                  ? dimensions[dimension] >= gridLimit
+                  : dimensions[dimension] <= 1;
+              const limit =
+                change > 0
+                  ? `Maximum ${gridLimit} ${dimension}`
+                  : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
+              const Icon = change > 0 ? Plus : Minus;
+              return (
+                <Button
+                  key={change}
+                  variant="icon"
+                  aria-label={label}
+                  title={limited ? limit : label}
+                  disabled={limited}
+                  onClick={() =>
+                    onResize(dimension, dimensions[dimension] + change)
+                  }
+                >
+                  <Icon aria-hidden="true" />
+                </Button>
+              );
+            })}
+          </ButtonGroup>
         </div>
       ))}
       {onUndo && (

@@ -18,7 +18,7 @@ import {
   type CellPatch,
   type GridStyle,
 } from "../model";
-import { fitTitle } from "../export";
+import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 
@@ -36,6 +36,7 @@ export function GridCell({
   onDrop,
   canChoose,
   library,
+  captionRows = 1,
 }: {
   cell: Cell;
   asset?: Asset;
@@ -50,17 +51,19 @@ export function GridCell({
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   canChoose: boolean;
   library?: { onDelete: () => void; disabled: boolean };
+  captionRows?: number;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => () => dragPreview.current?.remove(), []);
   const [cropTarget, setCropTarget] = useState<string | null>(null);
+  const [hoverTools, setHoverTools] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
     if (cropTarget && cropTarget !== asset?.id) setCropTarget(null);
   }, [asset?.id, cropTarget]);
-  const geometry = cellGeometry(gridStyle, 600);
+  const geometry = cellGeometry(gridStyle, 600, captionRows);
   const cropRectangle =
     cell.crop && imageSize.width && imageSize.height
       ? sourceRectangle(
@@ -72,8 +75,10 @@ export function GridCell({
       : null;
   const overlay = gridStyle.captionPlacement === "overlay";
   const alignment = gridStyle.captionAlignment ?? "bottom";
-  const freeImageHeight =
-    geometry.imageHeight - (overlay ? geometry.captionHeight : 0);
+  const freeImageHeight = Math.max(
+    0,
+    geometry.imageHeight - (overlay ? geometry.captionHeight : 0),
+  );
   const toolSpace =
     overlay && alignment === "middle" ? freeImageHeight / 2 : freeImageHeight;
   const overlayColor = `${gridStyle.captionOverlayColor ?? "#000000"}${Math.round(
@@ -89,21 +94,20 @@ export function GridCell({
       if (disposed) return;
       const context = document.createElement("canvas").getContext("2d");
       if (!context) return;
-      context.letterSpacing = "0.5px";
-      const padding = captionPadding(field.clientWidth);
-      const { fontSize, lines } = fitTitle(
+      const bounds = field.getBoundingClientRect();
+      const padding = captionPadding(bounds.width);
+      const { fontSize, lines } = layoutCaption(
         context,
-        cell.title || "Heading",
+        cell.title || "Add heading",
         gridStyle.cellFont,
-        field.clientWidth * 0.11,
-        field.clientWidth - padding.horizontal * 2,
-        field.clientHeight - padding.vertical * 2,
+        bounds.width,
+        gridStyle.cellFontSize,
       );
       field.style.fontSize = `${fontSize}px`;
       field.style.paddingLeft =
         field.style.paddingRight = `${padding.horizontal}px`;
       field.style.paddingTop =
-        field.style.paddingBottom = `${Math.max(0, (field.clientHeight - lines.length * fontSize * 1.05) / 2)}px`;
+        field.style.paddingBottom = `${Math.max(0, (bounds.height - lines.length * fontSize * 1.05) / 2)}px`;
     };
     const observer = new ResizeObserver(fit);
     observer.observe(field);
@@ -113,7 +117,13 @@ export function GridCell({
       disposed = true;
       observer.disconnect();
     };
-  }, [cell.title, gridStyle.cellFont, geometry.height, geometry.captionTop]);
+  }, [
+    cell.title,
+    gridStyle.cellFont,
+    gridStyle.cellFontSize,
+    geometry.height,
+    geometry.captionTop,
+  ]);
   return (
     <Popover
       className={`image-card tw:relative tw:min-w-0 tw:bg-[#111315]! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-grab tw:w-full!" : "grid-cell"}`}
@@ -153,10 +163,13 @@ export function GridCell({
                     .matches &&
                   !open
                 )
-                  trigger.current?.click();
+                  setHoverTools(true);
               }}
               onPointerLeave={(event) => {
-                if (event.pointerType === "mouse") close();
+                if (event.pointerType === "mouse") {
+                  setHoverTools(false);
+                  close(event.currentTarget);
+                }
               }}
             >
               {asset ? (
@@ -173,6 +186,7 @@ export function GridCell({
                   draggable={Boolean(asset)}
                   onMouseDownCapture={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
+                    setHoverTools(false);
                     close();
                     if (library && asset) {
                       event.dataTransfer.setData(
@@ -321,6 +335,7 @@ export function GridCell({
               )}
               {asset && (
                 <PopoverPanel
+                  static={hoverTools}
                   role="group"
                   aria-label="Cell tools"
                   className="tw:pointer-events-none tw:absolute tw:inset-0 tw:z-10"
@@ -338,10 +353,11 @@ export function GridCell({
                     >
                       <Button
                         variant="icon"
-                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                         aria-label={asset ? "Replace image" : "Choose image"}
                         title={asset ? "Replace image" : "Choose image"}
                         onClick={() => {
+                          setHoverTools(false);
                           close();
                           if (trigger.current) onChoose(trigger.current);
                         }}
@@ -350,10 +366,11 @@ export function GridCell({
                       </Button>
                       <Button
                         variant="icon"
-                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                        className="tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                         aria-label="Crop image"
                         title="Crop image"
                         onClick={() => {
+                          setHoverTools(false);
                           close();
                           setCropTarget(asset.id);
                         }}
@@ -365,7 +382,7 @@ export function GridCell({
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
-                      className="tw:pointer-events-auto tw:absolute tw:top-[2px] tw:right-[2px] tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                      className="tw:pointer-events-auto tw:absolute tw:top-[2px] tw:right-[2px] tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                       aria-label={
                         library ? `Delete ${asset?.title}` : "Clear cell"
                       }
@@ -378,6 +395,7 @@ export function GridCell({
                       }}
                       title={library ? `Delete ${asset?.title}` : "Clear cell"}
                       onClick={() => {
+                        setHoverTools(false);
                         close();
                         if (library) library.onDelete();
                         else onClear();
@@ -391,7 +409,7 @@ export function GridCell({
             </div>
             <textarea
               ref={caption}
-              className={`${library ? "library-heading asset-name" : "cell-heading"} tw:absolute tw:inset-x-0 tw:z-20 tw:hover:z-40 tw:focus:z-40 tw:min-h-0! tw:[field-sizing:fixed]! tw:placeholder:text-transparent tw:hover:placeholder:text-(--muted) tw:focus:placeholder:text-(--muted) tw:outline-none! tw:hover:bg-[color-mix(in_srgb,var(--card-caption-color),white_8%)]! tw:focus:bg-[color-mix(in_srgb,var(--card-caption-color),white_12%)]!`}
+              className={`${library ? "library-heading asset-name" : "cell-heading"} tw:absolute tw:inset-x-0 tw:z-20 tw:hover:z-40 tw:focus:z-40 tw:min-h-0! tw:[field-sizing:fixed]! tw:placeholder:text-(--muted)/35 tw:hover:placeholder:text-(--muted)/80 tw:focus:placeholder:text-(--muted)/80 tw:outline-none! tw:hover:bg-[color-mix(in_srgb,var(--card-caption-color),white_8%)]! tw:focus:bg-[color-mix(in_srgb,var(--card-caption-color),white_12%)]!`}
               style={
                 {
                   top: `${(geometry.captionTop / geometry.height) * 100}%`,
@@ -403,18 +421,32 @@ export function GridCell({
                     ? overlayColor
                     : publishers[gridStyle.publisher].caption,
                   fontFamily: `"${gridStyle.cellFont}", sans-serif`,
+                  color: gridStyle.cellTextColor ?? "#f4f4ef",
                   margin: 0,
+                  letterSpacing: 0,
                 } as React.CSSProperties
               }
               rows={1}
               maxLength={120}
               value={cell.title}
-              placeholder="Heading"
+              placeholder="Add heading"
               aria-label={
                 library
                   ? `Library heading: ${asset?.title}`
                   : `Heading for cell ${index + 1}`
               }
+              onPointerDown={(event) => {
+                if (open || hoverTools) {
+                  setHoverTools(false);
+                  close(event.currentTarget);
+                }
+              }}
+              onFocus={(event) => {
+                if (open || hoverTools) {
+                  setHoverTools(false);
+                  close(event.currentTarget);
+                }
+              }}
               onChange={(event) => onPatch({ title: event.target.value })}
             />
           </div>

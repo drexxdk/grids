@@ -50,6 +50,63 @@ function localWorkspace() {
   return workspace;
 }
 
+test("independent typography settings validate, roundtrip and reset without changing content", () => {
+  const workspace = localWorkspace();
+  Object.assign(workspace.grid, {
+    headingFont: "Bebas Neue",
+    headingFontSize: 30,
+    headingTextColor: "#cc4488",
+    cellFont: "Boogaloo",
+    cellFontSize: 24,
+    cellTextColor: "#39a36f",
+  });
+  const settings = model.getEditorSettings(workspace);
+  expect(settings.style).toMatchObject({
+    headingFont: "Bebas Neue",
+    headingFontSize: 30,
+    headingTextColor: "#cc4488",
+    cellFont: "Boogaloo",
+    cellFontSize: 24,
+    cellTextColor: "#39a36f",
+  });
+  expect(JSON.stringify(settings)).not.toContain("Private");
+  const restored = model.applyEditorSettings(
+    localWorkspace(),
+    JSON.parse(JSON.stringify(settings)),
+  );
+  expect(model.getEditorSettings(restored)).toEqual(settings);
+  expect(model.cellGeometry(restored.grid, 150).captionHeight).toBe(55);
+  expect(model.cellGeometry(restored.grid, 150, 0)).toMatchObject({
+    captionHeight: 0,
+    imageTop: 0,
+    height: 150,
+  });
+  for (const patch of [
+    { cellFontSize: 0 },
+    { headingFontSize: 37 },
+    { cellTextColor: "red" },
+    { headingTextColor: "#fff" },
+  ]) {
+    expect(
+      model.editorSettingsSchema.safeParse({
+        ...settings,
+        style: { ...settings.style, ...patch },
+      }).success,
+    ).toBe(false);
+  }
+  const reset = model.resetWorkspace(workspace);
+  expect(reset.grid.headingFontSize).toBeUndefined();
+  expect(reset.grid.cellFontSize).toBeUndefined();
+  expect(reset.grid.headingTextColor).toBeUndefined();
+  expect(reset.grid.cellTextColor).toBeUndefined();
+  expect(reset.assets).toBe(workspace.assets);
+  expect(
+    reset.grid.overflow.find(
+      (entry) => entry.cell.id === workspace.grid.cells[15].id,
+    ).cell.title,
+  ).toBe("Private caption");
+});
+
 test("image caption edits synchronize library, placements and overflow without changing crops", () => {
   const workspace = localWorkspace();
   const asset = workspace.assets[0];
@@ -164,6 +221,37 @@ test("visual crops preserve originals and share full-box source rectangles", () 
     targetCellId: workspace.grid.cells[0].id,
   });
   expect(swapped.grid.cells[0].crop).toEqual(crop);
+});
+
+test("multiline caption geometry grows shared bands without changing image ratios", () => {
+  const style = model.makeWorkspace().grid;
+  expect(model.cellGeometry(style, 600, 6)).toMatchObject({
+    imageHeight: 600,
+    captionHeight: 482,
+    height: 1082,
+  });
+  expect(
+    model.cellGeometry({ ...style, captionPlacement: "above" }, 600, 6),
+  ).toMatchObject({ imageTop: 482, captionTop: 0, height: 1082 });
+  expect(
+    model.cellGeometry(
+      {
+        ...style,
+        imageAspect: "landscape",
+        captionPlacement: "overlay",
+        captionAlignment: "bottom",
+      },
+      600,
+      6,
+    ),
+  ).toMatchObject({
+    aspectRatio: 4 / 3,
+    imageHeight: 450,
+    captionHeight: 482,
+    imageTop: 16,
+    captionTop: 0,
+    height: 482,
+  });
 });
 
 test("grid appearance settings roundtrip and share cell geometry", () => {

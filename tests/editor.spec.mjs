@@ -129,6 +129,255 @@ async function selectField(page, id, value) {
   await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
 }
 
+test("canvas preview fits both row and column changes without resizing controls", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator(".cell-heading").first().fill("Keep caption");
+  const original = await savedWorkspace(page);
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 390, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        page
+          .locator("[data-resize-frame]")
+          .evaluate(
+            (frame) =>
+              frame.getBoundingClientRect().bottom <=
+              innerHeight - (innerWidth <= 900 ? 160 : 28) + 2,
+          ),
+      )
+      .toBe(true);
+    const before = await page.locator(".grid-cell").first().boundingBox();
+    for (const dimension of ["row", "column"]) {
+      await page
+        .getByRole("button", { name: `Add ${dimension}`, exact: true })
+        .click();
+      await expect(page.locator(".grid-cell")).toHaveCount(12);
+      if (before.width > 129) {
+        await expect
+          .poll(() =>
+            page
+              .locator(".grid-cell")
+              .first()
+              .evaluate((cell) => cell.getBoundingClientRect().width),
+          )
+          .toBeLessThan(before.width - 1);
+      } else {
+        await expect
+          .poll(() =>
+            page
+              .locator(".grid-cell")
+              .first()
+              .evaluate((cell) => cell.getBoundingClientRect().width),
+          )
+          .toBeGreaterThanOrEqual(127.9);
+      }
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-resize-frame]")
+            .evaluate(
+              (frame) =>
+                frame.getBoundingClientRect().bottom <=
+                innerHeight - (innerWidth <= 900 ? 160 : 28) + 2,
+            ),
+        )
+        .toBe(true);
+      await expect(page.locator(".cell-heading").first()).toHaveValue(
+        "Keep caption",
+      );
+      for (const label of [
+        "Add row",
+        "Remove row",
+        "Add column",
+        "Remove column",
+      ]) {
+        const bounds = await page
+          .getByRole("button", { name: label, exact: true })
+          .boundingBox();
+        expect(bounds.width).toBe(44);
+        expect(bounds.height).toBe(44);
+      }
+      await page
+        .locator("[data-resize-frame]")
+        .screenshot({
+          path: testInfo.outputPath(`fit-${dimension}-${viewport.width}.png`),
+        });
+      await page
+        .getByRole("button", { name: "Undo grid resize", exact: true })
+        .click();
+      await expect(page.locator(".grid-cell")).toHaveCount(9);
+      await expect
+        .poll(() =>
+          page
+            .locator(".grid-cell")
+            .first()
+            .evaluate(
+              (cell, width) =>
+                Math.abs(cell.getBoundingClientRect().width - width),
+              before.width,
+            ),
+        )
+        .toBeLessThan(1);
+      expect((await savedWorkspace(page)).grid.cells).toEqual(
+        original.grid.cells,
+      );
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  const scroller = page.locator("[data-canvas-viewport]");
+  await expect(
+    page.locator("[data-canvas-viewport] .board-export-heading"),
+  ).toHaveCount(0);
+  const headingBounds = await page
+    .locator(".board-export-heading")
+    .boundingBox();
+  await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await page.locator(".board-export-heading").boundingBox()).toEqual(
+    headingBounds,
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator(".cell-heading")
+        .first()
+        .evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
+    )
+    .toBeGreaterThanOrEqual(13.8);
+});
+
+test("desktop asides use 250px columns with stable edge scrollbars and modal alignment", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page
+    .locator("#upload")
+    .setInputFiles(
+      ["One", "Two", "Three"].map((name) => ({
+        name: `${name}.svg`,
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+        ),
+      })),
+    );
+  await expect(page.locator(".asset")).toHaveCount(3);
+  await savedWorkspace(page);
+  for (const width of [1440, 960]) {
+    await page.setViewportSize({ width, height: 1400 });
+    expect(
+      await page
+        .locator(".asset-library")
+        .evaluate(
+          (element) =>
+            getComputedStyle(element).gridTemplateColumns.split(" ").length,
+        ),
+    ).toBe(2);
+    for (const selector of [".asset-panel", ".settings-panel"]) {
+      const aside = page.locator(selector);
+      await expect(aside).toHaveCSS("width", "250px");
+      await expect(aside).toHaveCSS("overflow-y", "auto");
+      await expect(aside).toHaveCSS("scrollbar-gutter", "stable");
+      await expect(aside).toHaveCSS("direction", "ltr");
+      await expect(aside.locator(":scope > div").first()).toHaveCSS(
+        "direction",
+        "ltr",
+      );
+      const before = await aside.evaluate((element) => {
+        element.scrollTop = 0;
+        const child = element.firstElementChild.getBoundingClientRect();
+        return {
+          x: child.x,
+          width: child.width,
+          height: element.getBoundingClientRect().height,
+          overflowing: element.scrollHeight > element.clientHeight,
+        };
+      });
+      expect(before.height).toBe(1320);
+      expect(before.overflowing).toBe(false);
+      await aside.evaluate((element) => {
+        const spacer = document.createElement("div");
+        spacer.dataset.scrollProbe = "";
+        spacer.style.height = "2000px";
+        element.append(spacer);
+      });
+      await expect
+        .poll(() =>
+          aside.evaluate(
+            (element) => element.scrollHeight > element.clientHeight,
+          ),
+        )
+        .toBe(true);
+      const after = await aside.evaluate((element) => {
+        const child = element.firstElementChild.getBoundingClientRect();
+        return { x: child.x, width: child.width };
+      });
+      expect(after).toEqual({ x: before.x, width: before.width });
+      const pageScroll = await page.evaluate(() => scrollY);
+      await aside.hover();
+      await page.mouse.wheel(0, 160);
+      await expect
+        .poll(() => aside.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      expect(await page.evaluate(() => scrollY)).toBe(pageScroll);
+      await aside.evaluate((element) => {
+        element.querySelector("[data-scroll-probe]").remove();
+        element.scrollTop = 0;
+      });
+      expect(
+        await aside.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      ).toBe(true);
+      await aside.screenshot({
+        path: testInfo.outputPath(`aside-${selector.slice(1)}-${width}.png`),
+      });
+    }
+  }
+  const settings = page.locator(".settings-panel");
+  const settingsBounds = await settings.boundingBox();
+  expect(settingsBounds.x + settingsBounds.width).toBe(
+    await page.evaluate(() => innerWidth),
+  );
+  const frameBounds = await page.locator("[data-resize-frame]").boundingBox();
+  await page.locator("#export-grid-header").click();
+  const dialog = page.getByRole("dialog", { name: "Export grid", exact: true });
+  await expect(dialog).toBeVisible();
+  expect(await settings.boundingBox()).toEqual(settingsBounds);
+  expect(await page.locator("[data-resize-frame]").boundingBox()).toEqual(
+    frameBounds,
+  );
+  await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(await settings.boundingBox()).toEqual(settingsBounds);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await expect(page.locator(".settings-panel")).toHaveCSS("direction", "ltr");
+  await expect(page.locator(".settings-panel")).toHaveCSS(
+    "scrollbar-gutter",
+    "auto",
+  );
+});
+
 test("theme selector remembers separate settings across switching and reload", async ({
   page,
 }, testInfo) => {
@@ -199,6 +448,551 @@ test("theme selector remembers separate settings across switching and reload", a
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("heading and card typography controls are independent across previews, exports and saved themes", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .fill("Team");
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .press("Enter");
+  await page.locator("#upload").setInputFiles({
+    name: "Caption.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  await expect(
+    page.getByRole("group", { name: "Heading style", exact: true }),
+  ).toContainText("Font");
+  await expect(
+    page.getByRole("group", { name: "Card style", exact: true }),
+  ).toContainText("Font");
+  await selectField(page, "heading-font", "Bebas Neue");
+  await page.locator("#heading-font-size").fill("30");
+  const headingHex = page
+    .getByRole("group", { name: "Heading style", exact: true })
+    .getByRole("textbox", { name: "Text color hex value", exact: true });
+  await headingHex.fill("#cc4488");
+  await headingHex.press("Tab");
+  await expect(page.locator(".cell-heading").first()).toHaveCSS(
+    "color",
+    "rgb(244, 244, 239)",
+  );
+  await selectField(page, "cell-font", "Boogaloo");
+  await page.locator("#cell-font-size").fill("24");
+  const cardHex = page
+    .getByRole("group", { name: "Card style", exact: true })
+    .getByRole("textbox", { name: "Text color hex value", exact: true });
+  await cardHex.fill("#39a36f");
+  await cardHex.press("Tab");
+  const verify = async () => {
+    await expect(
+      page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    ).toHaveCSS("color", "rgb(204, 68, 136)");
+    await expect(
+      page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    ).toHaveCSS("font-family", /Bebas Neue/);
+    await expect(page.locator(".cell-heading").first()).toHaveCSS(
+      "color",
+      "rgb(57, 163, 111)",
+    );
+    await expect(page.locator(".asset-name").first()).toHaveCSS(
+      "color",
+      "rgb(57, 163, 111)",
+    );
+    await expect(page.locator(".cell-heading").first()).toHaveCSS(
+      "font-family",
+      /Boogaloo/,
+    );
+    for (const selector of [".cell-heading", ".asset-name"]) {
+      await expect
+        .poll(() =>
+          page
+            .locator(selector)
+            .first()
+            .evaluate((field) => {
+              const style = getComputedStyle(field);
+              return (
+                Math.abs(
+                  parseFloat(style.fontSize) -
+                    field.getBoundingClientRect().width * 0.24,
+                ) < 0.2 && field.scrollHeight <= field.clientHeight + 1
+              );
+            }),
+        )
+        .toBe(true);
+    }
+  };
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await verify();
+    if (width <= 900)
+      await page
+        .getByRole("button", { name: "Expand tools", exact: true })
+        .click();
+    const sectionColors = [];
+    for (const name of ["Grid style", "Heading style", "Card style"]) {
+      const section = page.getByRole("group", { name, exact: true });
+      await expect(section).toHaveCSS("border-top-width", "1px");
+      await expect(section).toHaveCSS("border-radius", "6px");
+      sectionColors.push(
+        await section.evaluate(
+          (element) => getComputedStyle(element).backgroundColor,
+        ),
+      );
+    }
+    expect(new Set(sectionColors).size).toBe(3);
+    for (const name of ["Heading style", "Card style"]) {
+      const section = page.getByRole("group", { name, exact: true });
+      await section.scrollIntoViewIfNeeded();
+      await section.screenshot({
+        path: testInfo.outputPath(`${name.replaceAll(" ", "-")}-${width}.png`),
+      });
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  const configured = await savedWorkspace(page);
+  await selectTheme(page, "Editorial");
+  await expect(page.locator("#cell-font-size")).toHaveValue("11");
+  await selectTheme(page, "Custom");
+  await expect(page.locator("#cell-font-size")).toHaveValue("24");
+  await reloadWorkspace(page);
+  await verify();
+  expect((await savedWorkspace(page)).grid.cells).toEqual(
+    configured.grid.cells,
+  );
+  const settings = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("grids-settings-v1")),
+  );
+  expect(settings.style).toMatchObject({
+    headingFontSize: 30,
+    cellFontSize: 24,
+    headingTextColor: "#cc4488",
+    cellTextColor: "#39a36f",
+  });
+  expect(JSON.stringify(settings)).not.toContain("Caption.svg");
+  await page.evaluate(() => {
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    window.typographyDrawing = [];
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      ...parameters
+    ) {
+      window.typographyDrawing.push({
+        text,
+        font: this.font,
+        color: this.fillStyle,
+      });
+      return original.call(this, text, ...parameters);
+    };
+  });
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  const download = await downloadBoard(page);
+  const bytes = await readFile(await download.path());
+  expect(bytes.length).toBeGreaterThan(100);
+  const drawing = await page.evaluate(() => window.typographyDrawing);
+  expect(
+    drawing.some(
+      (entry) =>
+        entry.text === "TEAM" &&
+        entry.font.includes("Bebas Neue") &&
+        parseFloat(entry.font) === 45 &&
+        entry.color === "#cc4488",
+    ),
+  ).toBe(true);
+  expect(
+    drawing.some(
+      (entry) =>
+        entry.text === "Caption" &&
+        entry.font.includes("Boogaloo") &&
+        parseFloat(entry.font) === 36 &&
+        entry.color === "#39a36f",
+    ),
+  ).toBe(true);
+});
+
+test("empty headings use faded inline placeholders and reserve no export bands", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page
+    .locator("#upload")
+    .setInputFiles({
+      name: "Original.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    });
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  await page.locator(".cell-heading").first().fill("");
+  await expect(
+    page.getByRole("switch", { name: "Show heading", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Add heading", exact: true }),
+  ).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.locator("#export-grid-header").focus();
+    await page.mouse.move(1, 1);
+    const trigger = page.getByRole("button", {
+      name: "Edit grid heading",
+      exact: true,
+    });
+    const placeholder = trigger.locator("[data-heading-placeholder]");
+    await expect(placeholder).toHaveText("Add heading");
+    await expect(placeholder).toHaveCSS("opacity", "0.35");
+    await trigger.hover();
+    await expect(placeholder).toHaveCSS("opacity", "0.8");
+    for (const selector of [".cell-heading", ".asset-name"]) {
+      const field = page.locator(selector).first();
+      await expect(field).toHaveAttribute("placeholder", "Add heading");
+      await page.mouse.move(1, 1);
+      await expect
+        .poll(() =>
+          field.evaluate(
+            (element) => getComputedStyle(element, "::placeholder").color,
+          ),
+        )
+        .toMatch(/(?:, |\/ )0\.35\)$/);
+      await field.hover();
+      await expect
+        .poll(() =>
+          field.evaluate(
+            (element) => getComputedStyle(element, "::placeholder").color,
+          ),
+        )
+        .toMatch(/(?:, |\/ )0\.8\)$/);
+    }
+    await trigger.click();
+    const heading = page.getByRole("textbox", {
+      name: "Grid heading",
+      exact: true,
+    });
+    await expect(heading).toHaveAttribute("placeholder", "Add heading");
+    await heading.fill("Temporary");
+    await heading.press("Enter");
+    await expect(trigger).toHaveText("Temporary");
+    await trigger.click();
+    await heading.fill("");
+    await heading.press("Enter");
+    await expect(placeholder).toHaveText("Add heading");
+    await page
+      .locator("#board-grid")
+      .screenshot({
+        path: testInfo.outputPath(`empty-heading-placeholders-${width}.png`),
+      });
+  }
+  await page.evaluate(() => {
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    window.emptyHeadingDrawing = [];
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      ...parameters
+    ) {
+      window.emptyHeadingDrawing.push(text);
+      return original.call(this, text, ...parameters);
+    };
+  });
+  const exportSize = async () => {
+    await page.locator("#export-grid-header").click();
+    await selectField(page, "resolution", "150");
+    const download = await downloadBoard(page);
+    const bytes = await readFile(await download.path());
+    return page.evaluate(
+      async (bytes) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        );
+        const dimensions = { width: bitmap.width, height: bitmap.height };
+        bitmap.close();
+        return dimensions;
+      },
+      [...bytes],
+    );
+  };
+  for (const mode of [
+    "Text above image",
+    "Text below image",
+    "Text on image",
+  ]) {
+    await page.getByRole("button", { name: mode, exact: true }).click();
+    expect(await exportSize()).toEqual({ width: 462, height: 462 });
+  }
+  expect(await page.evaluate(() => window.emptyHeadingDrawing)).toEqual([]);
+  await page
+    .getByRole("button", { name: "Text below image", exact: true })
+    .click();
+  await page.locator(".cell-heading").first().fill("Filled");
+  expect(await exportSize()).toEqual({ width: 462, height: 497 });
+  await page.locator(".cell-heading").first().fill("");
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .fill("Team");
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .press("Enter");
+  expect(await exportSize()).toEqual({ width: 462, height: 507 });
+  await page.locator(".cell-heading").first().fill("Filled");
+  expect(await exportSize()).toEqual({ width: 462, height: 542 });
+});
+
+test("grid heading uses text-field hover and inline editing on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .fill("Team DC");
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .press("Enter");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const trigger = page.getByRole("button", {
+      name: "Edit grid heading",
+      exact: true,
+    });
+    await page.mouse.move(1, 1);
+    const bounds = await trigger.boundingBox();
+    await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await trigger.hover();
+    await expect(trigger).toHaveCSS("cursor", "text");
+    await expect(trigger).toHaveCSS("background-color", /(?:, |\/ )0\.08\)$/);
+    await expect(trigger).toHaveCSS("border-top-width", "0px");
+    await expect(trigger).toHaveCSS("border-radius", "0px");
+    await expect(trigger).toHaveCSS("outline-style", "none");
+    expect(await trigger.boundingBox()).toEqual(bounds);
+    await page.locator(".board-export-heading").screenshot({
+      path: testInfo.outputPath(`heading-text-hover-${width}.png`),
+    });
+    await trigger.click();
+    const field = page.getByRole("textbox", {
+      name: "Grid heading",
+      exact: true,
+    });
+    await expect(field).toBeFocused();
+    await expect(field).toHaveCSS("cursor", "text");
+    await expect(field).toHaveCSS("background-color", /(?:, |\/ )0\.12\)$/);
+    await expect(field).toHaveCSS("border-top-width", "0px");
+    await expect(field).toHaveCSS("outline-style", "none");
+    const editingBounds = await field.boundingBox();
+    expect(editingBounds.width).toBeCloseTo(bounds.width, 1);
+    expect(editingBounds.height).toBeCloseTo(bounds.height, 1);
+    await field.fill("Team DC edited");
+    await field.press("Escape");
+    await expect(trigger).toHaveText("Team DC edited");
+    await trigger.focus();
+    await expect(trigger).toHaveCSS("background-color", /(?:, |\/ )0\.12\)$/);
+    await trigger.press("Enter");
+    await expect(field).toBeFocused();
+    await field.fill("Team DC");
+    await field.press("Enter");
+  }
+});
+
+test("button groups join edges with single dividers and outer-only corners", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await savedWorkspace(page);
+  const activeBackground = await page
+    .getByRole("tab", { name: "Imported", exact: true })
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page
+    .getByRole("button", { name: "Text on image", exact: true })
+    .click();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator(".grid-cell").first()).toHaveCSS(
+      "background-color",
+      "rgb(17, 19, 21)",
+    );
+    const background = "rgb(17, 19, 21)";
+    for (const label of [
+      "Image aspect ratio",
+      "Caption placement",
+      "Caption alignment",
+      "Column controls",
+      "Row controls",
+    ]) {
+      const group = page.getByRole("group", { name: label, exact: true });
+      await expect(group).toHaveCSS("gap", "0px");
+      const vertical = label === "Column controls";
+      const buttons = await group.locator("button").evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            x: rect.x,
+            y: rect.y,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            background: style.backgroundColor,
+            active: element.getAttribute("aria-pressed") === "true",
+            corners: [
+              style.borderTopLeftRadius,
+              style.borderTopRightRadius,
+              style.borderBottomRightRadius,
+              style.borderBottomLeftRadius,
+            ],
+            left: parseFloat(style.borderLeftWidth),
+            rightBorder: parseFloat(style.borderRightWidth),
+            top: parseFloat(style.borderTopWidth),
+            bottomBorder: parseFloat(style.borderBottomWidth),
+          };
+        }),
+      );
+      for (const [index, button] of buttons.entries()) {
+        expect(button.width).toBe(44);
+        expect(button.height).toBe(44);
+        expect(button.background).toBe(
+          button.active ? activeBackground : background,
+        );
+        const first = index === 0;
+        const last = index === buttons.length - 1;
+        expect(button.corners).toEqual(
+          vertical
+            ? [
+                first ? "6px" : "0px",
+                first ? "6px" : "0px",
+                last ? "6px" : "0px",
+                last ? "6px" : "0px",
+              ]
+            : [
+                first ? "6px" : "0px",
+                last ? "6px" : "0px",
+                last ? "6px" : "0px",
+                first ? "6px" : "0px",
+              ],
+        );
+        if (index > 0) {
+          const previous = buttons[index - 1];
+          expect(
+            vertical ? button.y - previous.bottom : button.x - previous.right,
+          ).toBeCloseTo(-1, 1);
+          expect(
+            vertical
+              ? previous.bottomBorder + button.top
+              : previous.rightBorder + button.left,
+          ).toBe(2);
+        }
+        const control = group.locator("button").nth(index);
+        await control.hover();
+        for (const edge of ["top", "right", "bottom", "left"]) {
+          await expect(control).toHaveCSS(`border-${edge}-width`, "1px");
+          await expect(control).toHaveCSS(
+            `border-${edge}-color`,
+            button.active ? "rgb(48, 51, 53)" : "rgb(216, 243, 106)",
+          );
+        }
+        const screenshot = await control.screenshot();
+        const borders = await page.evaluate(
+          async (bytes) => {
+            const bitmap = await createImageBitmap(
+              new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+            );
+            const canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext("2d");
+            context.drawImage(bitmap, 0, 0);
+            const bands = [
+              [6, 0, canvas.width - 12, 2],
+              [canvas.width - 2, 6, 2, canvas.height - 12],
+              [6, canvas.height - 2, canvas.width - 12, 2],
+              [0, 6, 2, canvas.height - 12],
+            ];
+            const result = bands.map((band) => {
+              const pixels = context.getImageData(...band).data;
+              return Array.from(
+                { length: pixels.length / 4 },
+                (_, pixel) =>
+                  pixels[pixel * 4] > 70 &&
+                  pixels[pixel * 4 + 1] > 100 &&
+                  pixels[pixel * 4 + 1] > pixels[pixel * 4] + 12,
+              ).some(Boolean);
+            });
+            bitmap.close();
+            return result;
+          },
+          [...screenshot],
+        );
+        expect(borders).toEqual(
+          button.active
+            ? [false, false, false, false]
+            : [true, true, true, true],
+        );
+        await expect(control).toHaveCSS(
+          "cursor",
+          button.active ? "default" : "pointer",
+        );
+        await expect(control).toHaveCSS(
+          "background-color",
+          button.active ? activeBackground : background,
+        );
+        if (index === 1)
+          await group.screenshot({
+            path: testInfo.outputPath(
+              `hover-group-${width}-${label.replaceAll(" ", "-")}.png`,
+            ),
+          });
+      }
+    }
+    await page
+      .getByRole("button", { name: "Landscape images", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Landscape images", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("button", { name: "Landscape images", exact: true }),
+    ).toHaveCSS("color", "rgb(216, 243, 106)");
+    await expect(
+      page.getByRole("button", { name: "Landscape images", exact: true }),
+    ).toHaveCSS("background-color", activeBackground);
+    await expect(
+      page.getByRole("button", { name: "Square images", exact: true }),
+    ).toHaveCSS("background-color", background);
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Remove column", exact: true })
+      .click();
+    await expect(page.locator(".grid-cell")).toHaveCount(9);
+    await page.screenshot({
+      path: testInfo.outputPath(`joined-button-groups-${width}.png`),
+    });
+  }
 });
 
 test("header export combines settings and downloads on desktop and mobile", async ({
@@ -448,7 +1242,7 @@ test("imported captions preserve library capitalization in the canvas and export
 }, testInfo) => {
   await page.goto("./");
   await page.locator("#upload").setInputFiles({
-    name: "My Mixed Case Hero.svg",
+    name: "  DC -  Color__Kid  .svg",
     mimeType: "image/svg+xml",
     buffer: Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
@@ -456,6 +1250,7 @@ test("imported captions preserve library capitalization in the canvas and export
   });
   await expect(page.locator(".asset")).toHaveCount(1);
   const title = await page.locator(".asset-name").first().inputValue();
+  expect(title).toBe("DC Color Kid");
   await page
     .locator(".asset")
     .first()
@@ -481,8 +1276,8 @@ test("imported captions preserve library capitalization in the canvas and export
   await selectField(page, "resolution", "150");
   await downloadBoard(page);
   const rendered = await page.evaluate(() => window.exportedCaptionText);
-  expect(rendered).toContain(title);
-  expect(rendered).not.toContain(title.toUpperCase());
+  expect(rendered.join(" ")).toContain(title);
+  expect(rendered.join(" ")).not.toContain(title.toUpperCase());
   await page.setViewportSize({ width: 960, height: 1080 });
   await page
     .getByRole("button", { name: "Text above image", exact: true })
@@ -500,6 +1295,65 @@ test("imported captions preserve library capitalization in the canvas and export
     .locator(".grid-cell")
     .first()
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
+});
+
+test("hovering another header clears the previous card outline without moving focus", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["Eye Boy", "Kite Man"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  for (const index of [0, 1])
+    await page
+      .locator("[data-library-thumbnail]")
+      .nth(index)
+      .dragTo(page.locator(".cell-image-button").nth(index));
+  for (const [width, expanded] of [
+    [960, false],
+    [780, false],
+    [780, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1080 });
+    if (expanded)
+      await page
+        .getByRole("button", { name: "Expand tools", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: "Text above image", exact: true })
+      .click();
+    for (const selector of [".grid-cell", ".asset"]) {
+      const cards = page.locator(selector);
+      const image = cards.nth(0).locator("[data-card-image] > button");
+      const header = cards.nth(1).locator("textarea");
+      const firstFrame = cards.nth(0).locator("[data-cell-image-frame]");
+      const secondFrame = cards.nth(1).locator("[data-cell-image-frame]");
+      await header.click();
+      await image.hover({ position: { x: 5, y: 5 } });
+      await expect(firstFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await expect(header).toBeFocused();
+      await expect(image).not.toBeFocused();
+      await header.hover();
+      await expect(firstFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(secondFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(header).toBeFocused();
+      await image.focus();
+      await image.press("Enter");
+      await expect(
+        cards.nth(0).getByRole("group", { name: "Cell tools", exact: true }),
+      ).toBeVisible();
+      await expect(firstFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await image.press("Escape");
+      await header.click();
+      await expect(firstFrame).toHaveCSS("--frame-color", "transparent");
+    }
+  }
 });
 
 test("precise image frames and thin caption feedback stay independent", async ({
@@ -606,6 +1460,192 @@ test("precise image frames and thin caption feedback stay independent", async ({
     expect(await cell.boundingBox()).toEqual(before);
     await caption.fill("Still editable");
     await expect(caption).toHaveValue("Still editable");
+  }
+});
+
+test("captions wrap at a fixed size and share height across canvas, library and export", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["Short", "Lines", "Word"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  const multiline =
+    "Line One\nLine Two\nLine Three\nLine Four\nLine Five\nLine Six";
+  await page.locator(".library-heading").nth(1).fill(multiline);
+  await page
+    .locator(".library-heading")
+    .nth(2)
+    .fill("LongUnbrokenWordWithoutSpaces");
+  for (const index of [0, 1, 2])
+    await page
+      .locator("[data-library-thumbnail]")
+      .nth(index)
+      .dragTo(page.locator(".cell-image-button").nth(index));
+  for (const width of [960, 780]) {
+    await page.setViewportSize({ width, height: 1080 });
+    for (const placement of [
+      "Text above image",
+      "Text below image",
+      "Text on image",
+    ]) {
+      await page.getByRole("button", { name: placement, exact: true }).click();
+      const metrics = await page.locator(".image-card").evaluateAll((cards) =>
+        cards.map((card) => {
+          const field = card.querySelector("textarea");
+          const bounds = card.getBoundingClientRect();
+          const caption = field.getBoundingClientRect();
+          return {
+            library: card.classList.contains("asset"),
+            width: caption.width,
+            height: bounds.height,
+            captionHeight: caption.height,
+            fontSize: parseFloat(getComputedStyle(field).fontSize),
+            scrollHeight: field.scrollHeight,
+            clientHeight: field.clientHeight,
+          };
+        }),
+      );
+      for (const library of [false, true]) {
+        const group = metrics.filter((item) => item.library === library);
+        expect(
+          Math.max(...group.map((item) => item.height)) -
+            Math.min(...group.map((item) => item.height)),
+        ).toBeLessThan(0.1);
+        expect(
+          Math.max(...group.map((item) => item.captionHeight)) -
+            Math.min(...group.map((item) => item.captionHeight)),
+        ).toBeLessThan(0.1);
+        for (const item of group) {
+          expect(item.fontSize).toBeCloseTo(item.width * 0.11, 1);
+          expect(item.captionHeight).toBeGreaterThan(item.fontSize * 6 * 1.05);
+          expect(item.scrollHeight).toBeLessThanOrEqual(item.clientHeight + 1);
+        }
+      }
+      await expect(page.locator(".cell-heading").nth(1)).toHaveValue(multiline);
+    }
+    await page
+      .getByRole("button", { name: "Text above image", exact: true })
+      .click();
+    await page.screenshot({
+      path: testInfo.outputPath(`multiline-cards-${width}.png`),
+    });
+  }
+  await page.evaluate(() => {
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    window.captionDrawing = [];
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      ...parameters
+    ) {
+      window.captionDrawing.push({ text, font: this.font });
+      return original.call(this, text, ...parameters);
+    };
+  });
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  const download = await downloadBoard(page);
+  const bytes = await readFile(await download.path());
+  const dimensions = await page.evaluate(
+    async (bytes) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+      );
+      const result = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return result;
+    },
+    [...bytes],
+  );
+  expect(dimensions).toEqual({ width: 462, height: 583 });
+  const drawing = await page.evaluate(() => window.captionDrawing);
+  for (const line of multiline.split("\n"))
+    expect(
+      drawing.some(
+        (entry) => entry.text === line && parseFloat(entry.font) === 16.5,
+      ),
+    ).toBe(true);
+  expect(
+    drawing.some(
+      (entry) => entry.text === "Short" && parseFloat(entry.font) === 16.5,
+    ),
+  ).toBe(true);
+});
+
+test("small library caption clicks retain caret focus after image hover", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["One", "Two"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  for (const [width, expanded] of [
+    [960, false],
+    [780, false],
+    [780, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1080 });
+    if (expanded)
+      await page
+        .getByRole("button", { name: "Expand tools", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: "Landscape images", exact: true })
+      .click();
+    for (const [placement, alignment] of [
+      ["Text above image"],
+      ["Text below image"],
+      ["Text on image", "Text at top"],
+      ["Text on image", "Text at middle"],
+      ["Text on image", "Text at bottom"],
+    ]) {
+      await page.getByRole("button", { name: placement, exact: true }).click();
+      if (alignment)
+        await page
+          .getByRole("button", { name: alignment, exact: true })
+          .click();
+      await page.locator(".library-heading").nth(0).fill("One");
+      await page.locator(".library-heading").nth(1).fill("Two");
+      for (const index of [0, 1, 0, 1]) {
+        const asset = page.locator(".asset").nth(index);
+        const image = asset.locator("[data-library-thumbnail]");
+        const caption = asset.locator(".library-heading");
+        await expect(image).toBeInViewport({ ratio: 1 });
+        await expect(caption).toBeInViewport({ ratio: 1 });
+        const imageBounds = await image.boundingBox();
+        const captionBounds = await caption.boundingBox();
+        await image.hover({
+          position: {
+            x: 5,
+            y: alignment === "Text at top" ? imageBounds.height * 0.4 : 3,
+          },
+        });
+        await expect(caption).not.toBeFocused();
+        const previous = await caption.inputValue();
+        await caption.click({
+          position: { x: 5, y: captionBounds.height / 2 },
+        });
+        await page.keyboard.press("Control+End");
+        await page.keyboard.insertText("x");
+        await expect(caption).toHaveValue(`${previous}x`);
+        await expect(caption).toBeFocused();
+        expect(await caption.evaluate((field) => field.selectionStart)).toBe(
+          previous.length + 1,
+        );
+      }
+    }
   }
 });
 

@@ -132,6 +132,11 @@ body {
 html {
   scrollbar-gutter: stable;
 }
+@media (min-width: 901px) {
+  html:has(.app-layout) {
+    scrollbar-gutter: auto;
+  }
+}
 html:has(#headlessui-portal-root [role="dialog"][aria-modal="true"]) {
   --fixed-scrollbar-inset: var(--scrollbar-width, 0px);
   overflow: hidden;

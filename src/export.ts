@@ -8,21 +8,36 @@ import {
   type ImageFormat,
 } from "./model";
 
-export function dimensions(item: Board, size: number) {
+export function dimensions(item: Board, size: number, captionRows = 1) {
   const gap = Math.round((item.gap * size) / 600);
-  const geometry = cellGeometry(item, size);
+  const geometry = cellGeometry(
+    item,
+    size,
+    item.cells.some((cell) => cell.title.trim()) ? captionRows : 0,
+  );
+  const rowHeights = Array.from({ length: item.rows }, (_, row) => {
+    const hasCaption = item.cells
+      .slice(row * item.columns, (row + 1) * item.columns)
+      .some((cell) => cell.title.trim());
+    return cellGeometry(item, size, hasCaption ? captionRows : 0).height;
+  });
   const titleHeight = geometry.captionHeight;
-  const headingHeight =
-    item.headingVisible !== false && item.heading?.trim()
-      ? Math.round(size * 0.28) + gap
-      : 0;
+  const headingHeight = item.heading?.trim()
+    ? Math.round(
+        size * Math.max(0.28, ((item.headingFontSize ?? 18) / 100) * 1.4),
+      ) + gap
+    : 0;
   return {
     gap,
     titleHeight,
     cellHeight: geometry.height,
     headingHeight,
     width: item.columns * size + (item.columns + 1) * gap,
-    height: headingHeight + item.rows * geometry.height + (item.rows + 1) * gap,
+    rowHeights,
+    height:
+      headingHeight +
+      rowHeights.reduce((total, rowHeight) => total + rowHeight, 0) +
+      (item.rows + 1) * gap,
   };
 }
 export async function loadImage(src: string) {
@@ -35,6 +50,7 @@ function wrapTitle(
   context: CanvasRenderingContext2D,
   title: string,
   maxWidth: number,
+  breakWords = false,
 ) {
   const lines = [];
   for (const paragraph of title.split("\n")) {
@@ -45,10 +61,63 @@ function wrapTitle(
         lines.push(line.trimEnd());
         line = word.trimStart();
       } else line = candidate;
+      if (breakWords && context.measureText(line.trimEnd()).width > maxWidth) {
+        const characters = Array.from(line);
+        line = "";
+        for (const character of characters) {
+          if (line && context.measureText(line + character).width > maxWidth) {
+            lines.push(line.trimEnd());
+            line = character.trimStart();
+          } else line += character;
+        }
+      }
     }
     lines.push(line.trimEnd());
   }
   return lines;
+}
+export function layoutCaption(
+  context: CanvasRenderingContext2D,
+  title: string,
+  font: string,
+  width: number,
+  sizePercent = 11,
+) {
+  const fontSize = (width * sizePercent) / 100;
+  context.letterSpacing = "0px";
+  context.font = `${fontSize}px "${font}"`;
+  return {
+    fontSize,
+    lines: wrapTitle(
+      context,
+      title,
+      width - captionPadding(width).horizontal * 2,
+      true,
+    ),
+  };
+}
+export function sharedCaptionRows(
+  item: Board,
+  assets: Asset[],
+  placeholders = false,
+) {
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return 1;
+  const titles = [
+    ...(placeholders ? ["Add heading"] : []),
+    ...item.cells.map((cell) => cell.title),
+    ...assets
+      .filter((asset) => !asset.libraryHidden && asset.trashedAt === undefined)
+      .map((asset) => asset.title.slice(0, 120)),
+  ];
+  return Math.max(
+    1,
+    ...titles.map(
+      (title) =>
+        layoutCaption(context, title, item.cellFont, 600, item.cellFontSize)
+          .lines.length,
+    ),
+  );
 }
 export function fitTitle(
   context: CanvasRenderingContext2D,
@@ -83,16 +152,20 @@ function drawTitle(
   height: number,
   color: string,
   padding = { horizontal: width * 0.04, vertical: height * 0.09 },
+  caption = false,
+  captionSizePercent = 11,
 ) {
   context.letterSpacing = "0.5px";
-  const { fontSize, lines } = fitTitle(
-    context,
-    title,
-    font,
-    maximumSize,
-    width - padding.horizontal * 2,
-    height - padding.vertical * 2,
-  );
+  const { fontSize, lines } = caption
+    ? layoutCaption(context, title, font, width, captionSizePercent)
+    : fitTitle(
+        context,
+        title,
+        font,
+        maximumSize,
+        width - padding.horizontal * 2,
+        height - padding.vertical * 2,
+      );
   context.fillStyle = color;
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -118,9 +191,11 @@ export async function createExport(
     if (!document.fonts.check(`48px "${font}"`))
       throw new Error(`${font} could not load. Please reload and try again.`);
   }
-  const { gap, titleHeight, headingHeight, width, height } = dimensions(
+  const captionRows = sharedCaptionRows(item, assets);
+  const { gap, headingHeight, width, height, rowHeights } = dimensions(
     item,
     size,
+    captionRows,
   );
   if (
     !Number.isSafeInteger(width) ||
@@ -151,16 +226,15 @@ export async function createExport(
       context,
       item.heading.toUpperCase(),
       item.headingFont,
-      size * 0.18,
+      (size * (item.headingFontSize ?? 18)) / 100,
       gap,
       gap,
       width - gap * 2,
       bandHeight,
-      publisher.text,
+      item.headingTextColor ?? publisher.text,
     );
   }
   const cells = item.cells.slice(0, item.rows * item.columns);
-  const geometry = cellGeometry(item, size);
   const images = await Promise.all(
     cells.map(async (entry) => {
       const asset = assets.find((asset) => asset.id === entry.assetId);
@@ -168,11 +242,18 @@ export async function createExport(
     }),
   );
   cells.forEach((entry, index) => {
+    const geometry = cellGeometry(
+      item,
+      size,
+      entry.title.trim() ? captionRows : 0,
+    );
     const left = gap + (index % item.columns) * (size + gap);
     const top =
       gap +
       headingHeight +
-      Math.floor(index / item.columns) * (geometry.height + gap);
+      rowHeights
+        .slice(0, Math.floor(index / item.columns))
+        .reduce((total, rowHeight) => total + rowHeight + gap, 0);
     const imageTop = top + geometry.imageTop;
     context.fillStyle = "#111315";
     context.fillRect(left, imageTop, size, geometry.imageHeight);
@@ -201,6 +282,7 @@ export async function createExport(
       );
       context.restore();
     }
+    if (!entry.title.trim()) return;
     const captionTop = top + geometry.captionTop;
     context.save();
     context.fillStyle =
@@ -209,7 +291,7 @@ export async function createExport(
         : publisher.caption;
     if (item.captionPlacement === "overlay")
       context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
-    context.fillRect(left, captionTop, size, titleHeight);
+    context.fillRect(left, captionTop, size, geometry.captionHeight);
     context.restore();
     drawTitle(
       context,
@@ -219,9 +301,11 @@ export async function createExport(
       left,
       captionTop,
       size,
-      titleHeight,
-      "#f4f4ef",
+      geometry.captionHeight,
+      item.cellTextColor ?? "#f4f4ef",
       captionPadding(size),
+      true,
+      item.cellFontSize,
     );
   });
   const blob = await new Promise<Blob | null>((resolve) =>

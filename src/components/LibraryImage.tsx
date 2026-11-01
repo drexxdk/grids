@@ -8,6 +8,7 @@ export function LibraryImage({
   cell,
   gridStyle,
   onTitle,
+  captionRows,
 }: {
   asset: Asset;
   onDelete: () => void;
@@ -15,6 +16,7 @@ export function LibraryImage({
   cell?: Cell;
   gridStyle: GridStyle;
   onTitle: (title: string) => void;
+  captionRows: number;
 }) {
   return (
     <div
@@ -34,6 +36,7 @@ export function LibraryImage({
         index={0}
         gridId="library"
         gridStyle={gridStyle}
+        captionRows={captionRows}
         canChoose={false}
         onPatch={(patch) => {
           if (patch.title !== undefined) onTitle(patch.title);

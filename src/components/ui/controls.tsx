@@ -78,6 +78,35 @@ export function Button({
   );
 }
 
+export function ButtonGroup({
+  label,
+  orientation = "horizontal",
+  className,
+  children,
+}: {
+  label: string;
+  orientation?: "horizontal" | "vertical";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      data-button-group={orientation}
+      className={clsx(
+        "tw:inline-flex tw:gap-0 tw:rounded-[6px] tw:bg-[#111315] tw:[&>button]:relative tw:[&>button]:rounded-none! tw:[&>button]:bg-[#111315]! tw:[&>button[aria-pressed=true]]:bg-(--line)! tw:[&>button[aria-pressed=true]:enabled:hover]:border-(--line)! tw:[&>button[aria-pressed=true]]:cursor-default! tw:[&>button:not([aria-pressed=true]):hover]:z-10 tw:[&>button:focus-visible]:z-20",
+        orientation === "vertical"
+          ? "tw:flex-col tw:[&>button+button]:mt-[-1px] tw:[&>button:first-child]:rounded-t-[6px]! tw:[&>button:last-child]:rounded-b-[6px]!"
+          : "tw:[&>button+button]:ml-[-1px] tw:[&>button:first-child]:rounded-l-[6px]! tw:[&>button:last-child]:rounded-r-[6px]!",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function SelectField({
   id,
   label,
