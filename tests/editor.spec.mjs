@@ -2292,6 +2292,14 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
           })),
         );
       const before = await contents();
+      const pageGeometry = () =>
+        page.evaluate(() => ({
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+          scrollX,
+          scrollY,
+        }));
+      const beforeDragGeometry = await pageGeometry();
       const sourceBounds = await source.boundingBox();
       await source.hover({ position: { x: 8, y: sourceBounds.height / 2 } });
       const sourceFrame = cells
@@ -2305,6 +2313,10 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
         clientY: 10,
       });
       const floating = page.locator("[data-drag-floating]");
+      await expect(floating).toHaveCSS("position", "fixed");
+      await expect(floating).toHaveCSS("pointer-events", "none");
+      await expect(floating).toHaveCSS("margin-top", "0px");
+      expect(await pageGeometry()).toEqual(beforeDragGeometry);
       await expect(floating).toHaveCSS("opacity", "1");
       await expect(floating.locator(".drag-preview-heading")).toHaveValue(
         "Red",

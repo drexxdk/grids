@@ -1544,7 +1544,7 @@ export default function App() {
             aria-hidden="true"
             inert
             data-drag-floating
-            className="z-100 opacity-100 mt-5 justify-end"
+            className="pointer-events-none fixed z-100 opacity-100"
             style={{
               width: cardDrag.visual.width,
               height: cardDrag.visual.height,
