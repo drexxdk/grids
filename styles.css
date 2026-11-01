@@ -405,7 +405,7 @@ h2 {
   min-width: 0;
 }
 .workspace {
-  background: radial-gradient(var(--workspace-dot) 0.6px, transparent 0.6px);
+  background: radial-gradient(var(--workspace-dot) 0.8px, transparent 0.8px);
   background-size: 12px 12px;
   background-color: var(--workspace);
 }

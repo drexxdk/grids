@@ -818,12 +818,12 @@ export default function App() {
               aria-haspopup="dialog"
               title={t("export.title")}
               aria-label={t("export.title")}
-              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! max-[400px]:px-2! [&_svg]:size-5! [&_svg]:shrink-0"
+              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! max-[400px]:px-2! max-[300px]:size-11! max-[300px]:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
               disabled={exporting}
               onClick={() => setExportOpen(true)}
             >
               <Download />
-              <span className="whitespace-nowrap max-[400px]:text-xs">
+              <span className="whitespace-nowrap max-[400px]:text-xs max-[300px]:sr-only">
                 {t("export.title")}
               </span>
             </button>
