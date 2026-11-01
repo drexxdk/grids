@@ -333,9 +333,7 @@ async function selectField(page, id, value) {
 }
 
 async function editHeading(page, value) {
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   const heading = page.getByRole("textbox", {
     name: "Grid heading",
     exact: true,
@@ -2473,9 +2471,7 @@ test("font previews and independent weights persist and match exports without th
   await page.locator("#heading-font-weight").press("ArrowLeft");
   await expect(page.locator("#heading-font-weight")).toHaveValue("800");
   await page.locator("#cell-font-weight").fill("700");
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .fill("Weight check");
@@ -2588,9 +2584,7 @@ test("heading and card typography controls are independent across previews, expo
 }, testInfo) => {
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .fill("Team");
@@ -2636,10 +2630,10 @@ test("heading and card typography controls are independent across previews, expo
   await cardHex.press("Tab");
   const verify = async () => {
     await expect(
-      page.getByRole("button", { name: "Edit grid heading", exact: true }),
+      page.getByRole("button", { name: /^Edit grid heading: / }),
     ).toHaveCSS("color", "rgb(204, 68, 136)");
     await expect(
-      page.getByRole("button", { name: "Edit grid heading", exact: true }),
+      page.getByRole("button", { name: /^Edit grid heading: / }),
     ).toHaveCSS("font-family", /Bebas Neue/);
     await expect(page.locator(".cell-heading").first()).toHaveCSS(
       "color",
@@ -2763,7 +2757,7 @@ test("heading and card typography controls are independent across previews, expo
   ).toBe(true);
 });
 
-test("empty headings use faded inline placeholders and reserve no export bands", async ({
+test("empty headings use accessible inline placeholders and reserve no export bands", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -2795,14 +2789,43 @@ test("empty headings use faded inline placeholders and reserve no export bands",
     await page.locator("#export-grid-header").focus();
     await page.mouse.move(1, 1);
     const trigger = page.getByRole("button", {
-      name: "Edit grid heading",
-      exact: true,
+      name: /^Edit grid heading: /,
     });
     const placeholder = trigger.locator("[data-heading-placeholder]");
     await expect(placeholder).toHaveText("Add heading");
-    await expect(placeholder).toHaveCSS("opacity", "0.35");
+    await expect(trigger).toHaveAccessibleName(
+      "Edit grid heading: Add heading",
+    );
+    await expect(placeholder).toHaveCSS("opacity", "1");
+    const contrast = await placeholder.evaluate((element) => {
+      const context = document.createElement("canvas").getContext("2d");
+      const luminance = (color) => {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const channels = [...context.getImageData(0, 0, 1, 1).data]
+          .slice(0, 3)
+          .map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045
+              ? value / 12.92
+              : ((value + 0.055) / 1.055) ** 2.4;
+          });
+        return (
+          channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        );
+      };
+      const foreground = luminance(getComputedStyle(element).color);
+      const background = luminance(
+        getComputedStyle(element.closest("h2")).backgroundColor,
+      );
+      return (
+        (Math.max(foreground, background) + 0.05) /
+        (Math.min(foreground, background) + 0.05)
+      );
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
     await trigger.hover();
-    await expect(placeholder).toHaveCSS("opacity", "0.8");
+    await expect(placeholder).toHaveCSS("opacity", "1");
     for (const selector of width > 900
       ? [".cell-heading", ".asset-name"]
       : [".cell-heading"]) {
@@ -2834,6 +2857,7 @@ test("empty headings use faded inline placeholders and reserve no export bands",
     await heading.fill("Temporary");
     await heading.press("Enter");
     await expect(trigger).toHaveText("Temporary");
+    await expect(trigger).toHaveAccessibleName("Edit grid heading: Temporary");
     await trigger.click();
     await heading.fill("");
     await heading.press("Enter");
@@ -2879,9 +2903,7 @@ test("empty headings use faded inline placeholders and reserve no export bands",
   await page.locator(".cell-heading").first().fill("Filled");
   expect(await exportSize()).toEqual({ width: 462, height: 497 });
   await page.locator(".cell-heading").first().fill("");
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .fill("Team");
@@ -2946,9 +2968,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
   }
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .fill("Team DC");
@@ -2972,8 +2992,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
         .toBe(true);
     }
     const trigger = page.getByRole("button", {
-      name: "Edit grid heading",
-      exact: true,
+      name: /^Edit grid heading: /,
     });
     await page.mouse.move(1, 1);
     const bounds = await trigger.boundingBox();
@@ -5401,9 +5420,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   await selectField(page, "image-shape", "square");
   await selectField(page, "caption-position", "below");
   await page.locator(".cell-heading").first().fill("Blue");
-  await page
-    .getByRole("button", { name: "Edit grid heading", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .fill("Title");
@@ -7337,7 +7354,7 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
     .click();
   await navigation;
   await expect(
-    other.getByRole("button", { name: "Edit grid heading", exact: true }),
+    other.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("First tab saved");
   await expect(other.locator(".cell-heading").first()).toHaveValue(
     "Saved elsewhere",
@@ -7727,7 +7744,7 @@ test("IndexedDB stores image blobs and private grid content while localStorage h
   expect(originalUrl).toMatch(/^blob:/);
   await reloadWorkspace(page);
   await expect(
-    page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Private banner");
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Private caption",
@@ -8009,7 +8026,7 @@ test("single grid starts neutral and uploaded content persists", async ({
   await expect(page.locator(".grid-cell")).toHaveCount(9);
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   expect((await savedWorkspace(page)).grid.publisher).toBe("none");
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
@@ -8331,7 +8348,7 @@ test("grid headings and font choices persist and export correctly", async ({
   await expect(page.locator(".board-export-heading")).toHaveText("Team Marvel");
   await editHeading(page, "");
   await expect(
-    page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   await selectExportField(page, "resolution", "600");
   const download = await downloadBoard(page);
@@ -8370,8 +8387,7 @@ test("animated editor controls preserve heading content and modal scroll/focus",
   await page.goto("./");
   await useComicExample(page);
   const heading = page.getByRole("button", {
-    name: "Edit grid heading",
-    exact: true,
+    name: /^Edit grid heading: /,
   });
   await heading.click();
   const headingInput = page.getByRole("textbox", {
@@ -8570,7 +8586,7 @@ test("guest reset restores settings without deleting images or removed placement
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".grid-cell")).toHaveCount(9);
   await expect(
-    page.getByRole("button", { name: "Edit grid heading", exact: true }),
+    page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
   await expect(page.locator("#gap")).toHaveValue("10");
@@ -8934,6 +8950,122 @@ test("uploads follow stable cells through resize and large exports are bounded",
   }, bytes);
   expect(size).toEqual({ width: 1839, height: 2439 });
 });
+
+touchTest(
+  "phone app manifest and offline launch preserve images, edits and export",
+  async ({ page, context }, testInfo) => {
+    await page.goto("./");
+    await expect(page.locator(".grid-cell")).toHaveCount(9);
+    const emptyImage = page.getByRole("button", {
+      name: "Add image to cell 1",
+      exact: true,
+    });
+    await expect(emptyImage).toBeVisible();
+    await expect(emptyImage.getByText("Drop here")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    const manifestUrl = await page
+      .locator('link[rel="manifest"]')
+      .evaluate((element) => element.href);
+    const appUrl = new URL("./", page.url()).href;
+    expect(manifestUrl).toBe(`${appUrl}manifest.webmanifest`);
+    const response = await page.request.get(manifestUrl);
+    expect(response.ok()).toBe(true);
+    const manifest = await response.json();
+    expect(manifest).toMatchObject({
+      name: "Grids",
+      short_name: "Grids",
+      display: "standalone",
+    });
+    for (const key of ["id", "start_url", "scope"])
+      expect(new URL(manifest[key], manifestUrl).href).toBe(appUrl);
+    expect(manifest.icons.map((icon) => icon.sizes)).toEqual([
+      "192x192",
+      "512x512",
+    ]);
+    for (const icon of manifest.icons) {
+      const dimensions = await page.evaluate(async (url) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Missing install icon: ${url}`);
+        const bitmap = await createImageBitmap(await response.blob());
+        const dimensions = `${bitmap.width}x${bitmap.height}`;
+        bitmap.close();
+        return dimensions;
+      }, new URL(icon.src, manifestUrl).href);
+      expect(dimensions).toBe(icon.sizes);
+    }
+    await expect(
+      page.locator('meta[name="apple-mobile-web-app-capable"]'),
+    ).toHaveAttribute("content", "yes");
+    const registration = await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      return {
+        scope: registration.scope,
+        script: registration.active.scriptURL,
+      };
+    });
+    expect(registration).toEqual({ scope: appUrl, script: `${appUrl}sw.js` });
+    await page.reload();
+    await expect
+      .poll(() =>
+        page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
+      )
+      .toBe(true);
+    const session = await context.newCDPSession(page);
+    const installability = await session.send("Page.getInstallabilityErrors");
+    expect(installability.installabilityErrors).toEqual([]);
+    await session.detach();
+    const input = await beginCellUpload(page, 0);
+    await input.setInputFiles({
+      name: "Offline image.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    });
+    await expect(
+      page.getByRole("dialog", { name: "Choose image", exact: true }),
+    ).toHaveCount(0);
+    const card = page.locator(".grid-cell").first();
+    await expect(card.locator("img")).toBeVisible();
+    await editHeading(page, "Offline board");
+    await card.locator(".cell-heading").fill("Local caption");
+    await expect
+      .poll(async () => (await savedWorkspace(page)).grid.cells[0].title)
+      .toBe("Local caption");
+    const original = await localDatabase(page);
+    await context.setOffline(true);
+    await page.reload();
+    await expect(
+      page.getByRole("button", {
+        name: "Edit grid heading: Offline board",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(card.locator(".cell-heading")).toHaveValue("Local caption");
+    await expect
+      .poll(() =>
+        card
+          .locator("img")
+          .evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+    await page.evaluate(() => document.fonts.ready);
+    await card.locator(".cell-heading").fill("Offline edit");
+    await expect
+      .poll(async () => (await savedWorkspace(page)).grid.cells[0].title)
+      .toBe("Offline edit");
+    expect((await localDatabase(page)).images).toEqual(original.images);
+    await selectExportField(page, "resolution", "150");
+    const download = await downloadBoard(page);
+    const bytes = await readFile(await download.path());
+    expect([...bytes.subarray(0, 8)]).toEqual([
+      137, 80, 78, 71, 13, 10, 26, 10,
+    ]);
+    await page.screenshot({ path: testInfo.outputPath("phone-offline.png") });
+  },
+);
 
 test("page metadata assets resolve and desktop library keeps mouse dragging", async ({
   page,

@@ -33,7 +33,7 @@
     "region": "Grid editor",
     "headingLabel": "Grid heading",
     "headingPlaceholder": "Add heading",
-    "editHeading": "Edit grid heading",
+    "editHeading": "Edit grid heading: {value1}",
     "loading": "Loading grid...",
     "appearance": "Grid appearance",
     "gridLabel": "Image grid",

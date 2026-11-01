@@ -22,6 +22,12 @@ npm run preview
 
 The production site is generated in `dist/`. Preview normally runs at http://localhost:5838 and also falls back to another port when occupied. Relative build paths support both a GitHub Pages repository URL and a custom domain.
 
+## Install And Offline Use
+
+On Android, open the published site in Chrome and use **Install app** or **Add to Home screen** from its menu. On iPhone, open it in Safari and choose **Share > Add to Home Screen**, with **Open as Web App** enabled if offered. Browser wording and automatic install prompts vary.
+
+After the first online visit finishes caching, Grids can launch, edit local images and export offline. Its production service worker caches the app, local fonts and icons, not uploaded images; those remain in IndexedDB. Installation is not backup or cross-device sync, and some browsers keep installed-app storage separate from browser-tab storage. Updates wait until existing app tabs/windows close rather than forcing a reload during editing. Service workers are disabled in development; installation requires HTTPS or localhost and the production build.
+
 ## Frontend Foundation
 
 Controls use Headless UI for accessible interactions, Motion for animation, and Tailwind CSS v4 for styling. Tailwind uses standard, unprefixed utilities without Preflight while existing canvas styles are migrated incrementally. All application modules use TypeScript/TSX and are strictly checked during every production build; run `npm run typecheck` separately when needed. Directly executed Node configs and browser-test scripts use `.mjs`. Do not add authored `.js` or `.jsx` files; Vite's generated JavaScript bundles are build output, not application source.

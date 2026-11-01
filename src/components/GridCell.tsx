@@ -503,6 +503,7 @@ export function GridCell({
                       {t("common.actions.addImages", { count: 1 })}
                     </span>
                     <span
+                      aria-hidden="true"
                       className={
                         overlay && alignment === "middle"
                           ? "hidden"

@@ -92,7 +92,7 @@ function BoardHeading({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const fieldClass =
-    "board-heading-text border-0! rounded-none! bg-transparent p-0! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-(--muted)/35 focus:placeholder:text-(--muted)/80";
+    "board-heading-text border-0! rounded-none! bg-transparent p-0! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-(--muted)";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
@@ -180,7 +180,11 @@ function BoardHeading({
       ) : (
         <button
           className={fieldClass}
-          aria-label={t("editor.editHeading")}
+          aria-label={t("editor.editHeading", {
+            value1: board.heading.trim()
+              ? board.heading
+              : t("editor.headingPlaceholder"),
+          })}
           onClick={() => onEdit(true)}
         >
           {board.heading.trim() ? (
@@ -188,7 +192,7 @@ function BoardHeading({
           ) : (
             <span
               data-heading-placeholder
-              className="normal-case text-(--muted) opacity-35 group-hover:opacity-80 group-focus-within:opacity-80"
+              className="normal-case text-(--muted)"
             >
               {t("editor.headingPlaceholder")}
             </span>
