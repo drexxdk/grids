@@ -164,7 +164,7 @@ export function GridCell({
         !previewOnly,
       threshold: 8,
       filterTaps: true,
-      pointer: { keys: false, touch: true },
+      pointer: { keys: false },
     },
   );
   useEffect(() => () => dragPreview.current?.remove(), []);
@@ -372,7 +372,11 @@ export function GridCell({
                   style={{
                     height: "100%",
                     aspectRatio: geometry.aspectRatio,
-                    touchAction: coarsePointer ? "auto" : undefined,
+                    touchAction: coarsePointer
+                      ? library?.onSelect
+                        ? "auto"
+                        : "manipulation"
+                      : undefined,
                   }}
                   aria-label={
                     library

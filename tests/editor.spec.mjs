@@ -6647,10 +6647,16 @@ touchTest(
         ),
       })),
     );
+    await expect(picker.getByRole("img")).toHaveCount(3);
+    await expect(page.locator(".grid-cell img")).toHaveCount(0);
+    await picker
+      .getByRole("button", { name: "Use gallery 1", exact: true })
+      .tap();
     await expect(picker).toHaveCount(0);
-    await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(
-      1,
-    );
+    await expect(
+      page.locator(".grid-cell").nth(1).locator("img"),
+    ).toHaveAttribute("alt", "gallery 1");
+    await expect(page.locator(".grid-cell img")).toHaveCount(1);
     await expect(page.locator("#upload")).toHaveCount(0);
     await expect(drawer.locator(".asset, [data-upload-tile]")).toHaveCount(0);
     await expect
@@ -9895,10 +9901,16 @@ touchTest(
         ),
       })),
     );
+    await expect(picker.getByRole("img")).toHaveCount(3);
+    await expect(page.locator(".grid-cell img")).toHaveCount(0);
+    await picker
+      .getByRole("button", { name: "Use Picker 0", exact: true })
+      .tap();
     await expect(picker).toHaveCount(0);
     await expect(
       page.locator(".grid-cell").first().locator("img"),
     ).toHaveAttribute("alt", "Picker 0");
+    await expect(page.locator(".grid-cell img")).toHaveCount(1);
     await openPicker();
     await expect(picker.getByRole("img")).toHaveCount(3);
     await expect(
