@@ -1107,20 +1107,12 @@ export default function App() {
                                 })
                               }
                               onPatch={(patch) =>
-                                dispatchDocument(
-                                  asset && patch.title !== undefined
-                                    ? {
-                                        type: "asset/title",
-                                        assetId: asset.id,
-                                        title: patch.title,
-                                      }
-                                    : {
-                                        type: "cell/patch",
-                                        gridId: board.id,
-                                        cellId: item.id,
-                                        patch,
-                                      },
-                                )
+                                dispatchDocument({
+                                  type: "cell/patch",
+                                  gridId: board.id,
+                                  cellId: item.id,
+                                  patch,
+                                })
                               }
                               onClear={() =>
                                 dispatchDocument({

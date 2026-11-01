@@ -166,7 +166,7 @@ test("independent typography settings validate, roundtrip and reset without chan
   ).toBe("Private caption");
 });
 
-test("image caption edits synchronize library, placements and overflow without changing crops", () => {
+test("image captions stay independent across library, placements and overflow without changing crops", () => {
   const workspace = localWorkspace();
   const asset = workspace.assets[0];
   const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
@@ -178,6 +178,12 @@ test("image caption edits synchronize library, placements and overflow without c
     assetId: asset.id,
     title: "Old title",
   };
+  workspace.grid.cells[1] = {
+    ...workspace.grid.cells[1],
+    assetId: asset.id,
+    title: "Second card",
+    crop: { x: 0, y: 0, width: 0.5, height: 1 },
+  };
   const updated = model.documentReducer(workspace, {
     type: "asset/title",
     assetId: asset.id,
@@ -185,11 +191,36 @@ test("image caption edits synchronize library, placements and overflow without c
   });
   expect(updated.assets[0].title).toBe("Mixed Case caption");
   expect(updated.assets[0].src).toBe(asset.src);
-  expect(updated.grid.cells[0].title).toBe("Mixed Case caption");
+  expect(updated.grid).toBe(workspace.grid);
+  expect(updated.grid.cells[0].title).toBe("Old title");
   expect(
     updated.grid.overflow.find((entry) => entry.cell.assetId === asset.id).cell,
-  ).toMatchObject({ title: "Mixed Case caption", crop });
+  ).toMatchObject({ title: "Private caption", crop });
   expect(updated.grid.cells[1]).toBe(workspace.grid.cells[1]);
+  const edited = model.documentReducer(updated, {
+    type: "cell/patch",
+    gridId: updated.grid.id,
+    cellId: updated.grid.cells[0].id,
+    patch: { title: "First card" },
+  });
+  expect(edited.grid.cells[0].title).toBe("First card");
+  expect(edited.grid.cells[1]).toBe(updated.grid.cells[1]);
+  expect(edited.grid.overflow).toBe(updated.grid.overflow);
+  expect(edited.assets).toBe(updated.assets);
+  const cropped = model.documentReducer(edited, {
+    type: "cell/crop",
+    gridId: edited.grid.id,
+    cellId: edited.grid.cells[0].id,
+    assetId: asset.id,
+    crop,
+  });
+  expect(cropped.grid.cells[0]).toMatchObject({ title: "First card", crop });
+  expect(cropped.grid.cells[1]).toMatchObject({
+    title: "Second card",
+    crop: { x: 0, y: 0, width: 0.5, height: 1 },
+  });
+  expect(cropped.assets).toBe(updated.assets);
+  expect(model.workspaceSchema.safeParse(cropped).success).toBe(true);
   expect(model.workspaceSchema.safeParse(updated).success).toBe(true);
   expect(JSON.stringify(model.getEditorSettings(updated))).not.toContain(
     "Mixed Case caption",

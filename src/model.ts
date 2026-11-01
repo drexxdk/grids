@@ -660,10 +660,6 @@ export function documentReducer(
         command.title.length > 120
       )
         return workspace;
-      const rename = (cell: Cell): Cell =>
-        cell.assetId === command.assetId
-          ? { ...cell, title: command.title }
-          : cell;
       return {
         ...workspace,
         assets: workspace.assets.map((asset) =>
@@ -671,14 +667,6 @@ export function documentReducer(
             ? { ...asset, title: command.title }
             : asset,
         ),
-        grid: {
-          ...grid,
-          cells: grid.cells.map(rename),
-          overflow: grid.overflow.map((entry) => ({
-            ...entry,
-            cell: rename(entry.cell),
-          })),
-        },
       };
     }
     case "assets/trash-unused": {

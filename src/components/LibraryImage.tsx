@@ -39,12 +39,14 @@ export function LibraryImage({
     <div data-library-image className={`relative min-w-0 ${className}`}>
       <GridCell
         cell={
-          cell ?? {
-            id: asset.id,
-            assetId: asset.id,
-            title: asset.title.slice(0, 120),
-            fit: "cover",
-          }
+          cell
+            ? { ...cell, title: asset.title.slice(0, 120) }
+            : {
+                id: asset.id,
+                assetId: asset.id,
+                title: asset.title.slice(0, 120),
+                fit: "cover",
+              }
         }
         asset={asset}
         index={0}

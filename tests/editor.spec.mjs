@@ -3477,8 +3477,17 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
   const download = await downloadBoard(page);
   const exported = await readFile(await download.path());
   expect(await sample(exported, 78 / 462, 78 / 567)).toEqual([0, 0, 255, 255]);
-  await chooseImage(page, "Keep this caption", 1);
+  await chooseImage(page, "wide", 1);
   await expect(page.locator(".grid-cell img")).toHaveCount(2);
+  await expect(page.locator(".cell-heading").nth(1)).toHaveValue("wide");
+  await page.locator(".cell-heading").nth(1).fill("Second caption");
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Keep this caption",
+  );
+  await expect(page.locator(".library-heading").first()).toHaveValue("wide");
+  const copies = (await savedWorkspace(page)).grid.cells.slice(0, 2);
+  expect(copies[0].crop).toEqual(applied);
+  expect(copies[1].crop).toBeUndefined();
   expect(
     await sample(await page.locator(".cell-image-button").nth(1).screenshot()),
   ).toEqual([0, 255, 0, 255]);
@@ -4499,13 +4508,17 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
     await selectField(page, "caption-position", "above");
     await libraryCaption.click();
     await expect(libraryCaption).toBeFocused();
-    await libraryCaption.fill(`Edited ${width} ${expanded}`);
-    await expect(canvasCaption).toHaveValue(`Edited ${width} ${expanded}`);
-    await expect(page.locator(".cell-heading").nth(1)).toHaveValue(
-      `Edited ${width} ${expanded}`,
-    );
+    const firstTitle = await canvasCaption.inputValue();
+    const secondCaption = page.locator(".cell-heading").nth(1);
+    const secondTitle = await secondCaption.inputValue();
+    await libraryCaption.fill(`Library ${width}`);
+    await expect(canvasCaption).toHaveValue(firstTitle);
+    await expect(secondCaption).toHaveValue(secondTitle);
     await canvasCaption.fill("Canvas edit");
-    await expect(libraryCaption).toHaveValue("Canvas edit");
+    await expect(secondCaption).toHaveValue(secondTitle);
+    await secondCaption.fill("Copy edit");
+    await expect(canvasCaption).toHaveValue("Canvas edit");
+    await expect(libraryCaption).toHaveValue(`Library ${width}`);
     const idleUpload = await upload.boundingBox();
     await thumbnail.hover({ position: { x: 5, y: 30 } });
     await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
@@ -4730,13 +4743,19 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       ),
     });
   }
+  await thumbnail.dragTo(
+    page.locator(".grid-cell").nth(2).locator(".cell-image-button"),
+  );
+  await expect(page.locator(".cell-heading").nth(2)).toHaveValue("Library 960");
   await reloadWorkspace(page);
   await expect(page.locator(".library-heading").first()).toHaveValue(
-    "Canvas edit",
+    "Library 960",
   );
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Canvas edit",
   );
+  await expect(page.locator(".cell-heading").nth(1)).toHaveValue("Copy edit");
+  await expect(page.locator(".cell-heading").nth(2)).toHaveValue("Library 960");
 });
 
 test("dropping a card clears stale source hover until the pointer returns", async ({
