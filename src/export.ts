@@ -1,5 +1,6 @@
 import {
   cellGeometry,
+  gridSpacing,
   captionPadding,
   sourceRectangle,
   publishers,
@@ -9,7 +10,10 @@ import {
 } from "./model";
 
 export function dimensions(item: Board, size: number, captionRows = 1) {
-  const gap = Math.round((item.gap * size) / 600);
+  const spacing = gridSpacing(item, size);
+  const gap = Math.round(spacing.gap);
+  const padding = Math.round(spacing.padding);
+  const headingGap = Math.round(spacing.headingGap);
   const geometry = cellGeometry(
     item,
     size,
@@ -25,19 +29,22 @@ export function dimensions(item: Board, size: number, captionRows = 1) {
   const headingHeight = item.heading?.trim()
     ? Math.round(
         size * Math.max(0.28, ((item.headingFontSize ?? 18) / 100) * 1.4),
-      ) + gap
+      ) + headingGap
     : 0;
   return {
     gap,
+    padding,
+    headingGap,
     titleHeight,
     cellHeight: geometry.height,
     headingHeight,
-    width: item.columns * size + (item.columns + 1) * gap,
+    width: item.columns * size + (item.columns - 1) * gap + padding * 2,
     rowHeights,
     height:
       headingHeight +
       rowHeights.reduce((total, rowHeight) => total + rowHeight, 0) +
-      (item.rows + 1) * gap,
+      (item.rows - 1) * gap +
+      padding * 2,
   };
 }
 export async function loadImage(src: string) {
@@ -192,11 +199,8 @@ export async function createExport(
       throw new Error(`${font} could not load. Please reload and try again.`);
   }
   const captionRows = sharedCaptionRows(item, assets);
-  const { gap, headingHeight, width, height, rowHeights } = dimensions(
-    item,
-    size,
-    captionRows,
-  );
+  const { gap, padding, headingGap, headingHeight, width, height, rowHeights } =
+    dimensions(item, size, captionRows);
   if (
     !Number.isSafeInteger(width) ||
     !Number.isSafeInteger(height) ||
@@ -217,19 +221,20 @@ export async function createExport(
   context.fillRect(0, 0, width, height);
   const publisher = publishers[item.publisher];
   if (headingHeight) {
-    const bandHeight = headingHeight - gap;
-    if (publisher.color !== "transparent") {
-      context.fillStyle = publisher.color;
-      context.fillRect(gap, gap, width - gap * 2, bandHeight);
+    const bandHeight = headingHeight - headingGap;
+    const headingBackground = item.headingBackgroundColor ?? publisher.color;
+    if (headingBackground !== "transparent") {
+      context.fillStyle = headingBackground;
+      context.fillRect(padding, 0, width - padding * 2, bandHeight);
     }
     drawTitle(
       context,
       item.heading.toUpperCase(),
       item.headingFont,
       (size * (item.headingFontSize ?? 18)) / 100,
-      gap,
-      gap,
-      width - gap * 2,
+      padding,
+      0,
+      width - padding * 2,
       bandHeight,
       item.headingTextColor ?? publisher.text,
     );
@@ -247,16 +252,16 @@ export async function createExport(
       size,
       entry.title.trim() ? captionRows : 0,
     );
-    const left = gap + (index % item.columns) * (size + gap);
+    const left = padding + (index % item.columns) * (size + gap);
     const top =
-      gap +
+      padding +
       headingHeight +
       rowHeights
         .slice(0, Math.floor(index / item.columns))
         .reduce((total, rowHeight) => total + rowHeight + gap, 0);
     const imageTop = top + geometry.imageTop;
-    context.fillStyle = "#111315";
-    context.fillRect(left, imageTop, size, geometry.imageHeight);
+    context.fillStyle = item.cellBackgroundColor ?? "#111315";
+    context.fillRect(left, top, size, geometry.height);
     const image = images[index];
     if (image) {
       const source = sourceRectangle(
@@ -288,7 +293,7 @@ export async function createExport(
     context.fillStyle =
       item.captionPlacement === "overlay"
         ? (item.captionOverlayColor ?? "#000000")
-        : publisher.caption;
+        : (item.cellBackgroundColor ?? publisher.caption);
     if (item.captionPlacement === "overlay")
       context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
     context.fillRect(left, captionTop, size, geometry.captionHeight);

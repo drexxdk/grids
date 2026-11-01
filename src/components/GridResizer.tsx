@@ -1,12 +1,19 @@
-import { Minus, Plus, Undo2 } from "lucide-react";
-import type { CSSProperties, ReactNode, Ref } from "react";
-import { gridLimit, type Asset, type OverflowCell } from "../model";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Undo2 } from "lucide-react";
+import {
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+} from "react";
+import { gridLimit } from "../model";
 import { Button, ButtonGroup } from "./ui/controls";
 
 export function GridResizer({
   ref,
   style,
   viewportHeight,
+  previewWidth,
   heading,
   rows,
   columns,
@@ -17,6 +24,7 @@ export function GridResizer({
   ref?: Ref<HTMLDivElement>;
   style?: CSSProperties;
   viewportHeight?: number;
+  previewWidth?: number;
   heading?: ReactNode;
   rows: number;
   columns: number;
@@ -25,30 +33,67 @@ export function GridResizer({
   children: ReactNode;
 }) {
   const dimensions = { rows, columns };
+  const contentRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const columnControlsRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    const viewport = viewportRef.current;
+    const controls = columnControlsRef.current;
+    const area = content?.parentElement;
+    if (!content || !viewport || !controls || !area) return;
+    const update = () => {
+      const grid = viewport.getBoundingClientRect();
+      const frame = area.getBoundingClientRect();
+      controls.style.setProperty(
+        "--column-control-offset",
+        `${grid.top + viewport.clientHeight / 2 - frame.top - frame.height / 2}px`,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(content);
+    observer.observe(viewport);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [viewportHeight, previewWidth]);
   return (
     <div
       ref={ref}
       style={style}
       data-resize-frame
-      className="tw:grid tw:grid-cols-[minmax(0,1fr)_44px] tw:gap-[8px]"
+      className="tw:grid tw:grid-cols-[44px_minmax(0,1fr)_44px] tw:grid-rows-[minmax(0,1fr)_44px] tw:gap-[8px]"
     >
-      <div className="tw:col-start-1 tw:row-start-1 tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--gap,0px)] tw:[container-type:inline-size]">
-        {heading}
+      <div className="tw:col-start-2 tw:row-start-1 tw:flex tw:min-h-0 tw:min-w-0 tw:items-center tw:justify-center">
         <div
-          data-canvas-viewport
-          className="tw:min-w-0 tw:overflow-auto tw:overscroll-contain tw:[scrollbar-gutter:stable]"
-          style={{ height: viewportHeight }}
+          ref={contentRef}
+          data-preview-content
+          style={{ width: previewWidth, maxWidth: "100%" }}
+          className="tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--heading-gap,0px)] tw:[container-type:inline-size]"
         >
-          {children}
+          {heading && (
+            <div className="tw:overflow-hidden tw:px-[var(--grid-padding,0px)] tw:[scrollbar-gutter:stable]">
+              {heading}
+            </div>
+          )}
+          <div
+            ref={viewportRef}
+            data-canvas-viewport
+            className="tw:min-w-0 tw:overflow-auto tw:overscroll-contain tw:[scrollbar-gutter:stable]"
+            style={{ height: viewportHeight }}
+          >
+            {children}
+          </div>
         </div>
       </div>
       {(["columns", "rows"] as const).map((dimension) => (
         <div
           key={dimension}
+          ref={dimension === "columns" ? columnControlsRef : undefined}
           className={
             dimension === "columns"
-              ? "tw:col-start-2 tw:row-start-1 tw:flex tw:items-center tw:justify-center"
-              : "tw:col-start-1 tw:row-start-2 tw:flex tw:items-center tw:justify-center"
+              ? "tw:col-start-3 tw:row-start-1 tw:flex tw:items-center tw:justify-center tw:translate-y-[var(--column-control-offset,0px)]"
+              : "tw:col-start-2 tw:row-start-2 tw:flex tw:items-center tw:justify-center tw:translate-x-[var(--row-control-offset,0px)]"
           }
         >
           <ButtonGroup
@@ -65,7 +110,14 @@ export function GridResizer({
                 change > 0
                   ? `Maximum ${gridLimit} ${dimension}`
                   : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
-              const Icon = change > 0 ? Plus : Minus;
+              const Arrow =
+                dimension === "columns"
+                  ? change > 0
+                    ? ArrowRight
+                    : ArrowLeft
+                  : change > 0
+                    ? ArrowDown
+                    : ArrowUp;
               return (
                 <Button
                   key={change}
@@ -77,7 +129,7 @@ export function GridResizer({
                     onResize(dimension, dimensions[dimension] + change)
                   }
                 >
-                  <Icon aria-hidden="true" />
+                  <Arrow aria-hidden="true" className="tw:size-[22px]!" />
                 </Button>
               );
             })}
@@ -87,7 +139,7 @@ export function GridResizer({
       {onUndo && (
         <Button
           variant="icon"
-          className="tw:col-start-2 tw:row-start-2"
+          className="tw:col-start-3 tw:row-start-2"
           aria-label="Undo grid resize"
           title="Undo grid resize"
           onClick={onUndo}
@@ -96,53 +148,5 @@ export function GridResizer({
         </Button>
       )}
     </div>
-  );
-}
-
-export function RemovedCells({
-  entries,
-  assets,
-  onRecover,
-}: {
-  entries: OverflowCell[];
-  assets: Asset[];
-  onRecover: (entry: OverflowCell) => void;
-}) {
-  const occupied = entries.filter(
-    (entry) => entry.cell.assetId || entry.cell.title,
-  );
-  if (!occupied.length) return null;
-  return (
-    <section aria-label="Removed cells" className="tw:mt-4">
-      <h2>Removed cells</h2>
-      <div className="tw:mt-2 tw:grid tw:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] tw:gap-2">
-        {occupied.map((entry) => {
-          const asset = assets.find((item) => item.id === entry.cell.assetId);
-          const title = entry.cell.title || asset?.title || "Untitled cell";
-          const label = `Restore cell: ${title}`;
-          return (
-            <Button
-              key={entry.cell.id}
-              className="tw:min-h-[44px] tw:min-w-0 tw:justify-start"
-              aria-label={label}
-              title={label}
-              onClick={() => onRecover(entry)}
-            >
-              {asset && (
-                <img
-                  src={asset.src}
-                  alt=""
-                  className="tw:size-[32px] tw:shrink-0 tw:object-contain"
-                />
-              )}
-              <span className="tw:min-w-0 tw:flex-1 tw:break-words tw:text-left">
-                {title}
-              </span>
-              <Undo2 aria-hidden="true" />
-            </Button>
-          );
-        })}
-      </div>
-    </section>
   );
 }

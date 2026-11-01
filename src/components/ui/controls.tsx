@@ -113,40 +113,74 @@ export function SelectField({
   value,
   options,
   onChange,
+  compact = false,
 }: {
   id: string;
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; icon?: LucideIcon }[];
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
+  const selected = options.find((option) => option.value === value);
+  const SelectedIcon = selected?.icon;
   return (
     <Listbox value={value} onChange={onChange}>
-      <ListboxLabel className="field-label">{label}</ListboxLabel>
+      <ListboxLabel className={compact ? "tw:sr-only" : "field-label"}>
+        {label}
+      </ListboxLabel>
       <ListboxButton
         id={id}
-        className="tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:data-hover:border-(--accent)"
+        title={compact ? `${label}: ${selected?.label ?? value}` : undefined}
+        className={clsx(
+          "tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:data-hover:border-(--accent)",
+          compact && "tw:h-[44px] tw:px-2! tw:py-0!",
+        )}
       >
-        <span className="tw:min-w-0 tw:break-words">
-          {options.find((option) => option.value === value)?.label ?? value}
+        {SelectedIcon && (
+          <SelectedIcon
+            aria-hidden="true"
+            className="tw:size-[18px] tw:shrink-0"
+          />
+        )}
+        <span
+          className={
+            compact
+              ? "tw:min-w-0 tw:truncate tw:text-[12px] tw:max-[600px]:sr-only"
+              : "tw:min-w-0 tw:break-words"
+          }
+        >
+          {selected?.label ?? value}
         </span>
         <ChevronDown aria-hidden="true" className="tw:size-4 tw:shrink-0" />
       </ListboxButton>
       <ListboxOptions
         anchor="bottom"
         modal={false}
-        className="tw:z-70 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]"
+        className={clsx(
+          "tw:z-70 tw:w-(--button-width) tw:max-w-[calc(100vw-24px)] tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:p-1 tw:[--anchor-gap:4px] tw:[--anchor-padding:12px]",
+          compact && "tw:min-w-[170px]",
+        )}
       >
-        {options.map((option) => (
-          <ListboxOption
-            key={option.value}
-            value={option.value}
-            data-value={option.value}
-            className="tw:flex tw:min-h-[44px] tw:items-center tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
-          >
-            {option.label}
-          </ListboxOption>
-        ))}
+        {options.map((option) => {
+          const OptionIcon = option.icon;
+          return (
+            <ListboxOption
+              key={option.value}
+              value={option.value}
+              data-value={option.value}
+              className="tw:flex tw:min-h-[44px] tw:items-center tw:gap-2 tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
+            >
+              {OptionIcon && (
+                <OptionIcon
+                  aria-hidden="true"
+                  className="tw:size-[18px] tw:shrink-0"
+                />
+              )}
+              {option.label}
+            </ListboxOption>
+          );
+        })}
       </ListboxOptions>
     </Listbox>
   );

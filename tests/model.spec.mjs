@@ -224,7 +224,11 @@ test("visual crops preserve originals and share full-box source rectangles", () 
 });
 
 test("multiline caption geometry grows shared bands without changing image ratios", () => {
-  const style = model.makeWorkspace().grid;
+  const style = {
+    ...model.makeWorkspace().grid,
+    imageAspect: "square",
+    captionPlacement: "below",
+  };
   expect(model.cellGeometry(style, 600, 6)).toMatchObject({
     imageHeight: 600,
     captionHeight: 482,
@@ -309,6 +313,16 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
     }).success,
   ).toBe(false);
   const defaults = model.getEditorSettings(model.makeWorkspace()).style;
+  expect(defaults).toMatchObject({
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    captionAlignment: "bottom",
+  });
+  expect(model.cellGeometry(defaults, 600)).toMatchObject({
+    imageHeight: 800,
+    captionTop: 662,
+    height: 800,
+  });
   const reset = model.resetWorkspace(workspace);
   expect(model.getEditorSettings(reset).style).toEqual(defaults);
   expect(reset.assets).toEqual(workspace.assets);
@@ -319,8 +333,9 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
     template: "Editorial",
     defaults,
   });
-  expect(switched.grid.imageAspect).toBeUndefined();
-  expect(switched.grid.captionPlacement).toBeUndefined();
+  expect(switched.grid.imageAspect).toBe("portrait");
+  expect(switched.grid.captionPlacement).toBe("overlay");
+  expect(switched.grid.captionAlignment).toBe("bottom");
   const returned = model.documentReducer(switched, {
     type: "grid/template",
     gridId: workspace.grid.id,
@@ -332,6 +347,63 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
     ...settings.style,
     template: "Clean",
   });
+});
+
+test("independent spacing and background settings roundtrip and reset", () => {
+  const workspace = localWorkspace();
+  const settings = model.getEditorSettings(workspace);
+  Object.assign(settings.style, {
+    gap: 60,
+    headingGap: 39,
+    gridPadding: 30,
+    canvasPadding: 24,
+    canvasBackgroundColor: "#d9e7f0",
+    headingBackgroundColor: "#114455",
+    cellBackgroundColor: "#335577",
+  });
+  const restored = model.applyEditorSettings(workspace, settings);
+  expect(model.getEditorSettings(restored)).toEqual(settings);
+  expect(model.gridSpacing(restored.grid, 150)).toEqual({
+    gap: 15,
+    headingGap: 9.75,
+    padding: 7.5,
+  });
+  expect(model.gridSpacing(restored.grid, 300)).toEqual({
+    gap: 30,
+    headingGap: 19.5,
+    padding: 15,
+  });
+  expect(restored.assets).toBe(workspace.assets);
+  expect(restored.grid.cells).toEqual(workspace.grid.cells);
+  for (const invalid of [
+    { gap: 61 },
+    { headingGap: 61 },
+    { gridPadding: 61 },
+    { canvasPadding: 49 },
+    { headingBackgroundColor: "invalid" },
+    { cellBackgroundColor: "invalid" },
+  ]) {
+    expect(
+      model.editorSettingsSchema.safeParse({
+        ...settings,
+        style: { ...settings.style, ...invalid },
+      }).success,
+    ).toBe(false);
+  }
+  const reset = model.resetWorkspace(restored);
+  expect(model.gridSpacing(reset.grid, 600)).toEqual({
+    gap: 12,
+    headingGap: 12,
+    padding: 12,
+  });
+  for (const field of [
+    "canvasPadding",
+    "canvasBackgroundColor",
+    "headingBackgroundColor",
+    "cellBackgroundColor",
+  ]) {
+    expect(reset.grid[field]).toBeUndefined();
+  }
 });
 
 test("settings boundary extracts only allowlisted configuration and detached values", () => {
@@ -634,45 +706,6 @@ test("document import commands use latest cell IDs and retain media for stale de
     }),
   ).toBe(stale);
   expect(model.workspaceSchema.safeParse(stale).success).toBe(true);
-});
-
-test("document recovery commands swap latest archived content without losing displaced edits", () => {
-  const workspace = localWorkspace();
-  const target = workspace.grid.cells[0];
-  const archived = workspace.grid.cells[15];
-  const shrunk = model.documentReducer(
-    workspace,
-    model.createResizeCommand(workspace.grid.id, 3, 3),
-  );
-  const edited = model.documentReducer(shrunk, {
-    type: "cell/patch",
-    gridId: workspace.grid.id,
-    cellId: target.id,
-    patch: { title: "Keep displaced edit" },
-  });
-  const recovered = model.documentReducer(edited, {
-    type: "cell/recover",
-    gridId: workspace.grid.id,
-    cellId: target.id,
-    overflowCellId: archived.id,
-  });
-  expect(recovered.grid.cells[0]).toMatchObject({
-    id: target.id,
-    title: "Private caption",
-    assetId: workspace.assets[0].id,
-  });
-  expect(
-    recovered.grid.overflow.find((entry) => entry.cell.id === archived.id)?.cell
-      .title,
-  ).toBe("Keep displaced edit");
-  expect(model.workspaceSchema.safeParse(recovered).success).toBe(true);
-  expect(
-    model.documentReducer(recovered, {
-      type: "cell/clear",
-      gridId: recovered.grid.id,
-      cellId: crypto.randomUUID(),
-    }),
-  ).toBe(recovered);
 });
 
 test("document batch imports and example replacement retain latest media and preferences", () => {

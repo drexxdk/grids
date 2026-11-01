@@ -75,13 +75,26 @@ export interface GridStyle {
   cellFontSize?: number;
   headingTextColor?: string;
   cellTextColor?: string;
+  headingBackgroundColor?: string;
+  cellBackgroundColor?: string;
   gap: number;
+  headingGap?: number;
+  gridPadding?: number;
+  canvasPadding?: number;
+  canvasBackgroundColor?: string;
   background: string;
   imageAspect?: "portrait" | "landscape" | "square";
   captionPlacement?: "above" | "below" | "overlay";
   captionAlignment?: "top" | "middle" | "bottom";
   captionOverlayColor?: string;
   captionOverlayOpacity?: number;
+}
+export function gridSpacing(style: GridStyle, width: number) {
+  return {
+    gap: (style.gap * width) / 600,
+    headingGap: ((style.headingGap ?? style.gap) * width) / 600,
+    padding: ((style.gridPadding ?? style.gap) * width) / 600,
+  };
 }
 export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
   const aspectRatio =
@@ -195,12 +208,6 @@ export type DocumentCommand =
       targetCellId: string;
     }
   | {
-      type: "cell/recover";
-      gridId: string;
-      cellId: string;
-      overflowCellId: string;
-    }
-  | {
       type: "grid/resize";
       gridId: string;
       rows: number;
@@ -237,9 +244,14 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   headingVisible: true,
   headingFont: "Manrope",
   cellFont: "Manrope",
+  imageAspect: "portrait",
+  captionPlacement: "overlay",
+  captionAlignment: "bottom",
   rows: 3,
   columns: 3,
   gap: 12,
+  headingGap: 12,
+  gridPadding: 12,
   background: "#17191b",
   cells: Array.from({ length: 9 }, (_, index) => makeCell(assets[index])),
   overflow: [],
@@ -320,7 +332,22 @@ const styleSchema = z.strictObject({
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
     .optional(),
-  gap: z.number().min(0).max(40),
+  headingBackgroundColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  cellBackgroundColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  gap: z.number().min(0).max(60),
+  headingGap: z.number().min(0).max(60).optional(),
+  gridPadding: z.number().min(0).max(60).optional(),
+  canvasPadding: z.number().min(0).max(48).optional(),
+  canvasBackgroundColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
   background: z.string().regex(/^#[0-9a-f]{6}$/i),
   imageAspect: z.enum(["portrait", "landscape", "square"]).optional(),
   captionPlacement: z.enum(["above", "below", "overlay"]).optional(),
@@ -381,7 +408,23 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       ...(grid.cellTextColor !== undefined
         ? { cellTextColor: grid.cellTextColor }
         : {}),
+      ...(grid.headingBackgroundColor !== undefined
+        ? { headingBackgroundColor: grid.headingBackgroundColor }
+        : {}),
+      ...(grid.cellBackgroundColor !== undefined
+        ? { cellBackgroundColor: grid.cellBackgroundColor }
+        : {}),
       gap: grid.gap,
+      ...(grid.headingGap !== undefined ? { headingGap: grid.headingGap } : {}),
+      ...(grid.gridPadding !== undefined
+        ? { gridPadding: grid.gridPadding }
+        : {}),
+      ...(grid.canvasPadding !== undefined
+        ? { canvasPadding: grid.canvasPadding }
+        : {}),
+      ...(grid.canvasBackgroundColor !== undefined
+        ? { canvasBackgroundColor: grid.canvasBackgroundColor }
+        : {}),
       background: grid.background,
       ...(grid.imageAspect !== undefined
         ? { imageAspect: grid.imageAspect }
@@ -419,6 +462,12 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
     cellFontSize: style.cellFontSize,
     headingTextColor: style.headingTextColor,
     cellTextColor: style.cellTextColor,
+    headingBackgroundColor: style.headingBackgroundColor,
+    cellBackgroundColor: style.cellBackgroundColor,
+    headingGap: style.headingGap,
+    gridPadding: style.gridPadding,
+    canvasPadding: style.canvasPadding,
+    canvasBackgroundColor: style.canvasBackgroundColor,
     ...style,
   };
 }
@@ -767,24 +816,6 @@ export function documentReducer(
             : cell.id === target.id
               ? { ...source, id: target.id }
               : cell,
-        ),
-      });
-    }
-    case "cell/recover": {
-      const target = grid.cells.find((cell) => cell.id === command.cellId);
-      const archived = grid.overflow.find(
-        (entry) => entry.cell.id === command.overflowCellId,
-      );
-      if (!target || !archived) return workspace;
-      return withGrid({
-        ...grid,
-        cells: grid.cells.map((cell) =>
-          cell.id === target.id ? { ...archived.cell, id: target.id } : cell,
-        ),
-        overflow: grid.overflow.map((entry) =>
-          entry.cell.id === archived.cell.id
-            ? { ...entry, cell: { ...target, id: archived.cell.id } }
-            : entry,
         ),
       });
     }

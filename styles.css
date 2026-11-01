@@ -132,10 +132,8 @@ body {
 html {
   scrollbar-gutter: stable;
 }
-@media (min-width: 901px) {
-  html:has(.app-layout) {
-    scrollbar-gutter: auto;
-  }
+html:has(.app-layout) {
+  scrollbar-gutter: auto;
 }
 html:has(#headlessui-portal-root [role="dialog"][aria-modal="true"]) {
   --fixed-scrollbar-inset: var(--scrollbar-width, 0px);
@@ -271,7 +269,7 @@ h2 {
 .app-layout {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr) 255px;
-  min-height: calc(100vh - 80px);
+  min-height: 100dvh;
 }
 .asset-panel {
   padding: 26px 18px;
@@ -457,7 +455,7 @@ h2 {
   color: var(--text);
 }
 .canvas-area {
-  max-width: 870px;
+  max-width: none;
   padding: 34px 38px 28px;
   margin: auto;
 }
@@ -493,7 +491,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(var(--columns, 2), minmax(0, 1fr));
   gap: var(--gap, 12px);
-  padding: var(--gap, 12px);
+  padding: var(--grid-padding, var(--gap, 12px));
   background: var(--board-bg, #17191b);
   box-shadow: 0 10px 45px #0005;
   container-type: inline-size;
@@ -740,24 +738,6 @@ output {
   width: 100%;
   margin-top: 23px;
 }
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 13px 20px;
-  border: 1px solid #697d47;
-  background: #283023;
-  color: #edf6dc;
-  border-radius: 5px;
-  box-shadow: 0 5px 20px #0005;
-  z-index: 10;
-  max-width: calc(100% - 30px);
-  font-size: 12px;
-}
-.toast[hidden] {
-  display: none;
-}
 @media (min-width: 1600px) {
   .app-layout {
     grid-template-columns: 260px minmax(0, 1fr) 285px;
@@ -802,9 +782,6 @@ output {
   .brand {
     font-size: 26px;
     gap: 8px;
-  }
-  .save-status {
-    display: none;
   }
   .button {
     font-size: 11px;
@@ -927,10 +904,6 @@ output {
     font-size: 8px;
     white-space: normal;
     text-align: right;
-  }
-  .board-grid {
-    gap: min(var(--gap), 10px);
-    padding: min(var(--gap), 10px);
   }
   .canvas-footer {
     font-size: 8px;

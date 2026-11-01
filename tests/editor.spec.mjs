@@ -98,7 +98,9 @@ async function downloadBoard(page) {
   await dialog
     .getByRole("button", { name: "Download image", exact: true })
     .click();
-  return promise;
+  const download = await promise;
+  await expect(dialog).toHaveCount(0);
+  return download;
 }
 
 async function useComicExample(page, publisher = "dc") {
@@ -175,10 +177,58 @@ test("canvas resizing commits fitted dimensions before the next paint", async ({
 test("canvas preview fits both row and column changes without resizing controls", async ({
   page,
 }, testInfo) => {
+  async function checkBounds(locator, expected) {
+    await expect
+      .poll(async () => {
+        const actual = await locator.boundingBox();
+        return Math.max(
+          ...Object.keys(expected).map((key) =>
+            Math.abs(actual[key] - expected[key]),
+          ),
+        );
+      })
+      .toBeLessThan(0.001);
+  }
+  async function checkCenters() {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const viewport = document.querySelector("[data-canvas-viewport]");
+          const grid = viewport.getBoundingClientRect();
+          const rows = document
+            .querySelector('[aria-label="Row controls"]')
+            .getBoundingClientRect();
+          const columns = document
+            .querySelector('[aria-label="Column controls"]')
+            .getBoundingClientRect();
+          const toolbar = document
+            .querySelector('[aria-label="Grid appearance"] > div:last-child')
+            .getBoundingClientRect();
+          return Math.max(
+            Math.abs(columns.left - grid.right - 8),
+            Math.abs(rows.top - grid.bottom - 8),
+            Math.abs(
+              rows.x + rows.width / 2 - grid.x - viewport.clientWidth / 2,
+            ),
+            Math.abs(
+              columns.y +
+                columns.height / 2 -
+                grid.y -
+                viewport.clientHeight / 2,
+            ),
+            Math.abs(
+              toolbar.x + toolbar.width / 2 - grid.x - viewport.clientWidth / 2,
+            ),
+          );
+        }),
+      )
+      .toBeLessThan(1);
+  }
   await page.goto("./");
   await page.locator(".cell-heading").first().fill("Keep caption");
   const original = await savedWorkspace(page);
   for (const viewport of [
+    { width: 1900, height: 1000 },
     { width: 1440, height: 1000 },
     { width: 390, height: 720 },
   ]) {
@@ -190,11 +240,84 @@ test("canvas preview fits both row and column changes without resizing controls"
           .evaluate(
             (frame) =>
               frame.getBoundingClientRect().bottom <=
-              innerHeight - (innerWidth <= 900 ? 160 : 28) + 2,
+              innerHeight -
+                12 -
+                (innerWidth <= 900
+                  ? parseFloat(
+                      getComputedStyle(
+                        document.documentElement,
+                      ).getPropertyValue("--editor-drawer-height"),
+                    ) || 160
+                  : 0) +
+                2,
           ),
       )
       .toBe(true);
+    const canvas = page.locator(".canvas-area");
+    const workspace = page.getByRole("region", {
+      name: "Grid editor",
+      exact: true,
+    });
+    await expect(workspace).toHaveCSS("scrollbar-gutter", "auto");
+    await expect
+      .poll(() =>
+        page.locator("[data-resize-frame]").evaluate((frame) => {
+          const columns =
+            getComputedStyle(frame).gridTemplateColumns.split(" ");
+          return [columns[0], columns[2]];
+        }),
+      )
+      .toEqual(["44px", "44px"]);
+    await checkCenters();
+    await expect
+      .poll(async () => {
+        const bounds = await canvas.boundingBox();
+        const available = await workspace.evaluate((element) => ({
+          width: element.clientWidth,
+          height: element.clientHeight,
+        }));
+        return Math.max(
+          Math.abs(bounds.width - available.width),
+          Math.abs(bounds.height - available.height),
+        );
+      })
+      .toBeLessThan(1);
     const before = await page.locator(".grid-cell").first().boundingBox();
+    const columnControls = page.getByRole("group", {
+      name: "Column controls",
+      exact: true,
+    });
+    const rowControls = page.getByRole("group", {
+      name: "Row controls",
+      exact: true,
+    });
+    const controlPositions = {
+      columns: await columnControls.boundingBox(),
+      rows: await rowControls.boundingBox(),
+      frame: await page.locator("[data-resize-frame]").boundingBox(),
+    };
+    const canvasBounds = await canvas.boundingBox();
+    expect(
+      Math.abs(
+        controlPositions.frame.x +
+          controlPositions.frame.width / 2 -
+          canvasBounds.x -
+          canvasBounds.width / 2,
+      ),
+    ).toBeLessThanOrEqual(8);
+    if (viewport.width <= 900) {
+      const drawer = page.locator("[data-editor-drawer]");
+      await expect(drawer).toHaveCSS("border-top-left-radius", "0px");
+      await expect(drawer).toHaveCSS("border-top-right-radius", "0px");
+      await expect
+        .poll(async () => {
+          const sheet = await drawer.boundingBox();
+          const bounds = await canvas.boundingBox();
+          return Math.abs(bounds.y + bounds.height - sheet.y);
+        })
+        .toBeLessThan(1);
+      expect(Math.abs(canvasBounds.width - viewport.width)).toBeLessThan(1);
+    }
     for (const dimension of ["row", "column"]) {
       await page
         .getByRole("button", { name: `Add ${dimension}`, exact: true })
@@ -208,7 +331,7 @@ test("canvas preview fits both row and column changes without resizing controls"
               .first()
               .evaluate((cell) => cell.getBoundingClientRect().width),
           )
-          .toBeLessThan(before.width - 1);
+          .toBeLessThanOrEqual(before.width + 0.1);
       } else {
         await expect
           .poll(() =>
@@ -226,24 +349,54 @@ test("canvas preview fits both row and column changes without resizing controls"
             .evaluate(
               (frame) =>
                 frame.getBoundingClientRect().bottom <=
-                innerHeight - (innerWidth <= 900 ? 160 : 28) + 2,
+                innerHeight -
+                  12 -
+                  (innerWidth <= 900
+                    ? parseFloat(
+                        getComputedStyle(
+                          document.documentElement,
+                        ).getPropertyValue("--editor-drawer-height"),
+                      ) || 160
+                    : 0) +
+                  2,
             ),
         )
         .toBe(true);
       await expect(page.locator(".cell-heading").first()).toHaveValue(
         "Keep caption",
       );
-      for (const label of [
-        "Add row",
-        "Remove row",
-        "Add column",
-        "Remove column",
+      const columns = await columnControls.boundingBox();
+      expect(columns.width).toBeCloseTo(controlPositions.columns.width, 3);
+      expect(columns.height).toBeCloseTo(controlPositions.columns.height, 3);
+      await checkCenters();
+      const rows = await rowControls.boundingBox();
+      expect(rows.width).toBeCloseTo(controlPositions.rows.width, 3);
+      expect(rows.height).toBeCloseTo(controlPositions.rows.height, 3);
+      for (const [label, direction] of [
+        ["Add row", "down"],
+        ["Remove row", "up"],
+        ["Add column", "right"],
+        ["Remove column", "left"],
       ]) {
-        const bounds = await page
-          .getByRole("button", { name: label, exact: true })
-          .boundingBox();
-        expect(bounds.width).toBe(44);
-        expect(bounds.height).toBe(44);
+        const button = page.getByRole("button", { name: label, exact: true });
+        const bounds = await button.boundingBox();
+        expect(bounds.width).toBeCloseTo(44, 3);
+        expect(bounds.height).toBeCloseTo(44, 3);
+        await expect(button.locator(`.lucide-arrow-${direction}`)).toHaveCount(
+          1,
+        );
+        await expect(button.locator("svg")).toHaveCount(1);
+        for (const icon of await button.locator("svg").all()) {
+          const iconBounds = await icon.boundingBox();
+          expect(iconBounds.x).toBeGreaterThanOrEqual(bounds.x);
+          expect(iconBounds.y).toBeGreaterThanOrEqual(bounds.y);
+          expect(iconBounds.x + iconBounds.width).toBeLessThanOrEqual(
+            bounds.x + bounds.width,
+          );
+          expect(iconBounds.y + iconBounds.height).toBeLessThanOrEqual(
+            bounds.y + bounds.height,
+          );
+        }
       }
       await page.locator("[data-resize-frame]").screenshot({
         path: testInfo.outputPath(`fit-${dimension}-${viewport.width}.png`),
@@ -252,6 +405,8 @@ test("canvas preview fits both row and column changes without resizing controls"
         .getByRole("button", { name: "Undo grid resize", exact: true })
         .click();
       await expect(page.locator(".grid-cell")).toHaveCount(9);
+      await checkBounds(columnControls, controlPositions.columns);
+      await checkBounds(rowControls, controlPositions.rows);
       await expect
         .poll(() =>
           page
@@ -267,6 +422,17 @@ test("canvas preview fits both row and column changes without resizing controls"
       expect((await savedWorkspace(page)).grid.cells).toEqual(
         original.grid.cells,
       );
+    }
+    for (const [id, value] of [
+      ["image-shape", "portrait"],
+      ["image-shape", "landscape"],
+      ["image-shape", "square"],
+      ["caption-position", "above"],
+      ["caption-position", "overlay-bottom"],
+      ["caption-position", "below"],
+    ]) {
+      await selectField(page, id, value);
+      await checkCenters();
     }
     expect(
       await page.evaluate(
@@ -800,6 +966,54 @@ test("empty headings use faded inline placeholders and reserve no export bands",
 test("grid heading uses text-field hover and inline editing on desktop and mobile", async ({
   page,
 }, testInfo) => {
+  async function checkHeadingSurface(trigger) {
+    const heading = page.locator(".board-export-heading");
+    const headingBounds = await heading.boundingBox();
+    const fieldBounds = await trigger.boundingBox();
+    const viewport = page.locator("[data-canvas-viewport]");
+    const firstCellBounds = await page
+      .locator(".grid-cell")
+      .first()
+      .boundingBox();
+    const gridPadding = await page
+      .locator("#board-grid")
+      .evaluate((element) => parseFloat(getComputedStyle(element).paddingLeft));
+    expect(Math.abs(headingBounds.x - firstCellBounds.x)).toBeLessThan(1);
+    expect(
+      Math.abs(
+        headingBounds.width -
+          (await viewport.evaluate((element) => element.clientWidth)) +
+          2 * gridPadding,
+      ),
+    ).toBeLessThan(1);
+    if (
+      await viewport.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      )
+    ) {
+      const lastCellBounds = await page
+        .locator(".grid-cell")
+        .nth(2)
+        .boundingBox();
+      expect(
+        Math.abs(
+          headingBounds.x +
+            headingBounds.width -
+            lastCellBounds.x -
+            lastCellBounds.width,
+        ),
+      ).toBeLessThan(1);
+    }
+    expect(fieldBounds).toEqual(headingBounds);
+    for (const offset of [1, headingBounds.width - 1]) {
+      await page.mouse.move(1, 1);
+      await page.mouse.move(
+        headingBounds.x + offset,
+        headingBounds.y + headingBounds.height / 2,
+      );
+      await expect(trigger).toHaveCSS("background-color", /(?:, |\/ )0\.08\)$/);
+    }
+  }
   await page.goto("./");
   await page
     .getByRole("button", { name: "Edit grid heading", exact: true })
@@ -810,8 +1024,22 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .press("Enter");
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 844 });
+  for (const { width, height } of [
+    { width: 1440, height: 844 },
+    { width: 960, height: 844 },
+    { width: 390, height: 844 },
+    { width: 1440, height: 360 },
+  ]) {
+    await page.setViewportSize({ width, height });
+    if (height === 360) {
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-canvas-viewport]")
+            .evaluate((element) => element.scrollHeight > element.clientHeight),
+        )
+        .toBe(true);
+    }
     const trigger = page.getByRole("button", {
       name: "Edit grid heading",
       exact: true,
@@ -819,6 +1047,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
     await page.mouse.move(1, 1);
     const bounds = await trigger.boundingBox();
     await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await checkHeadingSurface(trigger);
     await trigger.hover();
     await expect(trigger).toHaveCSS("cursor", "text");
     await expect(trigger).toHaveCSS("background-color", /(?:, |\/ )0\.08\)$/);
@@ -849,6 +1078,20 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
     await expect(trigger).toHaveCSS("background-color", /(?:, |\/ )0\.12\)$/);
     await trigger.press("Enter");
     await expect(field).toBeFocused();
+    await field.fill("Team DC");
+    await field.press("Enter");
+    await trigger.click();
+    await field.fill("");
+    await field.press("Enter");
+    await expect(trigger).toHaveText("Add heading");
+    await checkHeadingSurface(trigger);
+    await page.locator(".board-export-heading").screenshot({
+      path: testInfo.outputPath(`empty-heading-edge-hover-${width}.png`),
+    });
+    await trigger.click();
+    expect(await field.boundingBox()).toEqual(
+      await page.locator(".board-export-heading").boundingBox(),
+    );
     await field.fill("Team DC");
     await field.press("Enter");
   }
@@ -1030,7 +1273,86 @@ test("button groups join edges with single dividers and outer-only corners", asy
   }
 });
 
-test("header export combines settings and downloads on desktop and mobile", async ({
+test("canvas controls align with the grid and sidebar headers stay fixed", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await useComicExample(page);
+  for (const width of [1440, 960, 780, 390, 320]) {
+    await page.setViewportSize({ width, height: 600 });
+    const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
+    const frame = page.locator("[data-resize-frame]");
+    const trigger = page.getByRole("button", {
+      name: "Export grid",
+      exact: true,
+    });
+    await expect(page.locator(".app-header")).toHaveCount(0);
+    await expect(trigger).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const controls = await toolbar.boundingBox();
+        const grid = await frame.boundingBox();
+        return Math.max(
+          Math.abs(controls.x - grid.x),
+          Math.abs(controls.width - grid.width),
+        );
+      })
+      .toBeLessThan(1);
+    if (width > 900) {
+      for (const selector of [".asset-panel", ".settings-panel"]) {
+        const aside = page.locator(selector);
+        const header = aside.locator("[data-sidebar-header]");
+        const before = await header.boundingBox();
+        expect((await aside.boundingBox()).y).toBe(0);
+        expect((await aside.boundingBox()).height).toBe(600);
+        const scroller = aside.locator("[data-sidebar-content]");
+        expect(
+          await scroller.evaluate(
+            (element) => element.scrollHeight > element.clientHeight,
+          ),
+        ).toBe(true);
+        await scroller.evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        expect(
+          await scroller.evaluate((element) => element.scrollTop),
+        ).toBeGreaterThan(0);
+        expect(await header.boundingBox()).toEqual(before);
+      }
+      await expect(trigger).toBeInViewport({ ratio: 1 });
+    } else {
+      await page
+        .getByRole("button", { name: "Text on image", exact: true })
+        .click();
+      const controls = await toolbar.boundingBox();
+      const button = await trigger.boundingBox();
+      expect(button.width).toBe(44);
+      expect(button.height).toBe(44);
+      expect(Math.abs(button.y - controls.y)).toBeLessThan(1);
+      expect(
+        Math.abs(button.x + button.width - controls.x - controls.width),
+      ).toBeLessThan(1);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(`fixed-sidebar-aligned-canvas-${width}.png`),
+    });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", {
+      name: "Export grid",
+      exact: true,
+    });
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+});
+
+test("export combines settings and downloads on desktop and mobile", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -2230,11 +2552,381 @@ test("touch crop editor fills the viewport and keeps portrait controls usable", 
   await context.close();
 });
 
+test("single-item previews stay capped with grid-connected controls on large monitors", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 3840, height: 2160 });
+  await page.goto("./");
+  for (const dimension of ["row", "column"]) {
+    for (let count = 0; count < 2; count++)
+      await page
+        .getByRole("button", { name: `Remove ${dimension}`, exact: true })
+        .click();
+  }
+  await expect(page.locator(".grid-cell")).toHaveCount(1);
+  for (const shape of ["portrait", "landscape", "square"]) {
+    await selectField(page, "image-shape", shape);
+    await expect
+      .poll(() =>
+        page
+          .locator(".grid-cell")
+          .evaluate((cell) => cell.getBoundingClientRect().width),
+      )
+      .toBeCloseTo(320, 1);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const frame = document
+            .querySelector("[data-resize-frame]")
+            .getBoundingClientRect();
+          const canvas = document.querySelector(".canvas-area");
+          const canvasBounds = canvas.getBoundingClientRect();
+          const canvasStyle = getComputedStyle(canvas);
+          const center =
+            canvasBounds.left +
+            (canvas.clientWidth +
+              parseFloat(canvasStyle.paddingLeft) -
+              parseFloat(canvasStyle.paddingRight)) /
+              2;
+          const viewport = document
+            .querySelector("[data-canvas-viewport]")
+            .getBoundingClientRect();
+          const columns = document
+            .querySelector('[aria-label="Column controls"]')
+            .getBoundingClientRect();
+          const rows = document
+            .querySelector('[aria-label="Row controls"]')
+            .getBoundingClientRect();
+          return Math.max(
+            Math.abs(frame.left + frame.width / 2 - center),
+            Math.abs(columns.left - viewport.right - 8),
+            Math.abs(rows.top - viewport.bottom - 8),
+            Math.abs(frame.width - viewport.width - 104),
+          );
+        }),
+      )
+      .toBeLessThan(1);
+  }
+  await page
+    .locator(".canvas-area")
+    .screenshot({ path: testInfo.outputPath("single-item-large-monitor.png") });
+  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  await expect(page.locator(".grid-cell")).toHaveCount(2);
+  await expect
+    .poll(() =>
+      page
+        .locator(".grid-cell")
+        .first()
+        .evaluate((cell) => cell.getBoundingClientRect().width),
+    )
+    .toBeCloseTo(320, 1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page
+        .locator(".grid-cell")
+        .first()
+        .evaluate((cell) => cell.getBoundingClientRect().width),
+    )
+    .toBeCloseTo(128, 1);
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-canvas-viewport]")
+        .evaluate((viewport) => viewport.scrollWidth > viewport.clientWidth),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.locator(".cell-heading").nth(1).fill("Removed caption");
+  await page
+    .getByRole("button", { name: "Remove column", exact: true })
+    .click();
+  await expect(page.locator(".grid-cell")).toHaveCount(1);
+  expect(
+    (await savedWorkspace(page)).grid.overflow.some(
+      (entry) => entry.cell.title === "Removed caption",
+    ),
+  ).toBe(true);
+  await expect(
+    page.getByRole("region", { name: "Removed cells", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Restore cell:/ }),
+  ).toHaveCount(0);
+  await reloadWorkspace(page);
+  await expect(
+    page.getByRole("region", { name: "Removed cells", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Restore cell:/ }),
+  ).toHaveCount(0);
+});
+
+test("only failures show separated top-right Sonner notifications", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("./");
+  const notices = page.locator("[data-sonner-toast]");
+  await expect(notices).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Reset grid settings", exact: true })
+    .getByRole("button", { name: "Reset settings", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(notices).toHaveCount(0);
+  await downloadBoard(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(notices).toHaveCount(0);
+  await page.getByRole("button", { name: "Load example", exact: true }).click();
+  await page.getByRole("button", { name: "Use example", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(notices).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.locator("#upload").setInputFiles(
+      ["first", "second", "third"].map((name) => ({
+        name: `${name}.svg`,
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from("not an image"),
+      })),
+    );
+    await expect(notices).toHaveCount(3);
+    for (const name of ["first", "second", "third"])
+      await expect(
+        notices.filter({ hasText: `Could not load ${name}.svg` }),
+      ).toHaveCount(1);
+    await expect(page.locator("[data-sonner-toaster]")).toHaveAttribute(
+      "data-y-position",
+      "top",
+    );
+    await expect(page.locator("[data-sonner-toaster]")).toHaveAttribute(
+      "data-x-position",
+      "right",
+    );
+    await expect
+      .poll(async () =>
+        notices.evaluateAll((elements) => {
+          const bounds = elements
+            .map((element) => element.getBoundingClientRect())
+            .sort((first, second) => first.top - second.top);
+          return bounds.every(
+            (rect, index) =>
+              rect.left >= 0 &&
+              rect.right <= innerWidth &&
+              rect.top >= 0 &&
+              rect.bottom < innerHeight / 2 &&
+              (index === 0 || rect.top >= bounds[index - 1].bottom + 8),
+          );
+        }),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`error-notifications-${width}.png`),
+    });
+    for (const name of ["first", "second", "third"])
+      await notices
+        .filter({ hasText: `Could not load ${name}.svg` })
+        .getByRole("button", { name: "Close toast", exact: true })
+        .click();
+    await expect(notices).toHaveCount(0);
+  }
+});
+
+test("independent spacing and canvas backgrounds match preview and export", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("./");
+  await selectField(page, "image-shape", "square");
+  await selectField(page, "caption-position", "below");
+  await page.locator(".cell-heading").first().fill("Blue");
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .fill("Title");
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .press("Enter");
+  async function ratios() {
+    return page.evaluate(() => {
+      const grid = document.querySelector("#board-grid");
+      const style = getComputedStyle(grid);
+      const cell = grid.firstElementChild.getBoundingClientRect();
+      const viewport = document
+        .querySelector("[data-canvas-viewport]")
+        .getBoundingClientRect();
+      const heading = document
+        .querySelector(".board-export-heading")
+        .getBoundingClientRect();
+      return {
+        gap: Math.round((parseFloat(style.columnGap) / cell.width) * 1000) / 10,
+        padding:
+          Math.round((parseFloat(style.paddingLeft) / cell.width) * 1000) / 10,
+        heading:
+          Math.round(((viewport.top - heading.bottom) / cell.width) * 1000) /
+          10,
+      };
+    });
+  }
+  const expected = { gap: 2, padding: 2, heading: 2 };
+  await expect.poll(ratios).toEqual(expected);
+  for (const [id, key, value] of [
+    ["heading-gap", "heading", 6.5],
+    ["grid-padding", "padding", 5],
+    ["gap", "gap", 10],
+  ]) {
+    await page.locator(`#${id}`).fill(String(value));
+    expected[key] = value;
+    await expect.poll(ratios).toEqual(expected);
+    await expect(page.locator(`#${id}-value`)).toHaveText(`${value}%`);
+  }
+  await page.locator("#canvas-background-color-value").fill("#d9e7f0");
+  await page.locator("#canvas-padding").fill("24");
+  await page.locator("#heading-background-color-value").fill("#114455");
+  await page.locator("#cell-background-color-value").fill("#335577");
+  const cardStyle = page.getByRole("group", {
+    name: "Card style",
+    exact: true,
+  });
+  await expect(cardStyle.locator("#caption-overlay-value")).toBeVisible();
+  await expect(cardStyle.locator("#caption-opacity")).toBeEnabled();
+  await cardStyle.locator("#caption-overlay-value").fill("#7700bb");
+  await cardStyle.locator("#caption-opacity").fill("35");
+  await page.mouse.move(0, 0);
+  await expect(page.locator(".workspace")).toHaveCSS(
+    "background-color",
+    "rgb(217, 231, 240)",
+  );
+  await expect(page.locator(".canvas-area")).toHaveCSS("padding-left", "24px");
+  await expect(page.locator(".board-export-heading")).toHaveCSS(
+    "background-color",
+    "rgb(17, 68, 85)",
+  );
+  await expect(page.locator(".grid-cell").first()).toHaveCSS(
+    "background-color",
+    "rgb(51, 85, 119)",
+  );
+  await expect(page.locator(".cell-heading").first()).toHaveCSS(
+    "background-color",
+    "rgb(51, 85, 119)",
+  );
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  const download = await downloadBoard(page);
+  const bytes = await readFile(await download.path());
+  const pixels = await page.evaluate(
+    async (bytes) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      const sample = (left, top) => [
+        ...context.getImageData(left, top, 1, 1).data,
+      ];
+      const result = {
+        width: bitmap.width,
+        height: bitmap.height,
+        heading: sample(13, 5),
+        card: sample(13, 65),
+        caption: sample(13, 215),
+        padding: sample(1, 53),
+        gap: sample(163, 65),
+      };
+      bitmap.close();
+      return result;
+    },
+    [...bytes],
+  );
+  expect(pixels).toEqual({
+    width: 496,
+    height: 583,
+    heading: [17, 68, 85, 255],
+    card: [51, 85, 119, 255],
+    caption: [51, 85, 119, 255],
+    padding: [23, 25, 27, 255],
+    gap: [23, 25, 27, 255],
+  });
+  await page.locator("#canvas-background-color-value").fill("#eef2f5");
+  await page.locator("#canvas-padding").fill("48");
+  const unchanged = await downloadBoard(page);
+  expect(await readFile(await unchanged.path())).toEqual(bytes);
+  await reloadWorkspace(page);
+  expect((await savedWorkspace(page)).grid).toMatchObject({
+    gap: 60,
+    headingGap: 39,
+    gridPadding: 30,
+    canvasPadding: 48,
+    canvasBackgroundColor: "#eef2f5",
+    headingBackgroundColor: "#114455",
+    cellBackgroundColor: "#335577",
+    captionOverlayColor: "#7700bb",
+    captionOverlayOpacity: 35,
+  });
+  await expect.poll(ratios).toEqual(expected);
+  await page
+    .getByRole("group", { name: "Canvas style", exact: true })
+    .screenshot({ path: testInfo.outputPath("canvas-style-desktop.png") });
+  await cardStyle.screenshot({
+    path: testInfo.outputPath("card-style-desktop.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(ratios).toEqual(expected);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await expect(cardStyle.locator("#caption-overlay-value")).toBeVisible();
+  await expect(cardStyle.locator("#caption-opacity")).toBeEnabled();
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input,textarea"),
+    ),
+  ).toBe(false);
+  await cardStyle.locator("#caption-overlay-value").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("canvas-card-style-mobile.png"),
+  });
+});
+
 test("appearance toolbar preserves content and matches exported ratios and captions", async ({
   page,
 }, testInfo) => {
   test.setTimeout(60000);
   await page.goto("./");
+  const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
+  await expect(page.locator("#image-shape")).toHaveText("Portrait");
+  await expect(page.locator("#caption-position")).toHaveText("Overlay bottom");
+  await expect(toolbar.getByRole("button")).toHaveCount(2);
+  await page.locator("#caption-position").click();
+  await expect(page.getByRole("option")).toHaveCount(4);
+  await expect(
+    page.getByRole("option", { name: /middle|center/i }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await page.locator("#image-shape").focus();
+  await page.locator("#image-shape").press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#image-shape")).toHaveText("Landscape");
+  await selectField(page, "image-shape", "portrait");
   await page.locator("#upload").setInputFiles({
     name: "solid.svg",
     mimeType: "image/svg+xml",
@@ -2248,13 +2940,12 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   await page.locator(".asset").dragTo(image);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await image.hover();
-  await caption.fill("");
+  await caption.fill("Blue");
   const identity = (await savedWorkspace(page)).grid.cells[0];
   await page.locator("#export-grid-header").click();
   await selectField(page, "resolution", "150");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
   async function pixels(imageHeight, placement, alignment = "bottom") {
     const captionHeight = 35;
     const captionTop =
@@ -2298,7 +2989,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
     );
     expect(result.width).toBe(462);
     expect(result.height).toBe(
-      3 * (imageHeight + (placement === "overlay" ? 0 : captionHeight)) + 12,
+      3 * imageHeight + (placement === "overlay" ? 0 : captionHeight) + 12,
     );
     expect(result.image).toEqual([64, 100, 200, 255]);
     return result.caption;
@@ -2308,22 +2999,14 @@ test("appearance toolbar preserves content and matches exported ratios and capti
     ["Landscape", 4 / 3, 113],
     ["Square", 1, 150],
   ]) {
-    await toolbar
-      .getByRole("button", { name: `${aspect} images`, exact: true })
-      .click();
-    await expect(
-      toolbar.getByRole("button", { name: `${aspect} images`, exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await selectField(page, "image-shape", aspect.toLowerCase());
+    await expect(page.locator("#image-shape")).toHaveText(aspect);
     for (const placement of ["above", "below", "overlay"]) {
-      await toolbar
-        .getByRole("button", {
-          name:
-            placement === "overlay"
-              ? "Text on image"
-              : `Text ${placement} image`,
-          exact: true,
-        })
-        .click();
+      await selectField(
+        page,
+        "caption-position",
+        placement === "overlay" ? "overlay-bottom" : placement,
+      );
       const bounds = await image.boundingBox();
       expect(Math.abs(bounds.width / bounds.height - ratio)).toBeLessThan(
         0.015,
@@ -2335,14 +3018,11 @@ test("appearance toolbar preserves content and matches exported ratios and capti
         expect(field.y).toBeCloseTo(bounds.y + bounds.height, 0);
       if (placement !== "overlay") {
         await expect(
-          toolbar.getByRole("group", { name: "Caption alignment" }),
+          toolbar.getByRole("button", { name: "Text overlay settings" }),
         ).toHaveCount(0);
         expect(await pixels(imageHeight, placement)).toEqual([32, 35, 37, 255]);
         continue;
       }
-      await toolbar
-        .getByRole("button", { name: "Text overlay settings" })
-        .click();
       await expect(
         page.getByRole("textbox", {
           name: "Overlay color hex value",
@@ -2353,11 +3033,11 @@ test("appearance toolbar preserves content and matches exported ratios and capti
         .getByRole("textbox", { name: "Overlay color hex value", exact: true })
         .fill("#00ff00");
       await page.locator("#caption-opacity").fill("50");
-      await page.locator("#caption-opacity").press("Escape");
-      for (const alignment of ["top", "middle", "bottom"]) {
-        await toolbar
-          .getByRole("button", { name: `Text at ${alignment}`, exact: true })
-          .click();
+      for (const alignment of ["top", "bottom"]) {
+        await selectField(page, "caption-position", `overlay-${alignment}`);
+        await expect(
+          page.locator(`#caption-position .lucide-panel-${alignment}-dashed`),
+        ).toHaveCount(1);
         const imageBounds = await image.boundingBox();
         const captionBounds = await caption.boundingBox();
         const expected =
@@ -2401,11 +3081,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
     [0, [64, 100, 200, 255]],
     [100, [0, 255, 0, 255]],
   ]) {
-    await toolbar
-      .getByRole("button", { name: "Text overlay settings" })
-      .click();
     await page.locator("#caption-opacity").fill(String(opacity));
-    await page.locator("#caption-opacity").press("Escape");
     expect(await pixels(150, "overlay")).toEqual(expected);
   }
   await caption.fill("A surprisingly long caption that remains editable");
@@ -2436,6 +3112,28 @@ test("appearance toolbar preserves content and matches exported ratios and capti
     captionOverlayOpacity: 100,
   });
   await page.setViewportSize({ width: 390, height: 844 });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator("#image-shape")).toHaveAccessibleName(
+      "Image shape Square",
+    );
+    await expect(page.locator("#caption-position")).toHaveAccessibleName(
+      "Caption position Overlay bottom",
+    );
+    await expect
+      .poll(() =>
+        toolbar.evaluate((element) => element.getBoundingClientRect().height),
+      )
+      .toBeLessThanOrEqual(45);
+    await page.locator("#caption-position").click();
+    await expect(page.getByRole("option")).toHaveCount(4);
+    const menu = await page.getByRole("listbox").boundingBox();
+    expect(menu.x).toBeGreaterThanOrEqual(0);
+    expect(menu.x + menu.width).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() =>
       toolbar.evaluate((element) =>
@@ -2456,7 +3154,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await toolbar.getByRole("button", { name: "Text overlay settings" }).click();
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
   const color = page.getByRole("textbox", {
     name: "Overlay color hex value",
     exact: true,
@@ -2466,13 +3164,12 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   const colorBounds = await color.boundingBox();
   expect(colorBounds.x).toBeGreaterThanOrEqual(0);
   expect(colorBounds.x + colorBounds.width).toBeLessThanOrEqual(390);
-  await page.locator("#caption-opacity").press("Escape");
-  await toolbar
-    .getByRole("button", { name: "Landscape images", exact: true })
+  await page
+    .getByRole("button", { name: "Collapse tools", exact: true })
     .click();
-  await toolbar
-    .getByRole("button", { name: "Text at middle", exact: true })
-    .click();
+  await selectField(page, "image-shape", "landscape");
+  await selectField(page, "caption-position", "overlay-bottom");
+  await caption.fill("Blue");
   await image.hover({ position: { x: 5, y: 5 } });
   await expect(
     page.getByRole("group", { name: "Cell tools", exact: true }),
@@ -2662,7 +3359,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
 
 test("bottom drawer stays horizontally fixed through modal open and close", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("./");
   await page.locator("#upload").setInputFiles({
@@ -2675,11 +3372,26 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
   await expect(page.locator(".asset")).toHaveCount(1);
   const drawer = page.locator("[data-editor-drawer]");
   const before = await drawer.boundingBox();
+  await expect(drawer.locator(".section-heading")).toBeHidden();
+  expect(before.x).toBe(0);
+  expect(before.width).toBe(390);
+  await expect(drawer).toHaveCSS("scrollbar-gutter", "stable");
   const assertStable = async () => {
     const current = await drawer.boundingBox();
     expect(Math.abs(current.x - before.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(current.width - before.width)).toBeLessThanOrEqual(1);
   };
+  const gutter = () =>
+    drawer.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return (
+        element.offsetWidth -
+        element.clientWidth -
+        parseFloat(style.borderLeftWidth) -
+        parseFloat(style.borderRightWidth)
+      );
+    });
+  const collapsedGutter = await gutter();
   await page
     .getByRole("button", { name: "Add image to cell 1", exact: true })
     .click();
@@ -2693,6 +3405,12 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
   await expect(picker).toHaveCount(0);
   await assertStable();
   await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await expect(drawer.locator(".section-heading")).toBeHidden();
+  await expect.poll(gutter).toBeCloseTo(collapsedGutter, 0);
+  await assertStable();
+  await drawer.screenshot({
+    path: testInfo.outputPath("full-width-drawer-native-scrollbar.png"),
+  });
   await expect(
     page.getByRole("button", { name: "Local storage", exact: true }),
   ).toHaveCount(0);
@@ -2705,18 +3423,70 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
       .locator(":scope > :last-child")
       .getByRole("button", { name: "Reset grid settings", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
-    .click();
+  const resetTrigger = page.getByRole("button", {
+    name: "Reset grid settings",
+    exact: true,
+  });
+  await expect(
+    drawer.locator('[id^="headlessui-disclosure-panel-"]'),
+  ).toHaveAttribute("style", /height: auto/);
+  await resetTrigger.scrollIntoViewIfNeeded();
+  const sheetState = () =>
+    drawer.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+      };
+    });
+  const beforeReset = await sheetState();
+  await expect(page.locator("html")).toHaveCSS("scrollbar-gutter", "auto");
+  expect(
+    await drawer.evaluate((element) => {
+      const probe = document.createElement("div");
+      probe.style.cssText = "position:fixed;left:0;right:0;top:0;height:0";
+      document.body.append(probe);
+      const edge = probe.getBoundingClientRect().right;
+      probe.remove();
+      return element.getBoundingClientRect().right <= edge + 1;
+    }),
+  ).toBe(true);
+  await resetTrigger.click();
   const reset = page.getByRole("dialog", {
     name: "Reset grid settings",
     exact: true,
   });
   await expect(reset).toBeVisible();
   await assertStable();
+  expect(await sheetState()).toEqual(beforeReset);
   await reset.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(reset).toHaveCount(0);
   await assertStable();
+  expect(await sheetState()).toEqual(beforeReset);
+  await page.addStyleTag({
+    content: "::-webkit-scrollbar { width: 0; height: 0; }",
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await expect.poll(gutter).toBe(0);
+  await expect(page.locator("html")).toHaveCSS("padding-right", "0px");
+  await assertStable();
+  await page.locator("#export-grid-header").click();
+  const exported = page.getByRole("dialog", {
+    name: "Export grid",
+    exact: true,
+  });
+  await expect(exported).toBeVisible();
+  await assertStable();
+  await exported.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(exported).toHaveCount(0);
+  await assertStable();
+  await drawer.screenshot({
+    path: testInfo.outputPath("full-width-drawer-zero-scrollbar.png"),
+  });
 });
 
 test("mobile image drawer expands tools and restores desktop sidebars", async ({
@@ -3303,7 +4073,7 @@ test("image imports show progress and keep the editor responsive through failed 
   await expect(add).toBeEnabled();
   await expect(library).toHaveAttribute("aria-busy", "false");
   await expect(page.locator(".asset")).toHaveCount(2);
-  await expect(page.locator("#toast")).toContainText(
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
     "Could not load broken.svg",
   );
   await expect
@@ -4227,7 +4997,7 @@ test("missing IndexedDB image data cannot overwrite the stored grid with blank d
   await localDatabase(page, "delete-image", { id: original.assets[0].id });
   await reloadWorkspace(page);
   await expect(page.locator("#save-status")).toHaveText("Session only");
-  await expect(page.locator("#toast")).toContainText(
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
     "stored grid has not been replaced",
   );
   await page.locator("#cell-title").fill("Session edit");
@@ -5129,7 +5899,9 @@ test("failed guest saves roll back blobs and recover without blocking export", a
   });
   await page.goto("./");
   await expect(page.locator("#save-status")).toHaveText("Save failed");
-  await expect(page.locator("#toast")).toContainText("Local save failed");
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
+    "Local save failed",
+  );
   await page.locator("#replace-upload").setInputFiles({
     name: "retry.svg",
     mimeType: "image/svg+xml",
@@ -5250,7 +6022,7 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
   ).toBeDisabled();
   await expect(
     page.getByRole("region", { name: "Removed cells", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await reloadWorkspace(page);
   await page.getByRole("button", { name: "Add column", exact: true }).click();
   const restored = await savedCells();
@@ -5383,7 +6155,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
   ).toBeDisabled();
   await page.locator("#resolution").selectOption("600");
   await page.locator("#export-board").click();
-  await expect(page.locator("#toast")).toContainText(
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
     "Export exceeds the 32 MP limit",
   );
   await page.locator("#resolution").selectOption("150");

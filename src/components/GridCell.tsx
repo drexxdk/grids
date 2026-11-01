@@ -126,8 +126,13 @@ export function GridCell({
   ]);
   return (
     <Popover
-      className={`image-card tw:relative tw:min-w-0 tw:bg-[#111315]! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-grab tw:w-full!" : "grid-cell"}`}
-      style={{ aspectRatio: `600 / ${geometry.height}` }}
+      className={`image-card tw:relative tw:min-w-0 tw:bg-(--card-background)! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-grab tw:w-full!" : "grid-cell"}`}
+      style={
+        {
+          aspectRatio: `600 / ${geometry.height}`,
+          "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
+        } as React.CSSProperties
+      }
       data-index={index}
       onDragOver={(event) => {
         event.preventDefault();
@@ -416,10 +421,12 @@ export function GridCell({
                   height: `${(geometry.captionHeight / geometry.height) * 100}%`,
                   background: overlay
                     ? overlayColor
-                    : publishers[gridStyle.publisher].caption,
+                    : (gridStyle.cellBackgroundColor ??
+                      publishers[gridStyle.publisher].caption),
                   "--card-caption-color": overlay
                     ? overlayColor
-                    : publishers[gridStyle.publisher].caption,
+                    : (gridStyle.cellBackgroundColor ??
+                      publishers[gridStyle.publisher].caption),
                   fontFamily: `"${gridStyle.cellFont}", sans-serif`,
                   color: gridStyle.cellTextColor ?? "#f4f4ef",
                   margin: 0,
