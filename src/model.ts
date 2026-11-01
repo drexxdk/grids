@@ -1,9 +1,24 @@
 import { z } from "zod";
 
-export const fontOptions = ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"];
+export const fontOptions = ["Bangers", "Bebas Neue", "Boogaloo", "Manrope"];
+export function fontWeightOptions(font: string) {
+  return [
+    { value: 100, label: "Thin" },
+    { value: 200, label: "Extra light" },
+    { value: 300, label: "Light" },
+    { value: 400, label: "Regular" },
+    { value: 500, label: "Medium" },
+    { value: 600, label: "Semi bold" },
+    { value: 700, label: "Bold" },
+    { value: 800, label: "Extra bold" },
+    { value: 900, label: "Black" },
+  ].filter(({ value }) => font === "Manrope" || value === 400 || value === 700);
+}
+export function resolveFontWeight(font: string, weight = 400) {
+  return font === "Manrope" ? weight : weight >= 600 ? 700 : 400;
+}
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
-export type TemplateName = "Clean" | "Editorial" | "Superhero" | "Custom";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
 export interface Asset {
   id: string;
@@ -66,11 +81,12 @@ export interface GridLayout {
   columns: number;
 }
 export interface GridStyle {
-  template?: TemplateName;
   publisher: Publisher;
   headingVisible: boolean;
   headingFont: string;
   cellFont: string;
+  headingFontWeight?: number;
+  cellFontWeight?: number;
   headingFontSize?: number;
   cellFontSize?: number;
   headingTextColor?: string;
@@ -78,8 +94,6 @@ export interface GridStyle {
   headingBackgroundColor?: string;
   cellBackgroundColor?: string;
   gap: number;
-  headingGap?: number;
-  gridPadding?: number;
   canvasPadding?: number;
   canvasBackgroundColor?: string;
   background: string;
@@ -92,8 +106,8 @@ export interface GridStyle {
 export function gridSpacing(style: GridStyle, width: number) {
   return {
     gap: (style.gap * width) / 600,
-    headingGap: ((style.headingGap ?? style.gap) * width) / 600,
-    padding: ((style.gridPadding ?? style.gap) * width) / 600,
+    headingGap: (style.gap * width) / 600,
+    padding: ((style.canvasPadding ?? 12) * width) / 600,
   };
 }
 export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
@@ -157,7 +171,6 @@ export interface Workspace {
   assets: Asset[];
   grid: Board;
   exportSettings: ExportSettings;
-  themeSettings?: Partial<Record<TemplateName, GridStyle>>;
 }
 export interface ExportSettings {
   format: ImageFormat;
@@ -169,7 +182,6 @@ export interface EditorSettings {
   layout: GridLayout;
   style: GridStyle;
   exportSettings: ExportSettings;
-  themeSettings?: Partial<Record<TemplateName, GridStyle>>;
 }
 export type GridPatch = Partial<
   GridStyle & Pick<GridContent, "name" | "heading">
@@ -183,13 +195,6 @@ export type DocumentCommand =
   | { type: "assets/purge"; assetIds: string[] }
   | { type: "assets/delete"; assetIds: string[] }
   | { type: "grid/patch"; gridId: string; patch: GridPatch }
-  | {
-      type: "grid/template";
-      gridId: string;
-      template: TemplateName;
-      previousTemplate: TemplateName;
-      defaults: GridStyle;
-    }
   | { type: "export/patch"; patch: Partial<ExportSettings> }
   | { type: "cell/patch"; gridId: string; cellId: string; patch: CellPatch }
   | {
@@ -244,14 +249,14 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   headingVisible: true,
   headingFont: "Manrope",
   cellFont: "Manrope",
+  headingFontWeight: 400,
+  cellFontWeight: 400,
   imageAspect: "portrait",
   captionPlacement: "overlay",
   captionAlignment: "bottom",
   rows: 3,
   columns: 3,
   gap: 12,
-  headingGap: 12,
-  gridPadding: 12,
   background: "#17191b",
   cells: Array.from({ length: 9 }, (_, index) => makeCell(assets[index])),
   overflow: [],
@@ -302,10 +307,8 @@ export function resetWorkspace(
   );
   return {
     ...configured,
-    themeSettings: defaults.themeSettings,
     grid: {
       ...configured.grid,
-      template: defaults.grid.template,
       name: defaults.grid.name,
       heading: defaults.grid.heading,
     },
@@ -317,11 +320,18 @@ const layoutSchema = z.strictObject({
   columns: z.number().int().min(1).max(gridLimit),
 });
 const styleSchema = z.strictObject({
-  template: z.enum(["Clean", "Editorial", "Superhero", "Custom"]).optional(),
   publisher: z.enum(["none", "dc", "marvel"]),
   headingVisible: z.boolean(),
   headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
   cellFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
+  headingFontWeight: z
+    .number()
+    .int()
+    .min(100)
+    .max(900)
+    .multipleOf(100)
+    .optional(),
+  cellFontWeight: z.number().int().min(100).max(900).multipleOf(100).optional(),
   headingFontSize: z.number().min(6).max(36).optional(),
   cellFontSize: z.number().min(6).max(36).optional(),
   headingTextColor: z
@@ -341,9 +351,7 @@ const styleSchema = z.strictObject({
     .regex(/^#[0-9a-f]{6}$/i)
     .optional(),
   gap: z.number().min(0).max(60),
-  headingGap: z.number().min(0).max(60).optional(),
-  gridPadding: z.number().min(0).max(60).optional(),
-  canvasPadding: z.number().min(0).max(48).optional(),
+  canvasPadding: z.number().min(0).max(60).optional(),
   canvasBackgroundColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
@@ -373,12 +381,6 @@ export const editorSettingsSchema = z.strictObject({
   version: z.literal(1),
   layout: layoutSchema,
   style: styleSchema,
-  themeSettings: z
-    .partialRecord(
-      z.enum(["Clean", "Editorial", "Superhero", "Custom"]),
-      styleSchema,
-    )
-    .optional(),
   exportSettings: exportSettingsSchema,
 });
 
@@ -386,16 +388,18 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
   const { grid, exportSettings } = workspace;
   return editorSettingsSchema.parse({
     version: 1,
-    ...(workspace.themeSettings
-      ? { themeSettings: workspace.themeSettings }
-      : {}),
     layout: { rows: grid.rows, columns: grid.columns },
     style: {
-      ...(grid.template ? { template: grid.template } : {}),
       publisher: grid.publisher,
       headingVisible: grid.headingVisible,
       headingFont: grid.headingFont,
       cellFont: grid.cellFont,
+      ...(grid.headingFontWeight !== undefined
+        ? { headingFontWeight: grid.headingFontWeight }
+        : {}),
+      ...(grid.cellFontWeight !== undefined
+        ? { cellFontWeight: grid.cellFontWeight }
+        : {}),
       ...(grid.headingFontSize !== undefined
         ? { headingFontSize: grid.headingFontSize }
         : {}),
@@ -415,10 +419,6 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
         ? { cellBackgroundColor: grid.cellBackgroundColor }
         : {}),
       gap: grid.gap,
-      ...(grid.headingGap !== undefined ? { headingGap: grid.headingGap } : {}),
-      ...(grid.gridPadding !== undefined
-        ? { gridPadding: grid.gridPadding }
-        : {}),
       ...(grid.canvasPadding !== undefined
         ? { canvasPadding: grid.canvasPadding }
         : {}),
@@ -460,12 +460,12 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
     captionOverlayOpacity: style.captionOverlayOpacity,
     headingFontSize: style.headingFontSize,
     cellFontSize: style.cellFontSize,
+    headingFontWeight: style.headingFontWeight,
+    cellFontWeight: style.cellFontWeight,
     headingTextColor: style.headingTextColor,
     cellTextColor: style.cellTextColor,
     headingBackgroundColor: style.headingBackgroundColor,
     cellBackgroundColor: style.cellBackgroundColor,
-    headingGap: style.headingGap,
-    gridPadding: style.gridPadding,
     canvasPadding: style.canvasPadding,
     canvasBackgroundColor: style.canvasBackgroundColor,
     ...style,
@@ -480,7 +480,6 @@ export function applyEditorSettings(
   const settings = editorSettingsSchema.parse(input);
   return {
     ...workspace,
-    themeSettings: settings.themeSettings,
     grid: applyGridStyle(
       resizeBoard(
         workspace.grid,
@@ -519,7 +518,6 @@ const coordinate = z
   .max(gridLimit - 1);
 export const workspaceSchema = z
   .strictObject({
-    themeSettings: editorSettingsSchema.shape.themeSettings,
     version: z.literal(1),
     assets: z.array(
       z.strictObject({
@@ -735,22 +733,6 @@ export function documentReducer(
     }
     case "workspace/restore":
       return command.workspace;
-    case "grid/template": {
-      if (grid.id !== command.gridId) return workspace;
-      const previousTemplate = grid.template ?? command.previousTemplate;
-      if (previousTemplate === command.template && grid.template)
-        return workspace;
-      const themeSettings = {
-        ...workspace.themeSettings,
-        [previousTemplate]: getEditorSettings(workspace).style,
-      };
-      const style = themeSettings[command.template] ?? command.defaults;
-      return {
-        ...workspace,
-        themeSettings,
-        grid: { ...applyGridStyle(grid, style), template: command.template },
-      };
-    }
     case "grid/patch":
       return withGrid({ ...grid, ...command.patch });
     case "export/patch":

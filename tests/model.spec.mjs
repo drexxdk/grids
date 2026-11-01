@@ -326,27 +326,6 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   const reset = model.resetWorkspace(workspace);
   expect(model.getEditorSettings(reset).style).toEqual(defaults);
   expect(reset.assets).toEqual(workspace.assets);
-  const switched = model.documentReducer(workspace, {
-    type: "grid/template",
-    gridId: workspace.grid.id,
-    previousTemplate: "Clean",
-    template: "Editorial",
-    defaults,
-  });
-  expect(switched.grid.imageAspect).toBe("portrait");
-  expect(switched.grid.captionPlacement).toBe("overlay");
-  expect(switched.grid.captionAlignment).toBe("bottom");
-  const returned = model.documentReducer(switched, {
-    type: "grid/template",
-    gridId: workspace.grid.id,
-    previousTemplate: "Editorial",
-    template: workspace.grid.template ?? "Clean",
-    defaults,
-  });
-  expect(model.getEditorSettings(returned).style).toEqual({
-    ...settings.style,
-    template: "Clean",
-  });
 });
 
 test("independent spacing and background settings roundtrip and reset", () => {
@@ -354,8 +333,6 @@ test("independent spacing and background settings roundtrip and reset", () => {
   const settings = model.getEditorSettings(workspace);
   Object.assign(settings.style, {
     gap: 60,
-    headingGap: 39,
-    gridPadding: 30,
     canvasPadding: 24,
     canvasBackgroundColor: "#d9e7f0",
     headingBackgroundColor: "#114455",
@@ -365,21 +342,19 @@ test("independent spacing and background settings roundtrip and reset", () => {
   expect(model.getEditorSettings(restored)).toEqual(settings);
   expect(model.gridSpacing(restored.grid, 150)).toEqual({
     gap: 15,
-    headingGap: 9.75,
-    padding: 7.5,
+    headingGap: 15,
+    padding: 6,
   });
   expect(model.gridSpacing(restored.grid, 300)).toEqual({
     gap: 30,
-    headingGap: 19.5,
-    padding: 15,
+    headingGap: 30,
+    padding: 12,
   });
   expect(restored.assets).toBe(workspace.assets);
   expect(restored.grid.cells).toEqual(workspace.grid.cells);
   for (const invalid of [
     { gap: 61 },
-    { headingGap: 61 },
-    { gridPadding: 61 },
-    { canvasPadding: 49 },
+    { canvasPadding: 61 },
     { headingBackgroundColor: "invalid" },
     { cellBackgroundColor: "invalid" },
   ]) {
@@ -497,28 +472,47 @@ test("settings boundary rejects unknown fields, media and invalid configuration 
   }
 });
 
-test("saved theme profiles reject private content and remain detached settings", () => {
+test("font weights roundtrip and reset without theme profiles", () => {
   const workspace = localWorkspace();
-  workspace.themeSettings = {
-    Superhero: {
-      ...model.getEditorSettings(workspace).style,
-      template: "Superhero",
-    },
-  };
   const settings = model.getEditorSettings(workspace);
-  expect(model.editorSettingsSchema.safeParse(settings).success).toBe(true);
-  expect(JSON.stringify(settings.themeSettings)).not.toContain("Private");
-  settings.themeSettings.Superhero.gap = 20;
-  expect(workspace.themeSettings.Superhero.gap).toBe(12);
-  for (const profile of [
-    { ...settings.themeSettings.Superhero, heading: workspace.grid.heading },
-    { ...settings.themeSettings.Superhero, assets: workspace.assets },
-    {
-      ...settings.themeSettings.Superhero,
-      headingFont: "data:font/woff2;base64,private",
-    },
+  Object.assign(settings.style, {
+    headingFontWeight: 800,
+    cellFontWeight: 700,
+  });
+  const restored = model.applyEditorSettings(workspace, settings);
+  expect(model.getEditorSettings(restored)).toEqual(settings);
+  expect(restored.grid.cells).toEqual(workspace.grid.cells);
+  expect(restored.assets).toBe(workspace.assets);
+  expect(workspace.grid.headingFontWeight).not.toBe(800);
+  expect(
+    model.fontWeightOptions("Manrope").map((option) => option.value),
+  ).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900]);
+  for (const font of ["Bangers", "Boogaloo", "Bebas Neue"]) {
+    expect(model.fontWeightOptions(font).map((option) => option.value)).toEqual(
+      [400, 700],
+    );
+    expect(model.resolveFontWeight(font, 800)).toBe(700);
+    expect(model.resolveFontWeight(font, 300)).toBe(400);
+  }
+  const reset = model.resetWorkspace(restored);
+  expect(model.getEditorSettings(reset).style).toMatchObject({
+    headingFontWeight: 400,
+    cellFontWeight: 400,
+  });
+  for (const field of ["headingFontWeight", "cellFontWeight"]) {
+    for (const value of [99, 450, 1000]) {
+      expect(
+        model.editorSettingsSchema.safeParse({
+          ...settings,
+          style: { ...settings.style, [field]: value },
+        }).success,
+      ).toBe(false);
+    }
+  }
+  for (const invalid of [
+    { ...settings, themeSettings: {} },
+    { ...settings, style: { ...settings.style, template: "Clean" } },
   ]) {
-    const invalid = { ...settings, themeSettings: { Superhero: profile } };
     expect(model.editorSettingsSchema.safeParse(invalid).success).toBe(false);
     expect(() => model.applyEditorSettings(workspace, invalid)).toThrow();
   }

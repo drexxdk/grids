@@ -68,11 +68,20 @@ export function GridResizer({
         <div
           ref={contentRef}
           data-preview-content
-          style={{ width: previewWidth, maxWidth: "100%" }}
-          className="tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--heading-gap,0px)] tw:[container-type:inline-size]"
+          style={{
+            width: previewWidth,
+            maxWidth: "100%",
+            paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
+          }}
+          className="tw:relative tw:isolate tw:flex tw:min-w-0 tw:flex-col tw:gap-[var(--heading-gap,0px)] tw:[container-type:inline-size]"
         >
+          <span
+            aria-hidden="true"
+            data-image-canvas-background
+            className="tw:pointer-events-none tw:absolute tw:inset-y-0 tw:left-0 tw:right-[var(--preview-scrollbar-width,0px)] tw:-z-10 tw:bg-(--board-bg)"
+          />
           {heading && (
-            <div className="tw:overflow-hidden tw:px-[var(--grid-padding,0px)] tw:[scrollbar-gutter:stable]">
+            <div className="tw:overflow-hidden tw:px-[var(--canvas-inset,0px)] tw:[scrollbar-gutter:stable]">
               {heading}
             </div>
           )}
@@ -92,11 +101,12 @@ export function GridResizer({
           ref={dimension === "columns" ? columnControlsRef : undefined}
           className={
             dimension === "columns"
-              ? "tw:col-start-3 tw:row-start-1 tw:flex tw:items-center tw:justify-center tw:translate-y-[var(--column-control-offset,0px)]"
+              ? "tw:pointer-events-none tw:col-start-3 tw:row-start-1 tw:flex tw:items-center tw:justify-center tw:translate-y-[var(--column-control-offset,0px)]"
               : "tw:col-start-2 tw:row-start-2 tw:flex tw:items-center tw:justify-center tw:translate-x-[var(--row-control-offset,0px)]"
           }
         >
           <ButtonGroup
+            className="tw:pointer-events-auto"
             label={dimension === "columns" ? "Column controls" : "Row controls"}
             orientation={dimension === "columns" ? "vertical" : "horizontal"}
           >

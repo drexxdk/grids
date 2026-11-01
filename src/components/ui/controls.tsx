@@ -114,13 +114,21 @@ export function SelectField({
   options,
   onChange,
   compact = false,
+  largeFontPreview = false,
 }: {
   id: string;
   label: string;
   value: string;
-  options: { value: string; label: string; icon?: LucideIcon }[];
+  options: {
+    value: string;
+    label: string;
+    icon?: LucideIcon;
+    fontFamily?: string;
+    fontWeight?: number;
+  }[];
   onChange: (value: string) => void;
   compact?: boolean;
+  largeFontPreview?: boolean;
 }) {
   const selected = options.find((option) => option.value === value);
   const SelectedIcon = selected?.icon;
@@ -134,6 +142,7 @@ export function SelectField({
         title={compact ? `${label}: ${selected?.label ?? value}` : undefined}
         className={clsx(
           "tw:flex tw:min-h-[44px] tw:w-full tw:items-center tw:justify-between tw:gap-2 tw:rounded-sm tw:border tw:border-solid tw:border-(--line) tw:bg-(--bg) tw:px-3 tw:py-2 tw:text-left tw:data-hover:border-(--accent)",
+          largeFontPreview && "tw:py-0!",
           compact && "tw:h-[44px] tw:px-2! tw:py-0!",
         )}
       >
@@ -144,11 +153,18 @@ export function SelectField({
           />
         )}
         <span
-          className={
+          style={{
+            fontFamily: selected?.fontFamily
+              ? `"${selected.fontFamily}"`
+              : undefined,
+            fontWeight: selected?.fontWeight,
+          }}
+          className={clsx(
             compact
               ? "tw:min-w-0 tw:truncate tw:text-[12px] tw:max-[600px]:sr-only"
-              : "tw:min-w-0 tw:break-words"
-          }
+              : "tw:min-w-0 tw:break-words",
+            largeFontPreview && "tw:text-[20px] tw:leading-[28px]",
+          )}
         >
           {selected?.label ?? value}
         </span>
@@ -169,7 +185,17 @@ export function SelectField({
               key={option.value}
               value={option.value}
               data-value={option.value}
-              className="tw:flex tw:min-h-[44px] tw:items-center tw:gap-2 tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)"
+              style={{
+                fontFamily: option.fontFamily
+                  ? `"${option.fontFamily}"`
+                  : undefined,
+                fontWeight: option.fontWeight,
+              }}
+              className={clsx(
+                "tw:flex tw:min-h-[44px] tw:items-center tw:gap-2 tw:cursor-pointer tw:px-3 tw:py-2 tw:text-sm tw:break-words tw:data-focus:bg-(--line) tw:data-selected:text-(--accent)",
+                largeFontPreview &&
+                  "tw:py-0! tw:text-[20px]! tw:leading-[28px]",
+              )}
             >
               {OptionIcon && (
                 <OptionIcon

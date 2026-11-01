@@ -10,6 +10,7 @@ import {
 import {
   cellGeometry,
   captionPadding,
+  resolveFontWeight,
   publishers,
   sourceRectangle,
   type ImageCrop,
@@ -102,6 +103,7 @@ export function GridCell({
         gridStyle.cellFont,
         bounds.width,
         gridStyle.cellFontSize,
+        resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
       );
       field.style.fontSize = `${fontSize}px`;
       field.style.paddingLeft =
@@ -112,6 +114,11 @@ export function GridCell({
     const observer = new ResizeObserver(fit);
     observer.observe(field);
     void document.fonts.ready.then(fit);
+    void document.fonts
+      .load(
+        `${resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight)} 48px "${gridStyle.cellFont}"`,
+      )
+      .then(fit);
     fit();
     return () => {
       disposed = true;
@@ -121,6 +128,7 @@ export function GridCell({
     cell.title,
     gridStyle.cellFont,
     gridStyle.cellFontSize,
+    gridStyle.cellFontWeight,
     geometry.height,
     geometry.captionTop,
   ]);
@@ -428,6 +436,10 @@ export function GridCell({
                     : (gridStyle.cellBackgroundColor ??
                       publishers[gridStyle.publisher].caption),
                   fontFamily: `"${gridStyle.cellFont}", sans-serif`,
+                  fontWeight: resolveFontWeight(
+                    gridStyle.cellFont,
+                    gridStyle.cellFontWeight,
+                  ),
                   color: gridStyle.cellTextColor ?? "#f4f4ef",
                   margin: 0,
                   letterSpacing: 0,

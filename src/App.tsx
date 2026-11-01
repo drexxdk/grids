@@ -35,6 +35,8 @@ import { EditorLayout } from "./components/EditorLayout";
 import { LibraryImage } from "./components/LibraryImage";
 import {
   fontOptions,
+  fontWeightOptions,
+  resolveFontWeight,
   gridLimit,
   makeWorkspace,
   createResetCommand,
@@ -51,7 +53,6 @@ import {
   type ExportSettings,
   type Publisher,
   type GridStyle,
-  type TemplateName,
 } from "./model";
 import {
   createExport,
@@ -91,12 +92,16 @@ function BoardHeading({
       context.letterSpacing = "0.5px";
       const fontRatio = (board.headingFontSize ?? 18) / 100;
       const heightRatio = Math.max(0.28, fontRatio * 1.4);
-      heading.style.fontSize = `${fitTitle(context, board.heading || "Add heading", board.headingFont, (heading.clientHeight * fontRatio) / heightRatio, heading.firstElementChild.clientWidth * 0.92, heading.clientHeight * 0.82).fontSize}px`;
+      heading.style.fontSize = `${fitTitle(context, board.heading || "Add heading", board.headingFont, (heading.clientHeight * fontRatio) / heightRatio, heading.firstElementChild.clientWidth * 0.92, heading.clientHeight * 0.82, resolveFontWeight(board.headingFont, board.headingFontWeight)).fontSize}px`;
     };
     const observer = new ResizeObserver(fit);
     observer.observe(heading.parentElement);
     fit();
-    document.fonts.load(`48px "${board.headingFont}"`).then(fit);
+    document.fonts
+      .load(
+        `${resolveFontWeight(board.headingFont, board.headingFontWeight)} 48px "${board.headingFont}"`,
+      )
+      .then(fit);
     document.fonts.ready.then(fit);
     return () => {
       cancelled = true;
@@ -106,6 +111,7 @@ function BoardHeading({
     board.heading,
     board.headingFont,
     board.headingFontSize,
+    board.headingFontWeight,
     board.columns,
     editing,
   ]);
@@ -114,6 +120,10 @@ function BoardHeading({
       ref={headingRef}
       className="board-export-heading tw:group tw:overflow-hidden tw:p-0!"
       style={{
+        fontWeight: resolveFontWeight(
+          board.headingFont,
+          board.headingFontWeight,
+        ),
         height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${Math.max(0.28, (board.headingFontSize ?? 18) * 0.014)})`,
         ...(!board.heading.trim()
           ? {
@@ -174,42 +184,6 @@ function BoardHeading({
     </h2>
   );
 }
-
-const templates = [
-  {
-    name: "Clean",
-    style: {
-      headingVisible: true,
-      headingFont: "Manrope",
-      cellFont: "Manrope",
-      background: "#17191b",
-      gap: 12,
-      publisher: "none" as const,
-    },
-  },
-  {
-    name: "Editorial",
-    style: {
-      headingVisible: true,
-      headingFont: "Bebas Neue",
-      cellFont: "Manrope",
-      background: "#292e2c",
-      gap: 8,
-      publisher: "none" as const,
-    },
-  },
-  {
-    name: "Superhero",
-    style: {
-      headingVisible: true,
-      headingFont: "Bangers",
-      cellFont: "Boogaloo",
-      background: "#17191b",
-      gap: 12,
-      publisher: "dc" as const,
-    },
-  },
-] satisfies { name: TemplateName; style: GridStyle }[];
 
 export default function App() {
   const [workspace, dispatchDocument] = useReducer(
@@ -285,20 +259,21 @@ export default function App() {
         parseFloat(padding.paddingLeft) -
         parseFloat(padding.paddingRight) -
         104;
-      const top = frame.getBoundingClientRect().top + window.scrollY;
+      const toolbar = frame.previousElementSibling;
+      const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
+      const toolbarHeight = toolbar
+        ? toolbar.getBoundingClientRect().height +
+          parseFloat(toolbarStyle!.marginTop) +
+          parseFloat(toolbarStyle!.marginBottom)
+        : 0;
       const availableHeight = Math.max(
-        100,
-        window.innerHeight -
-          top -
-          52 -
+        1,
+        container.clientHeight -
+          parseFloat(padding.paddingTop) -
           parseFloat(padding.paddingBottom) -
-          (window.innerWidth <= 900
-            ? parseFloat(
-                getComputedStyle(document.documentElement).getPropertyValue(
-                  "--editor-drawer-height",
-                ),
-              ) || 160
-            : 0),
+          toolbarHeight -
+          52 -
+          1,
       );
       const {
         gap: gapRatio,
@@ -340,13 +315,17 @@ export default function App() {
       const height = Math.max(
         1,
         Math.min(
-          availableHeight - cellWidth * (headingRatio + headingGapRatio),
-          cellWidth * boardHeightRatio + horizontalScrollbar,
+          availableHeight -
+            cellWidth * (headingRatio + headingGapRatio + paddingRatio),
+          cellWidth * (boardHeightRatio - paddingRatio) + horizontalScrollbar,
         ),
       );
       const next = {
         width: viewportWidth + 104,
-        frameHeight: height + cellWidth * (headingRatio + headingGapRatio) + 52,
+        frameHeight:
+          height +
+          cellWidth * (headingRatio + headingGapRatio + paddingRatio) +
+          52,
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
         height,
@@ -375,6 +354,8 @@ export default function App() {
     const fitBeforePaint = () => flushSync(fit);
     const observer = new ResizeObserver(fitBeforePaint);
     observer.observe(container);
+    if (frame.previousElementSibling)
+      observer.observe(frame.previousElementSibling);
     window.addEventListener("resize", fitBeforePaint);
     fit();
     return () => {
@@ -386,8 +367,6 @@ export default function App() {
     board.rows,
     board.columns,
     board.gap,
-    board.gridPadding,
-    board.headingGap,
     board.canvasPadding,
     board.imageAspect,
     board.captionPlacement,
@@ -402,19 +381,21 @@ export default function App() {
         setCaptionRows(sharedCaptionRows(board, workspace.assets, true));
     };
     update();
-    void document.fonts.load(`48px "${board.cellFont}"`).then(update);
+    void document.fonts
+      .load(
+        `${resolveFontWeight(board.cellFont, board.cellFontWeight)} 48px "${board.cellFont}"`,
+      )
+      .then(update);
     return () => {
       active = false;
     };
-  }, [board.cells, board.cellFont, board.cellFontSize, workspace.assets]);
-  const matchedTemplate = templates.find((template) =>
-    Object.entries(template.style).every(([key, value]) =>
-      key === "publisher" && template.name === "Superhero"
-        ? board.publisher !== "none"
-        : board[key as keyof Board] === value,
-    ),
-  );
-  const selectedTemplate = board.template ?? matchedTemplate?.name ?? "Custom";
+  }, [
+    board.cells,
+    board.cellFont,
+    board.cellFontSize,
+    board.cellFontWeight,
+    workspace.assets,
+  ]);
   const resizeUndo = resizeHistory
     .slice()
     .reverse()
@@ -961,11 +942,10 @@ export default function App() {
           )}
           {(canvasActions) => (
             <section
-              className="workspace tw:flex tw:h-dvh tw:flex-col tw:max-[900px]:h-[calc(100dvh-var(--editor-drawer-height,160px))] tw:min-[901px]:overflow-y-auto"
+              className="workspace tw:flex tw:h-dvh tw:flex-col tw:overflow-hidden tw:max-[900px]:h-[calc(100dvh-var(--editor-drawer-height,160px))]"
               style={
                 {
-                  backgroundColor: board.canvasBackgroundColor ?? "#121415",
-                  "--canvas-padding": `${board.canvasPadding ?? 12}px`,
+                  backgroundColor: "#121415",
                 } as CSSProperties
               }
               aria-label="Grid editor"
@@ -987,7 +967,7 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              <div className="canvas-area tw:m-0! tw:min-h-0 tw:w-full tw:flex-1 tw:p-[var(--canvas-padding,12px)]! tw:max-[900px]:pr-[calc(var(--canvas-padding,12px)+var(--native-scrollbar-width,0px))]!">
+              <div className="canvas-area tw:m-0! tw:min-h-0 tw:w-full tw:flex-1 tw:p-[12px]! tw:max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
                 <div
                   role="toolbar"
                   aria-label="Grid appearance"
@@ -1097,12 +1077,15 @@ export default function App() {
                       width: previewSize?.width,
                       height: previewSize?.frameHeight,
                       "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
+                      "--preview-scrollbar-width": `${-(previewSize?.rowOffset ?? 0) * 2}px`,
+                      "--grid-top-padding": "0px",
                       maxWidth: "100%",
                       marginInline: "auto",
                       "--columns": board.columns,
+                      "--board-bg": board.background,
                       "--gap": `${previewSize?.gap ?? board.gap}px`,
-                      "--grid-padding": `${previewSize?.padding ?? board.gridPadding ?? board.gap}px`,
-                      "--heading-gap": `${previewSize?.headingGap ?? board.headingGap ?? board.gap}px`,
+                      "--canvas-inset": `${previewSize?.padding ?? board.canvasPadding ?? 12}px`,
+                      "--heading-gap": `${previewSize?.headingGap ?? board.gap}px`,
                       "--preview-cell-width": previewSize
                         ? `${previewSize.cellWidth}px`
                         : undefined,
@@ -1230,134 +1213,48 @@ export default function App() {
                       Canvas style
                     </h3>
                     <ColorField
-                      id="canvas-background-color"
+                      id="background"
                       label="Background"
-                      value={board.canvasBackgroundColor ?? "#121415"}
-                      onChange={(canvasBackgroundColor) =>
-                        patchBoard({ canvasBackgroundColor })
-                      }
+                      value={board.background}
+                      onChange={(background) => patchBoard({ background })}
                     />
                     <label className="field-label" htmlFor="canvas-padding">
-                      Padding <output>{board.canvasPadding ?? 12} px</output>
+                      Padding{" "}
+                      <output id="canvas-padding-value">
+                        {Math.round(((board.canvasPadding ?? 12) / 6) * 10) /
+                          10}
+                        %
+                      </output>
                     </label>
                     <input
                       id="canvas-padding"
                       type="range"
                       min="0"
-                      max="48"
-                      step="2"
-                      value={board.canvasPadding ?? 12}
+                      max="10"
+                      step="0.5"
+                      value={(board.canvasPadding ?? 12) / 6}
                       onChange={(event) =>
                         patchBoard({
-                          canvasPadding: Number(event.target.value),
+                          canvasPadding: Number(event.target.value) * 6,
                         })
                       }
                     />
-                  </fieldset>
-                  <fieldset
-                    className="tw:m-0 tw:min-w-0 tw:rounded-[6px] tw:border tw:border-solid tw:border-[#35424b] tw:bg-[#1d252b] tw:p-3"
-                    aria-label="Grid style"
-                  >
-                    <h2 className="tw:mt-0 tw:text-sm tw:font-semibold">
-                      Grid style
-                    </h2>
-                    <SelectField
-                      id="theme-selector"
-                      label="Theme"
-                      value={selectedTemplate}
-                      options={[
-                        ...templates.map((item) => item.name),
-                        "Custom",
-                      ].map((name) => ({ value: name, label: name }))}
-                      onChange={(name) => {
-                        const template = name as TemplateName;
-                        dispatchDocument({
-                          type: "grid/template",
-                          gridId: board.id,
-                          template,
-                          previousTemplate: selectedTemplate,
-                          defaults:
-                            templates.find((item) => item.name === template)
-                              ?.style ?? getEditorSettings(workspace).style,
-                        });
-                      }}
-                    />
-                    {selectedTemplate === "Superhero" && (
-                      <div>
-                        <span className="field-label">Sub-theme</span>
-                        <div
-                          className="segmented"
-                          role="group"
-                          aria-label="Superhero sub-theme"
-                        >
-                          {(["dc", "marvel"] as const).map((publisher) => (
-                            <button
-                              key={publisher}
-                              className="tw:enabled:hover:bg-(--line)! tw:enabled:hover:text-(--accent)! tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-(--accent)"
-                              aria-pressed={board.publisher === publisher}
-                              onClick={() => patchBoard({ publisher })}
-                            >
-                              {publisher === "dc" ? "DC" : "Marvel"}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {(
-                      [
-                        {
-                          id: "heading-gap",
-                          label: "Heading spacing",
-                          field: "headingGap",
-                          value: board.headingGap ?? board.gap,
-                        },
-                        {
-                          id: "grid-padding",
-                          label: "Grid padding",
-                          field: "gridPadding",
-                          value: board.gridPadding ?? board.gap,
-                        },
-                        {
-                          id: "gap",
-                          label: "Grid gap",
-                          field: "gap",
-                          value: board.gap,
-                        },
-                      ] as const
-                    ).map(({ id, label, field, value }) => (
-                      <div key={id}>
-                        <label className="field-label" htmlFor={id}>
-                          {label}{" "}
-                          <output id={`${id}-value`}>
-                            {Math.round((value / 6) * 10) / 10}%
-                          </output>
-                        </label>
-                        <input
-                          id={id}
-                          type="range"
-                          min="0"
-                          max="10"
-                          step="0.5"
-                          value={value / 6}
-                          onChange={(event) =>
-                            patchBoard({
-                              [field]: Number(event.target.value) * 6,
-                              ...(field === "gap"
-                                ? {
-                                    headingGap: board.headingGap ?? board.gap,
-                                    gridPadding: board.gridPadding ?? board.gap,
-                                  }
-                                : {}),
-                            })
-                          }
-                        />
-                      </div>
-                    ))}
-                    <ColorField
-                      id="background"
-                      label="Background"
-                      value={board.background}
-                      onChange={(background) => patchBoard({ background })}
+                    <label className="field-label" htmlFor="gap">
+                      Gap{" "}
+                      <output id="gap-value">
+                        {Math.round((board.gap / 6) * 10) / 10}%
+                      </output>
+                    </label>
+                    <input
+                      id="gap"
+                      type="range"
+                      min="0"
+                      max="10"
+                      step="0.5"
+                      value={board.gap / 6}
+                      onChange={(event) =>
+                        patchBoard({ gap: Number(event.target.value) * 6 })
+                      }
                     />
                   </fieldset>
                   <fieldset
@@ -1369,13 +1266,65 @@ export default function App() {
                     </h3>
                     <SelectField
                       id="heading-font"
+                      largeFontPreview
                       label="Font"
                       value={board.headingFont}
                       options={fontOptions.map((font) => ({
                         value: font,
                         label: font,
+                        fontFamily: font,
+                        fontWeight: resolveFontWeight(
+                          font,
+                          board.headingFontWeight,
+                        ),
                       }))}
-                      onChange={(headingFont) => patchBoard({ headingFont })}
+                      onChange={(headingFont) =>
+                        patchBoard({
+                          headingFont,
+                          headingFontWeight: resolveFontWeight(
+                            headingFont,
+                            board.headingFontWeight,
+                          ),
+                        })
+                      }
+                    />
+                    <label
+                      className="field-label"
+                      htmlFor="heading-font-weight"
+                    >
+                      Font weight{" "}
+                      <output>
+                        {resolveFontWeight(
+                          board.headingFont,
+                          board.headingFontWeight,
+                        )}
+                      </output>
+                    </label>
+                    <input
+                      id="heading-font-weight"
+                      type="range"
+                      min={board.headingFont === "Manrope" ? 100 : 400}
+                      max={board.headingFont === "Manrope" ? 900 : 700}
+                      step={board.headingFont === "Manrope" ? 100 : 300}
+                      value={resolveFontWeight(
+                        board.headingFont,
+                        board.headingFontWeight,
+                      )}
+                      aria-valuetext={
+                        fontWeightOptions(board.headingFont).find(
+                          (option) =>
+                            option.value ===
+                            resolveFontWeight(
+                              board.headingFont,
+                              board.headingFontWeight,
+                            ),
+                        )?.label
+                      }
+                      onChange={(event) =>
+                        patchBoard({
+                          headingFontWeight: Number(event.target.value),
+                        })
+                      }
                     />
                     <label className="field-label" htmlFor="heading-font-size">
                       Font size <output>{board.headingFontSize ?? 18}%</output>
@@ -1425,13 +1374,62 @@ export default function App() {
                     </h3>
                     <SelectField
                       id="cell-font"
+                      largeFontPreview
                       label="Font"
                       value={board.cellFont}
                       options={fontOptions.map((font) => ({
                         value: font,
                         label: font,
+                        fontFamily: font,
+                        fontWeight: resolveFontWeight(
+                          font,
+                          board.cellFontWeight,
+                        ),
                       }))}
-                      onChange={(cellFont) => patchBoard({ cellFont })}
+                      onChange={(cellFont) =>
+                        patchBoard({
+                          cellFont,
+                          cellFontWeight: resolveFontWeight(
+                            cellFont,
+                            board.cellFontWeight,
+                          ),
+                        })
+                      }
+                    />
+                    <label className="field-label" htmlFor="cell-font-weight">
+                      Font weight{" "}
+                      <output>
+                        {resolveFontWeight(
+                          board.cellFont,
+                          board.cellFontWeight,
+                        )}
+                      </output>
+                    </label>
+                    <input
+                      id="cell-font-weight"
+                      type="range"
+                      min={board.cellFont === "Manrope" ? 100 : 400}
+                      max={board.cellFont === "Manrope" ? 900 : 700}
+                      step={board.cellFont === "Manrope" ? 100 : 300}
+                      value={resolveFontWeight(
+                        board.cellFont,
+                        board.cellFontWeight,
+                      )}
+                      aria-valuetext={
+                        fontWeightOptions(board.cellFont).find(
+                          (option) =>
+                            option.value ===
+                            resolveFontWeight(
+                              board.cellFont,
+                              board.cellFontWeight,
+                            ),
+                        )?.label
+                      }
+                      onChange={(event) =>
+                        patchBoard({
+                          cellFontWeight: Number(event.target.value),
+                        })
+                      }
                     />
                     <label className="field-label" htmlFor="cell-font-size">
                       Font size <output>{board.cellFontSize ?? 11}%</output>

@@ -4,6 +4,7 @@ import {
   captionPadding,
   sourceRectangle,
   publishers,
+  resolveFontWeight,
   type Asset,
   type Board,
   type ImageFormat,
@@ -89,10 +90,11 @@ export function layoutCaption(
   font: string,
   width: number,
   sizePercent = 11,
+  fontWeight = 400,
 ) {
   const fontSize = (width * sizePercent) / 100;
   context.letterSpacing = "0px";
-  context.font = `${fontSize}px "${font}"`;
+  context.font = `${fontWeight} ${fontSize}px "${font}"`;
   return {
     fontSize,
     lines: wrapTitle(
@@ -121,8 +123,14 @@ export function sharedCaptionRows(
     1,
     ...titles.map(
       (title) =>
-        layoutCaption(context, title, item.cellFont, 600, item.cellFontSize)
-          .lines.length,
+        layoutCaption(
+          context,
+          title,
+          item.cellFont,
+          600,
+          item.cellFontSize,
+          resolveFontWeight(item.cellFont, item.cellFontWeight),
+        ).lines.length,
     ),
   );
 }
@@ -133,11 +141,12 @@ export function fitTitle(
   maximumSize: number,
   width: number,
   height: number,
+  fontWeight = 400,
 ) {
   let fontSize = Math.max(1, Math.round(maximumSize));
   let lines;
   do {
-    context.font = `${fontSize}px "${font}"`;
+    context.font = `${fontWeight} ${fontSize}px "${font}"`;
     lines = wrapTitle(context, title, width);
     if (
       lines.length * fontSize * 1.05 <= height &&
@@ -158,13 +167,14 @@ function drawTitle(
   width: number,
   height: number,
   color: string,
+  fontWeight = 400,
   padding = { horizontal: width * 0.04, vertical: height * 0.09 },
   caption = false,
   captionSizePercent = 11,
 ) {
   context.letterSpacing = "0.5px";
   const { fontSize, lines } = caption
-    ? layoutCaption(context, title, font, width, captionSizePercent)
+    ? layoutCaption(context, title, font, width, captionSizePercent, fontWeight)
     : fitTitle(
         context,
         title,
@@ -172,6 +182,7 @@ function drawTitle(
         maximumSize,
         width - padding.horizontal * 2,
         height - padding.vertical * 2,
+        fontWeight,
       );
   context.fillStyle = color;
   context.textAlign = "center";
@@ -193,9 +204,13 @@ export async function createExport(
   quality = 0.95,
   maximumPixels = 32_000_000,
 ): Promise<Blob> {
-  for (const font of new Set([item.headingFont, item.cellFont])) {
-    await document.fonts.load(`48px "${font}"`);
-    if (!document.fonts.check(`48px "${font}"`))
+  for (const [font, weight] of [
+    [item.headingFont, item.headingFontWeight],
+    [item.cellFont, item.cellFontWeight],
+  ] as const) {
+    const description = `${resolveFontWeight(font, weight)} 48px "${font}"`;
+    await document.fonts.load(description);
+    if (!document.fonts.check(description))
       throw new Error(`${font} could not load. Please reload and try again.`);
   }
   const captionRows = sharedCaptionRows(item, assets);
@@ -225,7 +240,7 @@ export async function createExport(
     const headingBackground = item.headingBackgroundColor ?? publisher.color;
     if (headingBackground !== "transparent") {
       context.fillStyle = headingBackground;
-      context.fillRect(padding, 0, width - padding * 2, bandHeight);
+      context.fillRect(padding, padding, width - padding * 2, bandHeight);
     }
     drawTitle(
       context,
@@ -233,10 +248,11 @@ export async function createExport(
       item.headingFont,
       (size * (item.headingFontSize ?? 18)) / 100,
       padding,
-      0,
+      padding,
       width - padding * 2,
       bandHeight,
       item.headingTextColor ?? publisher.text,
+      resolveFontWeight(item.headingFont, item.headingFontWeight),
     );
   }
   const cells = item.cells.slice(0, item.rows * item.columns);
@@ -308,6 +324,7 @@ export async function createExport(
       size,
       geometry.captionHeight,
       item.cellTextColor ?? "#f4f4ef",
+      resolveFontWeight(item.cellFont, item.cellFontWeight),
       captionPadding(size),
       true,
       item.cellFontSize,

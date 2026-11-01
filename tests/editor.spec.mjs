@@ -121,15 +121,82 @@ async function useComicExample(page, publisher = "dc") {
     .toBe(publisher === "dc" ? "DC Characters" : "Marvel Characters");
 }
 
-async function selectTheme(page, name) {
-  await page.locator("#theme-selector").click();
-  await page.getByRole("option", { name, exact: true }).click();
-}
-
 async function selectField(page, id, value) {
   await page.locator(`#${id}`).click();
   await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
 }
+
+test("canvas padding keeps overflow inside its viewport on short and narrow screens", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("./");
+  for (const id of ["canvas-padding", "gap"])
+    await page.locator(`#${id}`).fill("10");
+  for (const size of [
+    { width: 1440, height: 360 },
+    { width: 960, height: 360 },
+    { width: 390, height: 560 },
+    { width: 260, height: 560 },
+  ]) {
+    await page.setViewportSize(size);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const workspace = document.querySelector(".workspace");
+          const canvas = document.querySelector(".canvas-area");
+          const frame = document
+            .querySelector("[data-resize-frame]")
+            .getBoundingClientRect();
+          const bounds = canvas.getBoundingClientRect();
+          return (
+            workspace.scrollHeight <= workspace.clientHeight + 1 &&
+            workspace.scrollWidth <= workspace.clientWidth + 1 &&
+            document.documentElement.scrollWidth <= innerWidth &&
+            document.documentElement.scrollHeight <= innerHeight + 1 &&
+            frame.bottom <=
+              bounds.bottom -
+                parseFloat(getComputedStyle(canvas).paddingBottom) +
+                1
+          );
+        }),
+      )
+      .toBe(true);
+    const workspace = page.getByRole("region", {
+      name: "Grid editor",
+      exact: true,
+    });
+    await expect(workspace).toHaveCSS("overflow-y", "hidden");
+    const viewport = page.locator("[data-canvas-viewport]");
+    await expect
+      .poll(() =>
+        viewport.evaluate(
+          (element) => element.scrollHeight > element.clientHeight,
+        ),
+      )
+      .toBe(true);
+    const heading = await page.locator(".board-export-heading").boundingBox();
+    await viewport.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.scrollLeft = element.scrollWidth;
+    });
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    expect(await page.locator(".board-export-heading").boundingBox()).toEqual(
+      heading,
+    );
+    expect(
+      await workspace.evaluate((element) => ({
+        top: element.scrollTop,
+        left: element.scrollLeft,
+      })),
+    ).toEqual({ top: 0, left: 0 });
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("canvas-only-scroll-narrow.png"),
+  });
+});
 
 test("canvas resizing commits fitted dimensions before the next paint", async ({
   page,
@@ -583,71 +650,201 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   );
 });
 
-test("theme selector remembers separate settings across switching and reload", async ({
+test("font previews and independent weights persist and match exports without themes", async ({
   page,
 }, testInfo) => {
-  await page.goto("./");
-  await page.locator("#theme-selector").click();
-  await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
-    "Clean",
-    "Editorial",
-    "Superhero",
-    "Custom",
-  ]);
-  await page.getByRole("option", { name: "Superhero", exact: true }).click();
-  await expect(page.locator("#heading-font")).toHaveCount(1);
-  await expect(page.locator(".settings-panel")).not.toContainText("Aa");
-  await page.locator(".cell-heading").first().fill("Keep caption");
-  await page.getByRole("button", { name: "Marvel", exact: true }).click();
-  await selectField(page, "heading-font", "Manrope");
-  await page.locator("#gap").fill("19");
-  await expect
-    .poll(async () => (await localDatabase(page)).document?.grid.headingFont)
-    .toBe("Manrope");
-  expect((await savedWorkspace(page)).grid.template).toBe("Superhero");
-  await selectTheme(page, "Editorial");
-  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
-  await selectField(page, "heading-font", "Boogaloo");
-  await page.locator("#background").fill("#334455");
-  await selectTheme(page, "Superhero");
-  await expect(page.locator("#heading-font")).toHaveText("Manrope");
-  await expect(page.locator("#gap")).toHaveValue("19");
-  await expect(
-    page.getByRole("button", { name: "Marvel", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await selectTheme(page, "Editorial");
-  await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
-  await expect
-    .poll(async () => (await localDatabase(page)).document?.grid.background)
-    .toBe("#334455");
-  await expect(page.locator(".cell-heading").first()).toHaveValue(
-    "Keep caption",
-  );
-  await page.screenshot({
-    path: testInfo.outputPath("theme-settings-desktop.png"),
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    window.fontWeightDraws = [];
+    const fillText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+      window.fontWeightDraws.push({ text, font: this.font });
+      return fillText.call(this, text, ...args);
+    };
   });
+  await page.goto("./");
+  await expect(page.locator("#theme-selector")).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "Superhero sub-theme", exact: true }),
+  ).toHaveCount(0);
+  for (const id of ["heading-font", "cell-font"]) {
+    await page.locator(`#${id}`).click();
+    await expect(page.getByRole("listbox").getByRole("option")).toHaveText([
+      "Bangers",
+      "Bebas Neue",
+      "Boogaloo",
+      "Manrope",
+    ]);
+    for (const font of ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]) {
+      const option = page
+        .getByRole("listbox")
+        .locator(`[data-value="${font}"]`);
+      await expect(option).toHaveCSS("font-size", "20px");
+      await expect(option).toHaveCSS("padding-top", "0px");
+      await expect(option).toHaveCSS("padding-bottom", "0px");
+      await expect
+        .poll(() =>
+          option.evaluate((element) =>
+            getComputedStyle(element).fontFamily.replaceAll('"', ""),
+          ),
+        )
+        .toBe(font);
+    }
+    await page.keyboard.press("Escape");
+    for (const font of ["Bangers", "Boogaloo", "Bebas Neue", "Manrope"]) {
+      await selectField(page, id, font);
+      await expect(page.locator(`#${id} span`)).toHaveCSS("font-size", "20px");
+      await expect(page.locator(`#${id}`)).toHaveCSS("padding-top", "0px");
+      await expect(page.locator(`#${id}`)).toHaveCSS("padding-bottom", "0px");
+      await expect
+        .poll(() =>
+          page
+            .locator(`#${id} span`)
+            .evaluate((element) =>
+              getComputedStyle(element).fontFamily.replaceAll('"', ""),
+            ),
+        )
+        .toBe(font);
+      const weight = page.locator(`#${id}-weight`);
+      await expect(weight).toHaveAttribute("type", "range");
+      await expect(weight).toHaveAttribute(
+        "min",
+        font === "Manrope" ? "100" : "400",
+      );
+      await expect(weight).toHaveAttribute(
+        "max",
+        font === "Manrope" ? "900" : "700",
+      );
+      await expect(weight).toHaveAttribute(
+        "step",
+        font === "Manrope" ? "100" : "300",
+      );
+      await expect(weight).toHaveValue("400");
+      await weight.press("ArrowRight");
+      await expect(weight).toHaveValue(font === "Manrope" ? "500" : "700");
+      await weight.press("ArrowLeft");
+      await expect(weight).toHaveValue("400");
+      await expect(page.getByRole("listbox")).toHaveCount(0);
+    }
+  }
+  await page.locator("#heading-font-weight").press("End");
+  await page.locator("#heading-font-weight").press("ArrowLeft");
+  await selectField(page, "heading-font", "Bangers");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("700");
+  await expect(page.locator("#heading-font-weight")).toHaveAttribute(
+    "aria-valuetext",
+    "Bold",
+  );
+  await selectField(page, "heading-font", "Manrope");
+  await expect(page.locator("#heading-font-weight")).toHaveAttribute(
+    "max",
+    "900",
+  );
+  await page.locator("#heading-font-weight").press("End");
+  await page.locator("#heading-font-weight").press("ArrowLeft");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("800");
+  await page.locator("#cell-font-weight").fill("700");
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .fill("Weight check");
+  await page
+    .getByRole("textbox", { name: "Grid heading", exact: true })
+    .press("Enter");
+  await page
+    .locator("#board-grid .cell-heading")
+    .first()
+    .fill("Weighted caption");
+  await expect(page.locator(".board-export-heading")).toHaveCSS(
+    "font-weight",
+    "800",
+  );
+  await expect(page.locator("#board-grid .cell-heading").first()).toHaveCSS(
+    "font-weight",
+    "700",
+  );
+  await expect(page.locator("#heading-font span")).toHaveCSS(
+    "font-weight",
+    "800",
+  );
+  await expect(page.locator("#cell-font span")).toHaveCSS("font-weight", "700");
+  await page.locator("#heading-font").click();
+  await page.screenshot({
+    path: testInfo.outputPath("font-previews-desktop.png"),
+  });
+  await page.keyboard.press("Escape");
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  await downloadBoard(page);
+  const draws = await page.evaluate(() => window.fontWeightDraws);
+  expect(draws.find((entry) => entry.text === "WEIGHT CHECK")?.font).toMatch(
+    /^800 .*Manrope/,
+  );
+  const captions = draws.filter((entry) =>
+    ["Weighted", "caption", "Weighted caption"].includes(entry.text),
+  );
+  expect(captions.map((entry) => entry.text).join(" ")).toBe(
+    "Weighted caption",
+  );
+  for (const caption of captions)
+    expect(caption.font).toMatch(/^(700|bold) .*Manrope/);
+  const saved = await savedWorkspace(page);
+  expect(saved.grid).toMatchObject({
+    headingFontWeight: 800,
+    cellFontWeight: 700,
+  });
+  expect(saved.grid).not.toHaveProperty("template");
+  expect(saved).not.toHaveProperty("themeSettings");
   await reloadWorkspace(page);
-  await expect(page.locator("#theme-selector")).toHaveText("Editorial");
-  await expect(page.locator("#background")).toHaveValue("#334455");
-  await selectTheme(page, "Superhero");
-  await expect(page.locator("#gap")).toHaveValue("19");
-  await selectTheme(page, "Custom");
-  await page.locator("#background").fill("#556677");
-  await selectTheme(page, "Clean");
-  await expect(page.locator("#gap")).toHaveValue("12");
-  await selectTheme(page, "Custom");
-  await expect(page.locator("#background")).toHaveValue("#556677");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("800");
+  await expect(page.locator("#heading-font-weight")).toHaveAttribute(
+    "aria-valuetext",
+    "Extra bold",
+  );
+  await expect(page.locator("#cell-font-weight")).toHaveValue("700");
+  await expect(page.locator(".board-export-heading")).toHaveCSS(
+    "font-weight",
+    "800",
+  );
   const settings = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("grids-settings-v1")),
   );
-  expect(JSON.stringify(settings.themeSettings)).not.toContain("Keep caption");
-  await expect(
-    page.getByRole("button", { name: "Export grid", exact: true }),
-  ).toHaveCount(1);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({
-    path: testInfo.outputPath("theme-settings-mobile.png"),
+  expect(settings.style).toMatchObject({
+    headingFontWeight: 800,
+    cellFontWeight: 700,
   });
+  expect(settings).not.toHaveProperty("themeSettings");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Expand tools", exact: true }).click();
+  await page.locator("#cell-font-weight").fill("600");
+  await expect(page.locator("#board-grid .cell-heading").first()).toHaveCSS(
+    "font-weight",
+    "600",
+  );
+  await page.locator("#cell-font-weight").fill("700");
+  await page.locator("#heading-font").click();
+  await expect(
+    page.getByRole("listbox").locator('[data-value="Manrope"]'),
+  ).toHaveCSS("font-weight", "800");
+  await expect
+    .poll(() =>
+      page.getByRole("listbox").evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.left >= 0 &&
+          rect.right <= innerWidth &&
+          rect.top >= 0 &&
+          rect.bottom <= innerHeight
+        );
+      }),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("font-previews-mobile.png"),
+  });
+  await page.keyboard.press("Escape");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -655,7 +852,7 @@ test("theme selector remembers separate settings across switching and reload", a
   ).toBe(true);
 });
 
-test("heading and card typography controls are independent across previews, exports and saved themes", async ({
+test("heading and card typography controls are independent across previews, exports and saved settings", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -749,7 +946,7 @@ test("heading and card typography controls are independent across previews, expo
         .getByRole("button", { name: "Expand tools", exact: true })
         .click();
     const sectionColors = [];
-    for (const name of ["Grid style", "Heading style", "Card style"]) {
+    for (const name of ["Canvas style", "Heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
       await expect(section).toHaveCSS("border-top-width", "1px");
       await expect(section).toHaveCSS("border-radius", "6px");
@@ -774,9 +971,6 @@ test("heading and card typography controls are independent across previews, expo
     ).toBe(true);
   }
   const configured = await savedWorkspace(page);
-  await selectTheme(page, "Editorial");
-  await expect(page.locator("#cell-font-size")).toHaveValue("11");
-  await selectTheme(page, "Custom");
   await expect(page.locator("#cell-font-size")).toHaveValue("24");
   await reloadWorkspace(page);
   await verify();
@@ -975,7 +1169,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
       .locator(".grid-cell")
       .first()
       .boundingBox();
-    const gridPadding = await page
+    const canvasInset = await page
       .locator("#board-grid")
       .evaluate((element) => parseFloat(getComputedStyle(element).paddingLeft));
     expect(Math.abs(headingBounds.x - firstCellBounds.x)).toBeLessThan(1);
@@ -983,7 +1177,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
       Math.abs(
         headingBounds.width -
           (await viewport.evaluate((element) => element.clientWidth)) +
-          2 * gridPadding,
+          2 * canvasInset,
       ),
     ).toBeLessThan(1);
     if (
@@ -1360,7 +1554,7 @@ test("export combines settings and downloads on desktop and mobile", async ({
     page.getByRole("tab", { name: "Export", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Grid style", exact: true }),
+    page.getByRole("heading", { name: "Canvas style", exact: true }),
   ).toBeVisible();
   const trigger = page.getByRole("button", {
     name: "Export grid",
@@ -2745,6 +2939,54 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
+  const canvasStyle = page.getByRole("group", {
+    name: "Canvas style",
+    exact: true,
+  });
+  await expect(
+    page.getByRole("group", { name: "Grid style", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator("#theme-selector")).toHaveCount(0);
+  await expect(
+    canvasStyle.getByRole("slider", { name: "Gap", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.locator("#heading-gap")).toHaveCount(0);
+  await expect(canvasStyle.locator("#background-value")).toHaveValue(
+    /^#17191b$/i,
+  );
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS(
+    "background-color",
+    "rgb(23, 25, 27)",
+  );
+  await expect(page.locator("#board-grid")).toHaveCSS(
+    "background-color",
+    "rgb(23, 25, 27)",
+  );
+  await expect(page.locator(".workspace")).toHaveCSS(
+    "background-color",
+    "rgb(18, 20, 21)",
+  );
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  const initialDownload = await downloadBoard(page);
+  const initialBytes = await readFile(await initialDownload.path());
+  const initialBackground = await page.evaluate(
+    async (bytes) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      const color = [...context.getImageData(0, 0, 1, 1).data];
+      bitmap.close();
+      return color;
+    },
+    [...initialBytes],
+  );
+  expect(initialBackground).toEqual([23, 25, 27, 255]);
   await selectField(page, "image-shape", "square");
   await selectField(page, "caption-position", "below");
   await page.locator(".cell-heading").first().fill("Blue");
@@ -2778,20 +3020,63 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
       };
     });
   }
+  async function checkCanvasPadding() {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const canvas = document
+            .querySelector("[data-image-canvas-background]")
+            .getBoundingClientRect();
+          const grid = document.querySelector("#board-grid");
+          const heading = document
+            .querySelector(".board-export-heading")
+            .getBoundingClientRect();
+          const first = grid.firstElementChild.getBoundingClientRect();
+          const last = grid.lastElementChild.getBoundingClientRect();
+          const viewport = document.querySelector("[data-canvas-viewport]");
+          const padding = parseFloat(getComputedStyle(grid).paddingLeft);
+          return Math.max(
+            Math.abs(heading.top - canvas.top - padding),
+            Math.abs(heading.left - canvas.left - padding),
+            Math.abs(canvas.right - heading.right - padding),
+            Math.abs(first.left - canvas.left - padding),
+            Math.abs(canvas.right - last.right - padding),
+            Math.abs(canvas.bottom - last.bottom - padding),
+            Math.abs(canvas.width - viewport.clientWidth),
+          );
+        }),
+      )
+      .toBeLessThan(1);
+  }
   const expected = { gap: 2, padding: 2, heading: 2 };
   await expect.poll(ratios).toEqual(expected);
+  await checkCanvasPadding();
   for (const [id, key, value] of [
-    ["heading-gap", "heading", 6.5],
-    ["grid-padding", "padding", 5],
+    ["canvas-padding", "padding", 5],
     ["gap", "gap", 10],
   ]) {
     await page.locator(`#${id}`).fill(String(value));
     expected[key] = value;
+    if (id === "gap") expected.heading = value;
     await expect.poll(ratios).toEqual(expected);
     await expect(page.locator(`#${id}-value`)).toHaveText(`${value}%`);
+    await checkCanvasPadding();
   }
-  await page.locator("#canvas-background-color-value").fill("#d9e7f0");
-  await page.locator("#canvas-padding").fill("24");
+  await canvasStyle.locator("#background-value").fill("#d9e7f0");
+  await page.locator("#canvas-padding").fill("4");
+  expected.padding = 4;
+  await expect(page.locator("#canvas-padding-value")).toHaveText("4%");
+  await checkCanvasPadding();
+  await expect
+    .poll(() =>
+      page.locator("#board-grid").evaluate((grid) => {
+        const cell = grid.firstElementChild.getBoundingClientRect();
+        return (
+          (parseFloat(getComputedStyle(grid).paddingLeft) / cell.width) * 100
+        );
+      }),
+    )
+    .toBeCloseTo(4, 1);
   await page.locator("#heading-background-color-value").fill("#114455");
   await page.locator("#cell-background-color-value").fill("#335577");
   const cardStyle = page.getByRole("group", {
@@ -2805,9 +3090,17 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   await page.mouse.move(0, 0);
   await expect(page.locator(".workspace")).toHaveCSS(
     "background-color",
+    "rgb(18, 20, 21)",
+  );
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS(
+    "background-color",
     "rgb(217, 231, 240)",
   );
-  await expect(page.locator(".canvas-area")).toHaveCSS("padding-left", "24px");
+  await expect(page.locator("#board-grid")).toHaveCSS(
+    "background-color",
+    "rgb(217, 231, 240)",
+  );
+  await expect(page.locator(".canvas-area")).toHaveCSS("padding-left", "12px");
   await expect(page.locator(".board-export-heading")).toHaveCSS(
     "background-color",
     "rgb(17, 68, 85)",
@@ -2841,11 +3134,17 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
       const result = {
         width: bitmap.width,
         height: bitmap.height,
-        heading: sample(13, 5),
-        card: sample(13, 65),
-        caption: sample(13, 215),
+        heading: sample(11, 11),
+        card: sample(11, 63),
+        caption: sample(11, 213),
         padding: sample(1, 53),
-        gap: sample(163, 65),
+        gap: sample(161, 63),
+        edges: [
+          sample(11, 5),
+          sample(5, 11),
+          sample(bitmap.width - 6, 11),
+          sample(11, bitmap.height - 6),
+        ],
       };
       bitmap.close();
       return result;
@@ -2853,31 +3152,73 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
     [...bytes],
   );
   expect(pixels).toEqual({
-    width: 496,
-    height: 583,
+    width: 492,
+    height: 584,
     heading: [17, 68, 85, 255],
     card: [51, 85, 119, 255],
     caption: [51, 85, 119, 255],
-    padding: [23, 25, 27, 255],
-    gap: [23, 25, 27, 255],
+    padding: [217, 231, 240, 255],
+    gap: [217, 231, 240, 255],
+    edges: Array.from({ length: 4 }, () => [217, 231, 240, 255]),
   });
-  await page.locator("#canvas-background-color-value").fill("#eef2f5");
-  await page.locator("#canvas-padding").fill("48");
-  const unchanged = await downloadBoard(page);
-  expect(await readFile(await unchanged.path())).toEqual(bytes);
+  await page.locator("#canvas-padding").fill("8");
+  expected.padding = 8;
+  await expect(page.locator("#canvas-padding-value")).toHaveText("8%");
+  await checkCanvasPadding();
+  await expect(page.locator(".canvas-area")).toHaveCSS("padding-left", "12px");
+  await expect
+    .poll(() =>
+      page.locator("#board-grid").evaluate((grid) => {
+        const cell = grid.firstElementChild.getBoundingClientRect();
+        return (
+          (parseFloat(getComputedStyle(grid).paddingLeft) / cell.width) * 100
+        );
+      }),
+    )
+    .toBeCloseTo(8, 1);
+  const padded = await downloadBoard(page);
+  const paddedBytes = await readFile(await padded.path());
+  expect(paddedBytes).not.toEqual(bytes);
+  expect(
+    await page.evaluate(
+      async (bytes) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        );
+        const size = { width: bitmap.width, height: bitmap.height };
+        bitmap.close();
+        return size;
+      },
+      [...paddedBytes],
+    ),
+  ).toEqual({ width: 504, height: 596 });
   await reloadWorkspace(page);
   expect((await savedWorkspace(page)).grid).toMatchObject({
     gap: 60,
-    headingGap: 39,
-    gridPadding: 30,
     canvasPadding: 48,
-    canvasBackgroundColor: "#eef2f5",
+    background: "#d9e7f0",
     headingBackgroundColor: "#114455",
     cellBackgroundColor: "#335577",
     captionOverlayColor: "#7700bb",
     captionOverlayOpacity: 35,
   });
+  await expect(canvasStyle.locator("#background-value")).toHaveValue(
+    /^#d9e7f0$/i,
+  );
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS(
+    "background-color",
+    "rgb(217, 231, 240)",
+  );
+  await expect(page.locator(".workspace")).toHaveCSS(
+    "background-color",
+    "rgb(18, 20, 21)",
+  );
   await expect.poll(ratios).toEqual(expected);
+  await page
+    .getByRole("region", { name: "Grid editor", exact: true })
+    .screenshot({
+      path: testInfo.outputPath("image-canvas-background-desktop.png"),
+    });
   await page
     .getByRole("group", { name: "Canvas style", exact: true })
     .screenshot({ path: testInfo.outputPath("canvas-style-desktop.png") });
@@ -2886,6 +3227,23 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(ratios).toEqual(expected);
+  await expect(page.locator("#canvas-padding")).toHaveValue("8");
+  await expect
+    .poll(() =>
+      page.locator("[data-canvas-viewport]").evaluate((viewport) => {
+        const cell = viewport
+          .querySelector(".grid-cell")
+          .getBoundingClientRect();
+        const bounds = viewport.getBoundingClientRect();
+        return (
+          viewport.clientHeight > 128 &&
+          cell.top < bounds.bottom &&
+          cell.bottom > bounds.top &&
+          cell.left < bounds.right
+        );
+      }),
+    )
+    .toBe(true);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -3198,28 +3556,6 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   page,
 }, testInfo) => {
   await page.goto("./");
-  await selectTheme(page, "Superhero");
-  const subThemes = page.getByRole("group", {
-    name: "Superhero sub-theme",
-    exact: true,
-  });
-  for (const name of ["Marvel", "DC"]) {
-    const button = subThemes.getByRole("button", { name, exact: true });
-    await page.mouse.move(0, 0);
-    const background = await button.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    );
-    const selected = await button.getAttribute("aria-pressed");
-    const before = await button.boundingBox();
-    await button.hover();
-    await expect
-      .poll(() =>
-        button.evaluate((element) => getComputedStyle(element).backgroundColor),
-      )
-      .not.toBe(background);
-    await expect(button).toHaveAttribute("aria-pressed", selected);
-    expect(await button.boundingBox()).toEqual(before);
-  }
   const headingToggle = page.getByRole("switch", {
     name: "Show heading",
     exact: true,
@@ -3240,7 +3576,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
     exact: true,
   });
   const picker = page.getByLabel("Background color picker", { exact: true });
-  for (const id of ["theme-selector", "heading-font", "cell-font"]) {
+  for (const id of ["heading-font", "cell-font"]) {
     await page.locator(`label[for="${id}"]`).hover();
     await expect(page.locator(`#${id}`)).toHaveCSS(
       "border-top-color",
