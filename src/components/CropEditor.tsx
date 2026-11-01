@@ -57,7 +57,7 @@ export function CropEditor({
       returnFocus={returnFocus}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 flex-1 bg-[#101112]" data-crop-stage>
+        <div className="relative min-h-0 flex-1 bg-(--bg)" data-crop-stage>
           <Cropper
             image={asset.src}
             crop={position}

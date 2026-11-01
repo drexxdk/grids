@@ -661,7 +661,7 @@ export function GridCell({
               className="pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)"
               style={
                 {
-                  "--caption-feedback-inset": "clamp(3px, 1.5cqw, 8px)",
+                  "--caption-feedback-inset": "0px",
                   left: "var(--caption-feedback-inset)",
                   right: "var(--caption-feedback-inset)",
                   top: `calc(${(geometry.captionTop / geometry.height) * 100}% + var(--caption-feedback-inset))`,

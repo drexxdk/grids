@@ -791,7 +791,7 @@ export default function App() {
   }
   return (
     <>
-      <main className="app-layout min-h-dvh! min-[901px]:grid-cols-1! min-[901px]:has-data-editor-sidebar:grid-cols-[minmax(0,1fr)_350px]! max-[900px]:block!">
+      <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
           status={
             <span
@@ -818,12 +818,14 @@ export default function App() {
               aria-haspopup="dialog"
               title={t("export.title")}
               aria-label={t("export.title")}
-              className="button secondary size-11! p-0! [&_svg]:size-5!"
+              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! max-[400px]:px-2! [&_svg]:size-5! [&_svg]:shrink-0"
               disabled={exporting}
               onClick={() => setExportOpen(true)}
             >
               <Download />
-              <span className="sr-only">{t("export.title")}</span>
+              <span className="whitespace-nowrap max-[400px]:text-xs">
+                {t("export.title")}
+              </span>
             </button>
           }
         >
@@ -939,14 +941,9 @@ export default function App() {
               </div>
             </aside>
           )}
-          {(canvasActions) => (
+          {() => (
             <section
-              className="workspace flex h-dvh flex-col overflow-hidden"
-              style={
-                {
-                  backgroundColor: "#121415",
-                } as CSSProperties
-              }
+              className="workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden in-[.app-layout:not(:has([data-sidebar-open]))]:w-[calc(100%+var(--native-scrollbar-width,0px))]"
               aria-label={t("editor.region")}
             >
               {conflict && (
@@ -964,15 +961,7 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              {canvasActions && (
-                <div
-                  data-canvas-header
-                  className="flex min-h-19 shrink-0 justify-end border-0 border-b border-solid border-(--line) px-3 py-4"
-                >
-                  {canvasActions}
-                </div>
-              )}
-              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
+              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! in-[.app-layout:not(:has([data-sidebar-open]))]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
                 <GridResizer
                   ref={setPreviewFrame}
                   viewportHeight={previewSize?.height}
