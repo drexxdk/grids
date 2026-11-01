@@ -93,6 +93,22 @@ export function GridCell({
   const [hoverTools, setHoverTools] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
+    if (!imageHovered) return;
+    const clearOutsideHover = (event: PointerEvent) => {
+      if (
+        event.pointerType === "mouse" &&
+        !card.current
+          ?.querySelector("[data-card-image]")
+          ?.contains(event.target as Node)
+      ) {
+        setImageHovered(false);
+        setHoverTools(false);
+      }
+    };
+    window.addEventListener("pointermove", clearOutsideHover);
+    return () => window.removeEventListener("pointermove", clearOutsideHover);
+  }, [imageHovered]);
+  useEffect(() => {
     if (cropTarget && cropTarget !== asset?.id) setCropTarget(null);
   }, [asset?.id, cropTarget]);
   const geometry = cellGeometry(gridStyle, 600, captionRows);

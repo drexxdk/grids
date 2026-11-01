@@ -2826,6 +2826,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
               `${parseFloat(getComputedStyle(element).paddingRight)}px`,
           ),
       );
+      await page.mouse.move(0, 0);
       for (const surface of [asset, card]) {
         await expect(surface).toHaveCSS("border-top-width", "1px");
         await expect(surface).toHaveCSS("border-top-style", "solid");
@@ -6564,15 +6565,14 @@ test("grid headings and font choices persist and export correctly", async ({
   ).toHaveText("Add heading");
   await selectExportField(page, "resolution", "600");
   const download = await downloadBoard(page);
-  const bytes = [...(await readFile(await download.path()))];
-  const height = await page.evaluate(async (bytes) => {
-    const image = await createImageBitmap(
-      new Blob([new Uint8Array(bytes)], { type: "image/png" }),
-    );
+  const base64 = (await readFile(await download.path())).toString("base64");
+  const height = await page.evaluate(async (base64) => {
+    const response = await fetch(`data:image/png;base64,${base64}`);
+    const image = await createImageBitmap(await response.blob());
     const height = image.height;
     image.close();
     return height;
-  }, bytes);
+  }, base64);
   expect(height).toBe(1780);
   await editHeading(page, "A".repeat(120));
   await page.setViewportSize({ width: 390, height: 844 });
