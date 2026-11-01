@@ -2001,8 +2001,51 @@ nativeTouchTest(
       );
       const cardBefore = await page.locator(".grid-cell").first().boundingBox();
       if (width === 960) {
+        expect(
+          await scroller.evaluate(async (outer) => {
+            const inner = outer.querySelector("[data-canvas-viewport]");
+            let advanced = false;
+            const advanceScroll = () => {
+              if (!advanced && outer.scrollTop === 100) {
+                advanced = true;
+                outer.scrollTo(200, 200);
+              }
+            };
+            outer.addEventListener("scroll", advanceScroll);
+            try {
+              outer.scrollTo(100, 100);
+              for (let frame = 0; frame < 6; frame++)
+                await new Promise(requestAnimationFrame);
+              return [
+                outer.scrollLeft,
+                outer.scrollTop,
+                inner.scrollLeft,
+                inner.scrollTop,
+              ];
+            } finally {
+              outer.removeEventListener("scroll", advanceScroll);
+            }
+          }),
+        ).toEqual([200, 200, 200, 200]);
+        await scroller.evaluate((element) => element.scrollTo(0, 0));
+        await expect
+          .poll(() =>
+            gridViewport.evaluate((element) => [
+              element.scrollLeft,
+              element.scrollTop,
+            ]),
+          )
+          .toEqual([0, 0]);
         await page.mouse.move(bounds.x + 4, bounds.y + 120);
         await page.mouse.wheel(160, 180);
+        await expect
+          .poll(() =>
+            scroller.evaluate((element) => [
+              element.scrollLeft,
+              element.scrollTop,
+            ]),
+          )
+          .toEqual([160, 180]);
       } else {
         const session = await page.context().newCDPSession(page);
         const swipe = async (start, end) => {

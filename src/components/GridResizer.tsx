@@ -47,15 +47,27 @@ export function GridResizer({
     const area = content?.parentElement;
     if (!content || !viewport || !controls || !area) return;
     const workspace = viewport.closest<HTMLElement>("[data-workspace-scroll]");
+    const syncedViewport = {
+      left: viewport.scrollLeft,
+      top: viewport.scrollTop,
+    };
     const syncViewport = () => {
       if (!workspace) return;
       viewport.scrollLeft = workspace.scrollLeft;
       viewport.scrollTop = workspace.scrollTop;
+      syncedViewport.left = viewport.scrollLeft;
+      syncedViewport.top = viewport.scrollTop;
     };
     const syncWorkspace = () => {
       if (!workspace) return;
-      workspace.scrollLeft = viewport.scrollLeft;
-      workspace.scrollTop = viewport.scrollTop;
+      if (viewport.scrollLeft !== syncedViewport.left) {
+        workspace.scrollLeft = viewport.scrollLeft;
+        syncedViewport.left = viewport.scrollLeft;
+      }
+      if (viewport.scrollTop !== syncedViewport.top) {
+        workspace.scrollTop = viewport.scrollTop;
+        syncedViewport.top = viewport.scrollTop;
+      }
     };
     const update = () => {
       const grid = viewport.getBoundingClientRect();
