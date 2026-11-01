@@ -17,6 +17,7 @@ import {
   ImagePlus,
   Trash2,
   RefreshCw,
+  RotateCcw,
   RectangleVertical,
   RectangleHorizontal,
   Square,
@@ -49,6 +50,7 @@ import {
   gridLimit,
   makeWorkspace,
   createResetCommand,
+  createResetGridCommand,
   createResizeCommand,
   documentReducer,
   publishers,
@@ -277,9 +279,12 @@ export default function App() {
   const replaceUpload = useRef<HTMLInputElement>(null);
   const resetButton = useRef<HTMLButtonElement>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const resetGridButton = useRef<HTMLButtonElement>(null);
+  const [resetGridOpen, setResetGridOpen] = useState(false);
   const board = workspace.grid;
   const [captionRows, setCaptionRows] = useState(1);
   const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
+  const [canvasOverflow, setCanvasOverflow] = useState({ width: 0, height: 0 });
   const [previewSize, setPreviewSize] = useState<{
     width: number;
     frameHeight: number;
@@ -782,6 +787,15 @@ export default function App() {
     setImageTarget(null);
     setResetOpen(false);
   };
+  const resetGrid = () => {
+    dispatchDocument(createResetGridCommand());
+    setHeadingEditing(false);
+    setImageTarget(null);
+    setResetGridOpen(false);
+    previewFrame
+      ?.closest("[data-workspace-scroll]")
+      ?.scrollTo({ top: 0, left: 0 });
+  };
   if (!loaded) {
     return (
       <main className="grid min-h-dvh place-items-center" aria-busy="true">
@@ -943,7 +957,7 @@ export default function App() {
           )}
           {() => (
             <section
-              className="workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden in-[.app-layout:not(:has([data-sidebar-open]))]:w-[calc(100%+var(--native-scrollbar-width,0px))]"
+              className="workspace relative flex h-full min-h-0 flex-1 flex-col overflow-hidden in-[.app-layout:not(:has([data-sidebar-open]))]:w-[calc(100%+var(--native-scrollbar-width,0px))]"
               aria-label={t("editor.region")}
             >
               {conflict && (
@@ -961,158 +975,184 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! in-[.app-layout:not(:has([data-sidebar-open]))]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
-                <GridResizer
-                  ref={setPreviewFrame}
-                  viewportHeight={previewSize?.height}
-                  previewWidth={previewSize?.previewWidth}
-                  heading={
-                    <BoardHeading
-                      board={board}
-                      editing={headingEditing}
-                      onEdit={setHeadingEditing}
-                      onChange={(heading) => patchBoard({ heading })}
-                    />
-                  }
-                  style={
-                    {
-                      width: previewSize?.width,
-                      height: previewSize?.frameHeight,
-                      flexShrink: 0,
-                      "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
-                      "--preview-scrollbar-width": `${-(previewSize?.rowOffset ?? 0) * 2}px`,
-                      "--grid-top-padding": "0px",
-                      maxWidth: "100%",
-                      marginInline: "auto",
-                      "--columns": board.columns,
-                      "--board-bg": board.background,
-                      "--gap": `${previewSize?.gap ?? board.gap}px`,
-                      "--canvas-inset": `${previewSize?.padding ?? board.canvasPadding ?? 12}px`,
-                      "--heading-gap": `${previewSize?.headingGap ?? board.gap}px`,
-                      "--preview-cell-width": previewSize
-                        ? `${previewSize.cellWidth}px`
-                        : undefined,
-                      "--heading-font": `"${board.headingFont}"`,
-                      "--publisher-color": palette.color,
-                      "--publisher-text":
-                        board.headingTextColor ?? palette.text,
-                    } as CSSProperties
-                  }
-                  rows={board.rows}
-                  columns={board.columns}
-                  onResize={resize}
-                >
-                  <div
-                    id="board-grid"
-                    className="board-grid"
-                    aria-label={t("editor.gridLabel")}
+              <div
+                data-workspace-scroll
+                className="relative min-h-0 flex-1 overflow-auto overscroll-contain scrollbar-gutter-stable"
+              >
+                <div className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!">
+                  <GridResizer
+                    ref={setPreviewFrame}
+                    viewportHeight={previewSize?.height}
+                    previewWidth={previewSize?.previewWidth}
+                    onOverflowChange={setCanvasOverflow}
+                    cornerAction={
+                      <Button
+                        ref={resetGridButton}
+                        variant="icon"
+                        aria-label={t("editor.reset.title")}
+                        title={t("editor.reset.title")}
+                        onClick={() => setResetGridOpen(true)}
+                      >
+                        <RotateCcw aria-hidden="true" className="size-5!" />
+                      </Button>
+                    }
+                    heading={
+                      <BoardHeading
+                        board={board}
+                        editing={headingEditing}
+                        onEdit={setHeadingEditing}
+                        onChange={(heading) => patchBoard({ heading })}
+                      />
+                    }
                     style={
                       {
-                        width: previewSize?.boardWidth,
+                        width: previewSize?.width,
+                        height: previewSize?.frameHeight,
+                        flexShrink: 0,
+                        "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
+                        "--preview-scrollbar-width": `${-(previewSize?.rowOffset ?? 0) * 2}px`,
+                        "--grid-top-padding": "0px",
+                        maxWidth: "100%",
+                        marginInline: "auto",
                         "--columns": board.columns,
+                        "--board-bg": board.background,
                         "--gap": `${previewSize?.gap ?? board.gap}px`,
+                        "--canvas-inset": `${previewSize?.padding ?? board.canvasPadding ?? 12}px`,
+                        "--heading-gap": `${previewSize?.headingGap ?? board.gap}px`,
                         "--preview-cell-width": previewSize
                           ? `${previewSize.cellWidth}px`
                           : undefined,
-                        "--board-bg": board.background,
+                        "--heading-font": `"${board.headingFont}"`,
                         "--publisher-color": palette.color,
                         "--publisher-text":
                           board.headingTextColor ?? palette.text,
-                        "--caption-color": palette.caption,
-                        "--heading-font": `"${board.headingFont}"`,
-                        "--cell-font": `"${board.cellFont}"`,
                       } as CSSProperties
                     }
+                    rows={board.rows}
+                    columns={board.columns}
+                    onResize={resize}
                   >
-                    {board.cells
-                      .slice(0, board.rows * board.columns)
-                      .map((item, index) => {
-                        const asset = workspace.assets.find(
-                          (asset) => asset.id === item.assetId,
-                        );
-                        const isSource =
-                          cardDrag?.source.kind === "cell" &&
-                          cardDrag.source.gridId === board.id &&
-                          cardDrag.source.cellId === item.id;
-                        return (
-                          <GridCell
-                            key={item.id}
-                            cell={item}
-                            asset={asset}
-                            canChoose={activeAssets.length > 0}
-                            index={index}
-                            gridId={board.id}
-                            gridStyle={board}
-                            captionRows={captionRows}
-                            moving={cardDrag !== null}
-                            dragSource={isSource}
-                            dragAffected={
-                              isSource || cardDrag?.targetId === item.id
-                            }
-                            onMoveStart={(source, visual) =>
-                              setCardDrag({ source, visual, targetId: null })
-                            }
-                            onTouchDrag={touchDrag}
-                            onMoveOver={() =>
-                              setCardDrag((current) =>
-                                current && current.targetId !== item.id
-                                  ? { ...current, targetId: item.id }
-                                  : current,
-                              )
-                            }
-                            onMoveLeave={() =>
-                              setCardDrag((current) =>
-                                current?.targetId === item.id
-                                  ? { ...current, targetId: null }
-                                  : current,
-                              )
-                            }
-                            onCrop={(crop, assetId) =>
-                              dispatchDocument({
-                                type: "cell/crop",
-                                gridId: board.id,
-                                cellId: item.id,
-                                assetId,
-                                crop,
-                              })
-                            }
-                            onPatch={(patch) =>
-                              dispatchDocument(
-                                asset && patch.title !== undefined
-                                  ? {
-                                      type: "asset/title",
-                                      assetId: asset.id,
-                                      title: patch.title,
-                                    }
-                                  : {
-                                      type: "cell/patch",
-                                      gridId: board.id,
-                                      cellId: item.id,
-                                      patch,
-                                    },
-                              )
-                            }
-                            onClear={() =>
-                              dispatchDocument({
-                                type: "cell/clear",
-                                gridId: board.id,
-                                cellId: item.id,
-                              })
-                            }
-                            onChoose={(trigger) => {
-                              imageReturnFocus.current = trigger;
-                              setImageTarget(item.id);
-                            }}
-                            onUpload={() => {
-                              uploadTarget.current = item.id;
-                              replaceUpload.current?.click();
-                            }}
-                            onDrop={(event) => drop(event, index)}
-                          />
-                        );
-                      })}
-                  </div>
-                </GridResizer>
+                    <div
+                      id="board-grid"
+                      className="board-grid"
+                      aria-label={t("editor.gridLabel")}
+                      style={
+                        {
+                          width: previewSize?.boardWidth,
+                          "--columns": board.columns,
+                          "--gap": `${previewSize?.gap ?? board.gap}px`,
+                          "--preview-cell-width": previewSize
+                            ? `${previewSize.cellWidth}px`
+                            : undefined,
+                          "--board-bg": board.background,
+                          "--publisher-color": palette.color,
+                          "--publisher-text":
+                            board.headingTextColor ?? palette.text,
+                          "--caption-color": palette.caption,
+                          "--heading-font": `"${board.headingFont}"`,
+                          "--cell-font": `"${board.cellFont}"`,
+                        } as CSSProperties
+                      }
+                    >
+                      {board.cells
+                        .slice(0, board.rows * board.columns)
+                        .map((item, index) => {
+                          const asset = workspace.assets.find(
+                            (asset) => asset.id === item.assetId,
+                          );
+                          const isSource =
+                            cardDrag?.source.kind === "cell" &&
+                            cardDrag.source.gridId === board.id &&
+                            cardDrag.source.cellId === item.id;
+                          return (
+                            <GridCell
+                              key={item.id}
+                              cell={item}
+                              asset={asset}
+                              canChoose={activeAssets.length > 0}
+                              index={index}
+                              gridId={board.id}
+                              gridStyle={board}
+                              captionRows={captionRows}
+                              moving={cardDrag !== null}
+                              dragSource={isSource}
+                              dragAffected={
+                                isSource || cardDrag?.targetId === item.id
+                              }
+                              onMoveStart={(source, visual) =>
+                                setCardDrag({ source, visual, targetId: null })
+                              }
+                              onTouchDrag={touchDrag}
+                              onMoveOver={() =>
+                                setCardDrag((current) =>
+                                  current && current.targetId !== item.id
+                                    ? { ...current, targetId: item.id }
+                                    : current,
+                                )
+                              }
+                              onMoveLeave={() =>
+                                setCardDrag((current) =>
+                                  current?.targetId === item.id
+                                    ? { ...current, targetId: null }
+                                    : current,
+                                )
+                              }
+                              onCrop={(crop, assetId) =>
+                                dispatchDocument({
+                                  type: "cell/crop",
+                                  gridId: board.id,
+                                  cellId: item.id,
+                                  assetId,
+                                  crop,
+                                })
+                              }
+                              onPatch={(patch) =>
+                                dispatchDocument(
+                                  asset && patch.title !== undefined
+                                    ? {
+                                        type: "asset/title",
+                                        assetId: asset.id,
+                                        title: patch.title,
+                                      }
+                                    : {
+                                        type: "cell/patch",
+                                        gridId: board.id,
+                                        cellId: item.id,
+                                        patch,
+                                      },
+                                )
+                              }
+                              onClear={() =>
+                                dispatchDocument({
+                                  type: "cell/clear",
+                                  gridId: board.id,
+                                  cellId: item.id,
+                                })
+                              }
+                              onChoose={(trigger) => {
+                                imageReturnFocus.current = trigger;
+                                setImageTarget(item.id);
+                              }}
+                              onUpload={() => {
+                                uploadTarget.current = item.id;
+                                replaceUpload.current?.click();
+                              }}
+                              onDrop={(event) => drop(event, index)}
+                            />
+                          );
+                        })}
+                    </div>
+                  </GridResizer>
+                </div>
+                <div
+                  aria-hidden="true"
+                  data-workspace-extent
+                  className="pointer-events-none"
+                  style={{
+                    width: `calc(100% + ${canvasOverflow.width}px)`,
+                    height: canvasOverflow.height,
+                  }}
+                />
               </div>
             </section>
           )}
@@ -1744,6 +1784,24 @@ export default function App() {
           <Button variant="primary" onClick={resetDefaults}>
             <PanelsTopLeft aria-hidden="true" />
             {t("settings.reset.confirm")}
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        open={resetGridOpen}
+        onClose={() => setResetGridOpen(false)}
+        title={t("editor.reset.title")}
+        returnFocus={resetGridButton}
+      >
+        <p>{t("editor.reset.prompt")}</p>
+        <p>{t("editor.reset.retention")}</p>
+        <div className="mb-4 flex justify-end gap-2">
+          <Button onClick={() => setResetGridOpen(false)}>
+            {t("common.actions.cancel")}
+          </Button>
+          <Button variant="primary" onClick={resetGrid}>
+            <RotateCcw aria-hidden="true" />
+            {t("editor.reset.title")}
           </Button>
         </div>
       </Modal>

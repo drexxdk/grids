@@ -220,6 +220,7 @@ export type DocumentCommand =
       newCells: Cell[];
     }
   | { type: "grid/reset"; defaults: Workspace }
+  | { type: "grid/reset-all"; defaults: Workspace }
   | {
       type: "assets/import";
       gridId: string;
@@ -600,6 +601,11 @@ export const createResetCommand = (): DocumentCommand => ({
   defaults: makeWorkspace(),
 });
 
+export const createResetGridCommand = (): DocumentCommand => ({
+  type: "grid/reset-all",
+  defaults: makeWorkspace(),
+});
+
 function mergeAssets(existing: Asset[], incoming: Asset[]): Asset[] {
   const ids = new Set(existing.map((asset) => asset.id));
   const additions = incoming.filter((asset) => {
@@ -812,6 +818,12 @@ export function documentReducer(
       );
     case "grid/reset":
       return resetWorkspace(workspace, command.defaults);
+    case "grid/reset-all":
+      return {
+        ...workspace,
+        grid: command.defaults.grid,
+        exportSettings: command.defaults.exportSettings,
+      };
     case "assets/import": {
       const assets = mergeAssets(workspace.assets, command.assets);
       const destination =

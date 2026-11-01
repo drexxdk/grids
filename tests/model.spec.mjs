@@ -713,6 +713,37 @@ test("document resize and reset commands replay stable IDs and preserve newer ed
   expect(model.workspaceSchema.safeParse(restored).success).toBe(true);
 });
 
+test("full grid reset clears content and overflow while retaining library media and stable defaults", () => {
+  const workspace = localWorkspace();
+  workspace.grid = model.resizeBoard(workspace.grid, 2, 2);
+  const previous = structuredClone(workspace);
+  const command = model.createResetGridCommand();
+  const reset = model.documentReducer(workspace, command);
+  expect(reset.grid).toEqual(command.defaults.grid);
+  expect(reset.grid.id).not.toBe(workspace.grid.id);
+  expect(
+    reset.grid.cells.every(
+      (cell) => !cell.assetId && !cell.title && !cell.crop,
+    ),
+  ).toBe(true);
+  expect(reset.grid.overflow).toEqual([]);
+  expect(reset.assets).toBe(workspace.assets);
+  expect(reset.exportSettings).toEqual(command.defaults.exportSettings);
+  expect(model.documentReducer(workspace, command)).toEqual(reset);
+  expect(workspace).toEqual(previous);
+  expect(model.workspaceSchema.safeParse(reset).success).toBe(true);
+  const imported = model.documentReducer(reset, {
+    type: "assets/import",
+    gridId: workspace.grid.id,
+    cellId: workspace.grid.cells[0].id,
+    assets: [
+      { ...workspace.assets[0], id: crypto.randomUUID(), title: "Late import" },
+    ],
+  });
+  expect(imported.assets).toHaveLength(2);
+  expect(imported.grid).toBe(reset.grid);
+});
+
 test("document import commands use latest cell IDs and retain media for stale destinations", () => {
   const workspace = model.makeWorkspace();
   const destination = workspace.grid.cells[3];

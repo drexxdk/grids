@@ -15,6 +15,8 @@ export function GridResizer({
   style,
   viewportHeight,
   previewWidth,
+  onOverflowChange,
+  cornerAction,
   heading,
   rows,
   columns,
@@ -25,6 +27,8 @@ export function GridResizer({
   style?: CSSProperties;
   viewportHeight?: number;
   previewWidth?: number;
+  onOverflowChange?: (size: { width: number; height: number }) => void;
+  cornerAction?: ReactNode;
   heading?: ReactNode;
   rows: number;
   columns: number;
@@ -35,12 +39,24 @@ export function GridResizer({
   const contentRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const columnControlsRef = useRef<HTMLDivElement>(null);
+  const overflowRef = useRef({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const content = contentRef.current;
     const viewport = viewportRef.current;
     const controls = columnControlsRef.current;
     const area = content?.parentElement;
     if (!content || !viewport || !controls || !area) return;
+    const workspace = viewport.closest<HTMLElement>("[data-workspace-scroll]");
+    const syncViewport = () => {
+      if (!workspace) return;
+      viewport.scrollLeft = workspace.scrollLeft;
+      viewport.scrollTop = workspace.scrollTop;
+    };
+    const syncWorkspace = () => {
+      if (!workspace) return;
+      workspace.scrollLeft = viewport.scrollLeft;
+      workspace.scrollTop = viewport.scrollTop;
+    };
     const update = () => {
       const grid = viewport.getBoundingClientRect();
       const frame = area.getBoundingClientRect();
@@ -48,14 +64,34 @@ export function GridResizer({
         "--column-control-offset",
         `${grid.top + viewport.clientHeight / 2 - frame.top - frame.height / 2}px`,
       );
+      const overflow = {
+        width: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
+        height: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
+      };
+      if (
+        overflow.width !== overflowRef.current.width ||
+        overflow.height !== overflowRef.current.height
+      ) {
+        overflowRef.current = overflow;
+        onOverflowChange?.(overflow);
+      }
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(content);
     observer.observe(viewport);
     observer.observe(area);
-    return () => observer.disconnect();
-  }, [viewportHeight, previewWidth]);
+    if (viewport.firstElementChild)
+      observer.observe(viewport.firstElementChild);
+    workspace?.addEventListener("scroll", syncViewport, { passive: true });
+    viewport.addEventListener("scroll", syncWorkspace, { passive: true });
+    syncViewport();
+    return () => {
+      observer.disconnect();
+      workspace?.removeEventListener("scroll", syncViewport);
+      viewport.removeEventListener("scroll", syncWorkspace);
+    };
+  }, [viewportHeight, previewWidth, onOverflowChange]);
   return (
     <div
       ref={ref}
@@ -80,14 +116,14 @@ export function GridResizer({
             className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
           />
           {heading && (
-            <div className="overflow-hidden px-(--canvas-inset,0px) scrollbar-gutter-stable">
+            <div className="overflow-hidden px-(--canvas-inset,0px)">
               {heading}
             </div>
           )}
           <div
             ref={viewportRef}
             data-canvas-viewport
-            className="min-w-0 overflow-auto overscroll-contain scrollbar-gutter-stable"
+            className="min-w-0 overflow-hidden"
             style={{ height: viewportHeight }}
           >
             {children}
@@ -149,6 +185,11 @@ export function GridResizer({
           </ButtonGroup>
         </div>
       ))}
+      {cornerAction && (
+        <div className="col-start-3 row-start-2 flex items-center justify-center">
+          {cornerAction}
+        </div>
+      )}
     </div>
   );
 }

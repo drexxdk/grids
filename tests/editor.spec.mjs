@@ -13,6 +13,10 @@ const touchTest = test.extend({
 const scrollbarTest = test.extend({
   launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] },
 });
+const nativeTouchTest = scrollbarTest.extend({
+  isMobile: true,
+  hasTouch: true,
+});
 
 function sidebarToggle(page, expanded = false) {
   return page
@@ -1765,10 +1769,12 @@ test("canvas preview fits both row and column changes without resizing controls"
     await expect
       .poll(async () => {
         const bounds = await canvas.boundingBox();
-        const available = await workspace.evaluate((element) => ({
-          width: element.clientWidth,
-          height: element.clientHeight,
-        }));
+        const available = await page
+          .locator("[data-workspace-scroll]")
+          .evaluate((element) => ({
+            width: element.clientWidth,
+            height: element.clientHeight,
+          }));
         return Math.max(
           Math.abs(bounds.width - available.width),
           Math.abs(bounds.height - available.height),
@@ -1804,7 +1810,14 @@ test("canvas preview fits both row and column changes without resizing controls"
       expect(
         Math.abs(canvasBounds.y + canvasBounds.height - viewport.height),
       ).toBeLessThanOrEqual(1.01);
-      expect(Math.abs(canvasBounds.width - viewport.width)).toBeLessThan(1);
+      expect(
+        Math.abs(
+          canvasBounds.width -
+            (await page
+              .locator("[data-workspace-scroll]")
+              .evaluate((element) => element.clientWidth)),
+        ),
+      ).toBeLessThan(1);
     }
     for (const dimension of ["row", "column"]) {
       await page
@@ -1938,6 +1951,222 @@ test("canvas preview fits both row and column changes without resizing controls"
         .evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
     )
     .toBeGreaterThanOrEqual(13.8);
+});
+
+nativeTouchTest(
+  "workspace-edge scrolling moves grid items while heading and controls stay fixed",
+  async ({ page }, testInfo) => {
+    await setEditorViewport(page, { width: 960, height: 600 });
+    await page.goto("./");
+    await useComicExample(page);
+    for (const dimension of ["column", "row"])
+      for (let count = 0; count < 4; count++)
+        await page
+          .getByRole("button", { name: `Add ${dimension}`, exact: true })
+          .click();
+    const scroller = page.locator("[data-workspace-scroll]");
+    const gridViewport = page.locator("[data-canvas-viewport]");
+    const fixed = [
+      page.locator("[data-canvas-header]"),
+      page.locator(".board-export-heading"),
+      page.getByRole("group", { name: "Row controls", exact: true }),
+      page.getByRole("group", { name: "Column controls", exact: true }),
+      page.getByRole("button", { name: "Reset grid", exact: true }),
+    ];
+    for (const width of [960, 390]) {
+      await setEditorViewport(page, { width, height: 600 });
+      await scroller.evaluate((element) => element.scrollTo(0, 0));
+      await expect
+        .poll(() =>
+          gridViewport.evaluate((element) => [
+            element.scrollLeft,
+            element.scrollTop,
+          ]),
+        )
+        .toEqual([0, 0]);
+      await expect(scroller).toHaveCSS("overflow-y", "auto");
+      await expect(gridViewport).toHaveCSS("overflow-y", "hidden");
+      expect(
+        await scroller.evaluate((element) => [
+          element.scrollWidth > element.clientWidth,
+          element.scrollHeight > element.clientHeight,
+        ]),
+      ).toEqual([true, true]);
+      const bounds = await scroller.boundingBox();
+      const region = await page.locator(".workspace").boundingBox();
+      expect(bounds.x + bounds.width).toBe(region.x + region.width);
+      expect(bounds.y + bounds.height).toBe(region.y + region.height);
+      const before = await Promise.all(
+        fixed.map((locator) => locator.boundingBox()),
+      );
+      const cardBefore = await page.locator(".grid-cell").first().boundingBox();
+      if (width === 960) {
+        await page.mouse.move(bounds.x + 4, bounds.y + 120);
+        await page.mouse.wheel(160, 180);
+      } else {
+        const session = await page.context().newCDPSession(page);
+        const swipe = async (start, end) => {
+          await session.send("Input.dispatchTouchEvent", {
+            type: "touchStart",
+            touchPoints: [{ ...start, id: 1 }],
+          });
+          for (let step = 1; step <= 8; step++)
+            await session.send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: [
+                {
+                  x: start.x + ((end.x - start.x) * step) / 8,
+                  y: start.y + ((end.y - start.y) * step) / 8,
+                  id: 1,
+                },
+              ],
+            });
+          await session.send("Input.dispatchTouchEvent", {
+            type: "touchEnd",
+            touchPoints: [],
+          });
+        };
+        await swipe(
+          { x: bounds.x + 4, y: bounds.y + 350 },
+          { x: bounds.x + 4, y: bounds.y + 180 },
+        );
+        const area = await scroller.evaluate((element) => ({
+          width: element.clientWidth,
+          height: element.clientHeight,
+        }));
+        await swipe(
+          { x: bounds.x + area.width * 0.8, y: bounds.y + area.height - 4 },
+          { x: bounds.x + area.width * 0.3, y: bounds.y + area.height - 4 },
+        );
+        await session.detach();
+      }
+      await expect
+        .poll(() => scroller.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => scroller.evaluate((element) => element.scrollLeft))
+        .toBeGreaterThan(0);
+      await expect
+        .poll(async () => {
+          const outer = await scroller.evaluate((element) => [
+            element.scrollLeft,
+            element.scrollTop,
+          ]);
+          const inner = await gridViewport.evaluate((element) => [
+            element.scrollLeft,
+            element.scrollTop,
+          ]);
+          return Math.max(
+            ...outer.map((offset, index) => Math.abs(offset - inner[index])),
+          );
+        })
+        .toBeLessThan(1);
+      const cardAfter = await page.locator(".grid-cell").first().boundingBox();
+      expect(cardAfter.x).toBeLessThan(cardBefore.x);
+      expect(cardAfter.y).toBeLessThan(cardBefore.y);
+      expect(
+        await Promise.all(fixed.map((locator) => locator.boundingBox())),
+      ).toEqual(before);
+      expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0]);
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-scroll-${width}.png`),
+      });
+    }
+  },
+);
+
+test("full grid reset confirms a clean slate and retains library images through reload", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await useComicExample(page);
+  await editHeading(page, "Reset this heading");
+  await openSidebarPanel(page, "Settings");
+  await page.locator("#gap").fill("4");
+  await page.getByRole("button", { name: "Remove row", exact: true }).click();
+  const before = await savedWorkspace(page);
+  const blobs = (await localDatabase(page)).images;
+  const trigger = page.getByRole("button", { name: "Reset grid", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Reset grid", exact: true });
+  for (const width of [260, 390, 1440]) {
+    await setEditorViewport(page, { width, height: 900 });
+    await openSidebarPanel(page, "Settings");
+    const settingsReset = page.getByRole("button", {
+      name: "Reset grid settings",
+      exact: true,
+    });
+    await settingsReset.scrollIntoViewIfNeeded();
+    await expect(settingsReset).toBeVisible();
+    await expect(
+      page
+        .locator(".settings-panel")
+        .getByRole("button", { name: "Reset grid", exact: true }),
+    ).toHaveCount(0);
+    await closeSidebarPanel(page);
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toHaveAttribute("title", "Reset grid");
+    await expect(trigger.locator("svg")).toHaveCount(1);
+    expect(await trigger.textContent()).toBe("");
+    const gridBounds = await trigger.boundingBox();
+    expect(gridBounds.width).toBe(44);
+    expect(gridBounds.height).toBe(44);
+    const frame = await page.locator("[data-resize-frame]").boundingBox();
+    const columns = await page
+      .getByRole("group", { name: "Column controls", exact: true })
+      .boundingBox();
+    expect(
+      Math.abs(frame.x + frame.width - gridBounds.x - gridBounds.width),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs(frame.y + frame.height - gridBounds.y - gridBounds.height),
+    ).toBeLessThan(1);
+    expect(Math.abs(columns.x - gridBounds.x)).toBeLessThan(1);
+    const controls = await page
+      .getByRole("group", { name: "Row controls", exact: true })
+      .boundingBox();
+    expect(Math.abs(controls.y - gridBounds.y)).toBeLessThan(1);
+    expect(
+      gridBounds.x < controls.x + controls.width &&
+        gridBounds.x + gridBounds.width > controls.x &&
+        gridBounds.y < controls.y + controls.height &&
+        gridBounds.y + gridBounds.height > controls.y,
+    ).toBe(false);
+    await page.screenshot({
+      path: testInfo.outputPath(`canvas-reset-${width}.png`),
+    });
+    await trigger.click();
+    await expect(dialog).toContainText("Imported library images are kept.");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect((await localDatabase(page)).document).toEqual(before);
+  }
+  await trigger.click();
+  await dialog.getByRole("button", { name: "Reset grid", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).document?.grid.id)
+    .not.toBe(before.grid.id);
+  const reset = await savedWorkspace(page);
+  expect(reset.grid).toMatchObject({
+    rows: 3,
+    columns: 3,
+    heading: "",
+    gap: 60,
+    overflow: [],
+  });
+  expect(
+    reset.grid.cells.every(
+      (cell) => !cell.assetId && !cell.title && !cell.crop,
+    ),
+  ).toBe(true);
+  expect(reset.assets).toEqual(before.assets);
+  expect((await localDatabase(page)).images).toEqual(blobs);
+  await reloadWorkspace(page);
+  expect((await savedWorkspace(page)).grid).toEqual(reset.grid);
+  await openSidebarPanel(page, "Images");
+  await expect(page.locator(".asset")).toHaveCount(before.assets.length);
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
 });
 
 test("desktop sidebar has stable panel scrollbars and modal alignment", async ({

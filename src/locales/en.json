@@ -24,6 +24,12 @@
     "settings": "Settings",
     "closeSidebar": "Close sidebar",
     "showSidebar": "Show sidebar",
+    "reset": {
+      "title": "Reset grid",
+      "tooltip": "Start a new empty grid",
+      "prompt": "Reset the layout and styling, and remove all grid headings, images and crops?",
+      "retention": "Imported library images are kept. This cannot be undone."
+    },
     "region": "Grid editor",
     "headingLabel": "Grid heading",
     "headingPlaceholder": "Add heading",
