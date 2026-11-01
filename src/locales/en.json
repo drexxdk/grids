@@ -19,6 +19,10 @@
   },
   "editor": {
     "tools": "Tools",
+    "panels": "Editor panels",
+    "images": "Images",
+    "settings": "Settings",
+    "closeSidebar": "Close sidebar",
     "region": "Grid editor",
     "headingLabel": "Grid heading",
     "headingPlaceholder": "Add heading",
@@ -34,7 +38,7 @@
       "square": "Square"
     },
     "captionPosition": {
-      "label": "Caption position",
+      "label": "Card heading",
       "above": "Above image",
       "below": "Below image",
       "overlayTop": "Overlay top",

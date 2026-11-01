@@ -1,18 +1,16 @@
-import {
-  Disclosure,
-  DisclosureButton,
-  DisclosurePanel,
-} from "@headlessui/react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { useReducedMotion } from "motion/react";
+import { Images, PanelsTopLeft, Settings2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  useLayoutEffect,
+  useEffect,
+  useId,
   useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { Button, MotionDiv } from "./ui/controls";
+import { Button, ButtonGroup } from "./ui/controls";
+import { Modal } from "./ui/Modal";
+import { ImageTabs } from "./ui/ImageTabs";
 
 const compactQuery = "(max-width: 900px)";
 function subscribeToViewport(onChange: () => void) {
@@ -24,8 +22,10 @@ function subscribeToViewport(onChange: () => void) {
 export function EditorLayout({
   children,
   actions,
+  status,
 }: {
   actions: ReactNode;
+  status?: ReactNode;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
     (actions: ReactNode) => ReactNode,
@@ -38,97 +38,138 @@ export function EditorLayout({
     () => window.matchMedia(compactQuery).matches,
     () => false,
   );
-  const reduced = useReducedMotion();
-  const drawerRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const drawer = drawerRef.current;
-    const libraryFrame = drawer?.firstElementChild;
-    if (!compact || !drawer || !libraryFrame) return;
-    const root = document.documentElement;
-    const previous = root.style.getPropertyValue("--editor-drawer-height");
-    const update = () => {
-      if (drawer.hasAttribute("data-open")) return;
-      const style = getComputedStyle(drawer);
-      const height =
-        libraryFrame.getBoundingClientRect().height +
-        parseFloat(style.borderTopWidth) +
-        parseFloat(style.borderBottomWidth);
-      root.style.setProperty("--editor-drawer-height", `${height}px`);
-    };
-    update();
-    const resize = new ResizeObserver(update);
-    resize.observe(libraryFrame);
-    const disclosure = new MutationObserver(update);
-    disclosure.observe(drawer, {
-      attributes: true,
-      attributeFilter: ["data-open"],
-    });
-    return () => {
-      resize.disconnect();
-      disclosure.disconnect();
-      if (previous) root.style.setProperty("--editor-drawer-height", previous);
-      else root.style.removeProperty("--editor-drawer-height");
-    };
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedPanel, setSelectedPanel] = useState(0);
+  const panelsId = useId();
+  const settingsButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!compact) setSettingsOpen(false);
   }, [compact]);
+  useEffect(() => {
+    if (!compact && !sidebarOpen)
+      settingsButton.current?.focus({ preventScroll: true });
+  }, [compact, sidebarOpen]);
   const [library, workspace, settings] = children;
-  if (!compact)
+  const canvasActions = (
+    <div className="flex min-w-0 flex-col items-end gap-2">
+      <ButtonGroup label={t("editor.panels")}>
+        <Button
+          ref={settingsButton}
+          variant="icon"
+          title={t("editor.settings")}
+          aria-label={t("editor.settings")}
+          aria-expanded={compact ? settingsOpen : sidebarOpen}
+          aria-haspopup={compact ? "dialog" : undefined}
+          aria-controls={compact ? undefined : panelsId}
+          onClick={() => {
+            if (compact) setSettingsOpen(true);
+            else {
+              setSelectedPanel(1);
+              setSidebarOpen(true);
+            }
+          }}
+        >
+          <Settings2 aria-hidden="true" className="size-5!" />
+        </Button>
+        {actions}
+      </ButtonGroup>
+      {status}
+    </div>
+  );
+  if (!compact && sidebarOpen)
     return (
       <>
-        {library(null, true)}
         {workspace(null)}
-        {settings(actions)}
+        <aside
+          id={panelsId}
+          data-editor-sidebar
+          aria-label={t("editor.tools")}
+          className="sticky top-0 h-dvh min-h-0 min-w-0 self-start overflow-x-hidden overflow-y-auto border-0 border-l border-solid border-(--line) bg-(--panel) scrollbar-gutter-stable"
+        >
+          <div data-sidebar-sticky className="sticky top-0 z-20 bg-(--panel)">
+            <div
+              data-sidebar-header
+              className="flex min-h-19 items-center justify-between gap-3 border-0 border-b border-solid border-(--line) px-4 py-3"
+            >
+              <a className="brand" href="./">
+                <span className="brand-mark">
+                  <PanelsTopLeft />
+                </span>
+                Grids
+              </a>
+              <Button
+                variant="icon"
+                title={t("editor.closeSidebar")}
+                aria-label={t("editor.closeSidebar")}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+            <div
+              data-panel-controls
+              className="flex shrink-0 flex-col gap-2 p-4"
+            >
+              <ImageTabs
+                id={panelsId}
+                label={t("editor.panels")}
+                selectedIndex={selectedPanel}
+                onChange={setSelectedPanel}
+                actions={actions}
+                tabs={[
+                  { label: t("editor.images"), icon: Images },
+                  { label: t("editor.settings"), icon: Settings2 },
+                ]}
+              />
+              {status}
+            </div>
+          </div>
+          <div
+            data-sidebar-panels
+            className="relative isolate z-0 min-h-0 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:block! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+          >
+            <div
+              role="tabpanel"
+              id={`${panelsId}-panel-0`}
+              aria-labelledby={`${panelsId}-tab-0`}
+              hidden={selectedPanel !== 0}
+              className="min-h-0"
+            >
+              {library(null, true)}
+            </div>
+            <div
+              role="tabpanel"
+              id={`${panelsId}-panel-1`}
+              aria-labelledby={`${panelsId}-tab-1`}
+              hidden={selectedPanel !== 1}
+              className="min-h-0"
+            >
+              {settings(null)}
+            </div>
+          </div>
+        </aside>
       </>
     );
   return (
     <>
-      {workspace(actions)}
-      <Disclosure
-        ref={drawerRef}
-        data-editor-drawer
-        as={MotionDiv}
-        initial={{ y: reduced ? 0 : 160 }}
-        animate={{ y: 0 }}
-        motionTransition={{ duration: reduced ? 0 : 0.18 }}
-        className="pointer-events-none fixed left-0 bottom-0 z-40 w-(--viewport-width,100vw) border-0 bg-transparent"
-      >
-        {({ open }) => (
-          <>
-            <div className="relative z-10 flex justify-center">
-              <DisclosureButton
-                as={Button}
-                className="pointer-events-auto min-h-11 w-40 shrink-0 translate-y-px rounded-t-md! rounded-b-none! border-b-0! bg-(--panel)! enabled:hover:border-(--line)! enabled:hover:text-(--accent) focus-visible:-outline-offset-2"
-                aria-label={t("editor.tools")}
-              >
-                {open ? (
-                  <ChevronDown aria-hidden="true" />
-                ) : (
-                  <ChevronUp aria-hidden="true" />
-                )}
-                {t("editor.tools")}
-              </DisclosureButton>
-            </div>
-            <div
-              data-shelf-body
-              className="pointer-events-auto border border-b-0 border-solid border-(--line) bg-(--panel)"
-            >
-              <DisclosurePanel
-                static
-                as={MotionDiv}
-                inert={!open}
-                aria-hidden={!open}
-                initial={false}
-                animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-                motionTransition={{ duration: reduced ? 0 : 0.18 }}
-                className="max-h-[calc(80dvh-44px)] overflow-x-hidden overflow-y-auto overscroll-contain scrollbar-gutter-stable [&_.settings-panel]:p-3!"
-              >
-                <div className="pb-[env(safe-area-inset-bottom)]">
-                  {settings(null)}
-                </div>
-              </DisclosurePanel>
-            </div>
-          </>
-        )}
-      </Disclosure>
+      {workspace(canvasActions)}
+      {compact && (
+        <Modal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          title={t("editor.settings")}
+          returnFocus={settingsButton}
+          sidePanel
+        >
+          <div
+            data-editor-settings
+            className="[&_.settings-panel]:block! [&_.settings-panel]:border-0! [&_.settings-panel]:p-0!"
+          >
+            {settings(null)}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

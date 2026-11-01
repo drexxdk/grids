@@ -36,6 +36,7 @@ export function Modal({
   children,
   fullscreen = false,
   size = "compact",
+  sidePanel = false,
   onExited,
 }: {
   open: boolean;
@@ -46,6 +47,7 @@ export function Modal({
   children: ReactNode;
   fullscreen?: boolean;
   size?: "compact" | "wide";
+  sidePanel?: boolean;
   onExited?: () => void;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -58,7 +60,9 @@ export function Modal({
   return (
     <AnimatePresence
       onExitComplete={() => {
-        returnFocus.current?.focus({ preventScroll: true });
+        requestAnimationFrame(() =>
+          returnFocus.current?.focus({ preventScroll: true }),
+        );
         onExited?.();
       }}
     >
@@ -79,19 +83,33 @@ export function Modal({
           <DialogBackdrop className="fixed inset-0 bg-black/60" />
           <div
             data-modal-scroll
-            className={`fixed inset-0 overflow-y-auto overscroll-contain ${fullscreen ? "" : "p-4"}`}
+            className={`fixed inset-0 overflow-y-auto overscroll-contain ${sidePanel ? "overflow-x-hidden" : ""} ${fullscreen || sidePanel ? "" : "p-4"}`}
           >
-            <div className="flex min-h-full items-center justify-center">
+            <div
+              className={
+                sidePanel
+                  ? "flex min-h-full items-start justify-end"
+                  : "flex min-h-full items-center justify-center"
+              }
+            >
               <DialogPanel
+                data-modal-panel
+                as={MotionDiv}
+                initial={sidePanel ? { x: "100%" } : false}
+                animate={sidePanel ? { x: 0 } : undefined}
+                exit={sidePanel ? { x: "100%" } : undefined}
+                motionTransition={{ duration: reduced ? 0 : 0.18 }}
                 className={
-                  fullscreen
-                    ? "flex h-dvh w-full flex-col bg-(--panel)"
-                    : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
+                  sidePanel
+                    ? "min-h-dvh w-full max-w-87.5 bg-(--panel) p-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+                    : fullscreen
+                      ? "flex h-dvh w-full flex-col bg-(--panel)"
+                      : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
                 }
               >
                 <InitialTouchFocus target={closeButton} enabled={touch} />
                 <div
-                  className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
+                  className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : sidePanel ? "mb-4 pt-[env(safe-area-inset-top)]" : "mb-4"}`}
                 >
                   <DialogTitle className="text-lg font-semibold">
                     {title}

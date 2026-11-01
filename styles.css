@@ -400,8 +400,7 @@ h2 {
 .workspace {
   min-width: 0;
 }
-.workspace,
-.app-layout:has([data-editor-drawer]) {
+.workspace {
   background: radial-gradient(#34383a 0.6px, transparent 0.6px);
   background-size: 12px 12px;
   background-color: #121415;

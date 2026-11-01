@@ -9,10 +9,13 @@ import {
   ListboxLabel,
   ListboxOption,
   ListboxOptions,
+  Label,
   Menu,
   MenuButton,
   MenuItem,
   MenuItems,
+  Radio,
+  RadioGroup,
   Switch,
 } from "@headlessui/react";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -108,6 +111,75 @@ export function ButtonGroup({
   );
 }
 
+function ChoiceButton({
+  ref,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }) {
+  const disabled =
+    props.disabled ||
+    props["aria-disabled"] === true ||
+    props["aria-disabled"] === "true";
+  return <button {...props} ref={ref} disabled={disabled} />;
+}
+
+export function IconRadioField({
+  id,
+  label,
+  value,
+  options,
+  columns,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string; icon: LucideIcon }[];
+  columns: 2 | 3;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <RadioGroup id={id} value={value} onChange={onChange}>
+      <Label className="field-label">{label}</Label>
+      <div
+        className={clsx(
+          "isolate grid gap-0 rounded-md bg-[#111315]",
+          columns === 3 ? "grid-cols-3" : "grid-cols-2",
+        )}
+      >
+        {options.map(
+          (
+            { value: optionValue, label: optionLabel, icon: Icon },
+            optionIndex,
+          ) => (
+            <Radio
+              key={optionValue}
+              as={ChoiceButton}
+              type="button"
+              value={optionValue}
+              disabled={optionValue === value}
+              data-value={optionValue}
+              className={clsx(
+                "relative flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-none border border-solid border-(--line) bg-[#111315] px-1 py-2 text-(--muted) data-hover:z-10 data-hover:border-(--accent) data-checked:bg-(--line) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! data-checked:data-hover:border-(--line) focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
+                optionIndex % columns !== 0 && "-ml-px",
+                optionIndex >= columns && "-mt-px",
+                optionIndex === 0 && "rounded-tl-md",
+                optionIndex === columns - 1 && "rounded-tr-md",
+                optionIndex === options.length - columns && "rounded-bl-md",
+                optionIndex === options.length - 1 && "rounded-br-md",
+              )}
+            >
+              <Icon aria-hidden="true" className="size-6! shrink-0" />
+              <span className="w-full text-center text-xs leading-4 wrap-break-word">
+                {optionLabel}
+              </span>
+            </Radio>
+          ),
+        )}
+      </div>
+    </RadioGroup>
+  );
+}
+
 export function SelectField({
   id,
   label,
@@ -126,6 +198,8 @@ export function SelectField({
     icon?: LucideIcon;
     fontFamily?: string;
     fontWeight?: number;
+    disabled?: boolean;
+    title?: string;
   }[];
   onChange: (value: string) => void;
   compact?: boolean;
@@ -187,8 +261,12 @@ export function SelectField({
           const OptionIcon = option.icon;
           return (
             <ListboxOption
+              as={ChoiceButton}
+              type="button"
               key={option.value}
               value={option.value}
+              disabled={option.disabled || option.value === value}
+              title={option.title}
               data-value={option.value}
               style={{
                 fontFamily: option.fontFamily
@@ -197,7 +275,7 @@ export function SelectField({
                 fontWeight: option.fontWeight,
               }}
               className={clsx(
-                "flex min-h-11 items-center gap-2 cursor-pointer px-3 py-2 text-sm wrap-break-word data-focus:bg-(--line) data-selected:text-(--accent)",
+                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word data-focus:bg-(--line) data-selected:bg-(--line) data-selected:text-(--accent) data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
                 largeFontPreview && "py-0! text-[20px]! leading-7",
               )}
             >

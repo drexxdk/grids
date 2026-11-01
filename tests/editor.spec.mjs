@@ -92,12 +92,34 @@ async function savedWorkspace(page) {
   return (await localDatabase(page)).document;
 }
 
+async function openSidebarPanel(page, name) {
+  await expect(page.locator("#board-grid")).toBeVisible();
+  const sidebar = page.locator("[data-editor-sidebar]");
+  if (await sidebar.count()) {
+    const tab = sidebar.getByRole("tab", { name, exact: true });
+    if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+  } else if (
+    name === "Settings" &&
+    !(await page
+      .getByRole("dialog", { name: "Settings", exact: true })
+      .isVisible())
+  )
+    await page
+      .getByRole("button", { name: "Settings", expanded: false, exact: true })
+      .click();
+}
+
 async function reloadWorkspace(page) {
+  const selected = page.locator(
+    '[data-editor-sidebar] [role="tab"][aria-selected="true"]',
+  );
+  const panel = (await selected.count()) ? await selected.innerText() : null;
   await expect(page.locator("#save-status")).toHaveText(
     "Saved in this browser",
   );
   await page.reload();
   await expect(page.locator("#board-grid")).toBeVisible();
+  if (panel) await openSidebarPanel(page, panel);
 }
 
 async function downloadBoard(page) {
@@ -136,6 +158,10 @@ async function useComicExample(page, publisher = "dc") {
       `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`
     );
   }
+  const selected = page.locator(
+    '[data-editor-sidebar] [role="tab"][aria-selected="true"]',
+  );
+  const panel = (await selected.count()) ? await selected.innerText() : null;
   const original = await savedWorkspace(page);
   const workspace = comicFixtureModule.makeComicFixture(original, publisher);
   const images = await Promise.all(
@@ -158,11 +184,40 @@ async function useComicExample(page, publisher = "dc") {
   await localDatabase(page, "seed", { workspace, images });
   await page.reload();
   await expect(page.locator("#board-grid")).toBeVisible();
+  if (panel) await openSidebarPanel(page, panel);
 }
 
 async function selectField(page, id, value) {
+  if (["image-shape", "caption-position"].includes(id)) {
+    await expect(page.locator("#board-grid")).toBeVisible();
+    const selected = page.locator(
+      '[data-editor-sidebar] [role="tab"][aria-selected="true"]',
+    );
+    const panel = (await selected.count()) ? await selected.innerText() : null;
+    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+    const openedTools = !panel && !(await dialog.isVisible());
+    if (panel) await openSidebarPanel(page, "Settings");
+    if (openedTools) await openSidebarPanel(page, "Settings");
+    const radio = page
+      .locator(`#${id}`)
+      .locator(`[role="radio"][data-value="${value}"]`);
+    if (!(await radio.isChecked())) await radio.click();
+    if (panel) await openSidebarPanel(page, panel);
+    if (openedTools) {
+      await dialog
+        .getByRole("button", { name: "Close dialog", exact: true })
+        .click();
+      await expect(dialog).toHaveCount(0);
+    }
+    return;
+  }
+  if (["heading-font", "cell-font"].includes(id))
+    await openSidebarPanel(page, "Settings");
   await page.locator(`#${id}`).click();
-  await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
+  const option = page.getByRole("listbox").locator(`[data-value="${value}"]`);
+  if ((await option.getAttribute("aria-selected")) === "true")
+    await page.keyboard.press("Escape");
+  else await option.click();
 }
 
 async function editHeading(page, value) {
@@ -230,6 +285,7 @@ test("card content and actions scale with the card without resize undo", async (
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   for (const dimension of ["row", "column"])
     for (let count = 0; count < 2; count++)
       await page
@@ -335,6 +391,7 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   for (const id of ["canvas-padding", "gap"]) {
     await expect(page.locator(`#${id}`)).toHaveValue("10");
     await expect(page.locator(`#${id}`)).toHaveAttribute("max", "20");
@@ -423,6 +480,7 @@ test("canvas resizing commits fitted dimensions before the next paint", async ({
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await savedWorkspace(page);
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => {
@@ -457,6 +515,616 @@ test("canvas resizing commits fitted dimensions before the next paint", async ({
   expect(errors).toEqual([]);
 });
 
+test("settings have open sections and joined appearance radio grids", async ({
+  page,
+}, testInfo) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("./");
+    if (width > 900) await openSidebarPanel(page, "Settings");
+    else
+      await page
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
+        .click();
+    const shapes = page.getByRole("radiogroup", {
+      name: "Image shape",
+      exact: true,
+    });
+    const headings = page.getByRole("radiogroup", {
+      name: "Card heading",
+      exact: true,
+    });
+    await expect(shapes.getByRole("radio")).toHaveCount(3);
+    await expect(headings.getByRole("radio")).toHaveCount(4);
+    await expect(
+      page.getByRole("toolbar", { name: "Grid appearance" }),
+    ).toHaveCount(0);
+    for (const name of ["Canvas style", "Heading style", "Card style"]) {
+      const section = page.getByRole("group", { name, exact: true });
+      await expect(section).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(section).toHaveCSS("border-radius", "0px");
+      await expect(section).toHaveCSS("border-left-width", "0px");
+    }
+    for (const [group, columns] of [
+      [shapes, 3],
+      [headings, 2],
+    ]) {
+      await group.scrollIntoViewIfNeeded();
+      const grid = group.locator(":scope > .grid");
+      expect(
+        await grid.evaluate(
+          (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+        ),
+      ).toBe(columns);
+      await expect(grid).toHaveCSS("gap", "0px");
+      const radios = group.getByRole("radio");
+      const first = await radios.nth(0).boundingBox();
+      const second = await radios.nth(1).boundingBox();
+      expect(Math.abs(first.x + first.width - second.x - 1)).toBeLessThan(1);
+      await expect(radios.nth(0)).toHaveCSS("border-top-left-radius", "6px");
+      await expect(radios.nth(0)).toHaveCSS("border-top-right-radius", "0px");
+      if (columns === 2) {
+        const third = await radios.nth(2).boundingBox();
+        expect(Math.abs(first.y + first.height - third.y - 1)).toBeLessThan(1);
+      }
+      for (const radio of await radios.all()) {
+        await expect(radio).toHaveCSS("flex-direction", "column");
+        expect(
+          await radio.evaluate((el) => {
+            const icon = el.querySelector("svg").getBoundingClientRect();
+            const label = el.querySelector("span");
+            return (
+              icon.bottom <= label.getBoundingClientRect().top &&
+              label.scrollWidth <= label.clientWidth
+            );
+          }),
+        ).toBe(true);
+      }
+      await group.screenshot({
+        path: testInfo.outputPath(`appearance-radios-${width}-${columns}.png`),
+      });
+    }
+    const portrait = shapes.getByRole("radio", {
+      name: "Portrait",
+      exact: true,
+    });
+    if (!(await portrait.isChecked())) await portrait.click();
+    await expect(portrait).toBeDisabled();
+    await expect(portrait).toHaveJSProperty("disabled", true);
+    await expect(portrait).toHaveCSS("opacity", "1");
+    await expect(portrait).toHaveCSS("cursor", "default");
+    await expect(portrait).toHaveCSS("color", "rgb(216, 243, 106)");
+    await expect(portrait).toHaveCSS("background-color", "rgb(48, 51, 53)");
+    await expect(portrait).toHaveAttribute("tabindex", "-1");
+    const landscape = shapes.getByRole("radio", {
+      name: "Landscape",
+      exact: true,
+    });
+    await expect(landscape).toBeEnabled();
+    await landscape.focus();
+    await landscape.press(" ");
+    await expect(
+      shapes.getByRole("radio", { name: "Landscape", exact: true }),
+    ).toBeChecked();
+    await expect(landscape).toBeDisabled();
+    await expect(landscape).toHaveJSProperty("disabled", true);
+    await expect(landscape).toHaveCSS("opacity", "1");
+    await expect(portrait).toBeEnabled();
+    const overlayTop = headings.getByRole("radio", {
+      name: "Overlay top",
+      exact: true,
+    });
+    if (!(await overlayTop.isChecked())) await overlayTop.click();
+    await expect(overlayTop).toHaveJSProperty("disabled", true);
+    await expect(overlayTop).toHaveCSS("opacity", "1");
+    await expect(overlayTop).toHaveCSS("cursor", "default");
+    await expect(overlayTop).toHaveCSS("color", "rgb(216, 243, 106)");
+    await expect(overlayTop).toHaveCSS("background-color", "rgb(48, 51, 53)");
+    await expect(
+      headings.getByRole("radio", { name: "Overlay top", exact: true }),
+    ).toBeChecked();
+    await expect(
+      headings.getByRole("radio", { name: "Overlay top", exact: true }),
+    ).toBeDisabled();
+    expect((await savedWorkspace(page)).grid).toMatchObject({
+      imageAspect: "landscape",
+      captionPlacement: "overlay",
+      captionAlignment: "top",
+    });
+    if (width <= 900) {
+      const dialog = page.getByRole("dialog", {
+        name: "Settings",
+        exact: true,
+      });
+      await dialog
+        .getByRole("button", { name: "Close dialog", exact: true })
+        .click();
+      await expect(dialog).toHaveCount(0);
+    }
+    await reloadWorkspace(page);
+    if (width <= 900)
+      await page
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
+        .click();
+    await expect(
+      shapes.getByRole("radio", { name: "Landscape", exact: true }),
+    ).toBeChecked();
+    await expect(
+      headings.getByRole("radio", { name: "Overlay top", exact: true }),
+    ).toBeChecked();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+});
+
+test("sidebar tiles join images settings and export and desktop can collapse", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const sidebar = page.locator("[data-editor-sidebar]");
+  const header = sidebar.locator(
+    "[data-sidebar-sticky] > [data-sidebar-header]",
+  );
+  const commands = sidebar.getByRole("tablist", {
+    name: "Editor panels",
+    exact: true,
+  });
+  await expect(sidebar.getByRole("tablist")).toHaveCount(1);
+  await expect(header.getByRole("button")).toHaveCount(1);
+  await expect(header.getByRole("tab")).toHaveCount(0);
+  await expect(
+    header.getByRole("link", { name: "Grids", exact: true }),
+  ).toBeVisible();
+  await expect(sidebar).toHaveCSS("overflow-y", "auto");
+  await expect(sidebar).toHaveCSS("scrollbar-gutter", "stable");
+  await expect(commands.locator(":scope > button")).toHaveCount(3);
+  const images = commands.getByRole("tab", { name: "Images", exact: true });
+  const settings = commands.getByRole("tab", { name: "Settings", exact: true });
+  const exportButton = commands.getByRole("button", {
+    name: "Export grid",
+    exact: true,
+  });
+  for (const [control, title] of [
+    [images, "Images"],
+    [settings, "Settings"],
+    [exportButton, "Export grid"],
+  ]) {
+    await expect(control).toHaveAttribute("title", title);
+    await expect(control.locator("svg")).toHaveCount(1);
+    await expect(control).toHaveCSS("height", "80px");
+    await expect(control).toHaveCSS("flex-direction", "column");
+    await expect(control.locator("span")).toHaveCSS("position", "static");
+    expect(
+      await control.evaluate((element) => {
+        const icon = element.querySelector("svg").getBoundingClientRect();
+        const label = element.querySelector("span");
+        return (
+          icon.bottom <= label.getBoundingClientRect().top &&
+          label.scrollWidth <= label.clientWidth
+        );
+      }),
+    ).toBe(true);
+  }
+  const first = await images.boundingBox();
+  const second = await settings.boundingBox();
+  const last = await exportButton.boundingBox();
+  expect(Math.abs(first.x + first.width - second.x - 1)).toBeLessThan(1);
+  expect(Math.abs(second.x + second.width - last.x - 1)).toBeLessThan(1);
+  await expect(images).toHaveCSS("border-top-left-radius", "6px");
+  await expect(settings).toHaveCSS("border-top-left-radius", "0px");
+  await expect(exportButton).toHaveCSS("border-top-right-radius", "6px");
+  await expect(images).toHaveAttribute("aria-selected", "true");
+  await expect(images).toBeDisabled();
+  await expect(images).toHaveJSProperty("disabled", true);
+  await expect(images).toHaveCSS("opacity", "1");
+  await expect(images).toHaveCSS("color", "rgb(216, 243, 106)");
+  await expect(images).toHaveCSS("background-color", "rgb(48, 51, 53)");
+  await expect(images).toHaveCSS("cursor", "default");
+  await expect(images).toHaveAttribute("tabindex", "-1");
+  const closeSidebar = header.getByRole("button", {
+    name: "Close sidebar",
+    exact: true,
+  });
+  await closeSidebar.focus();
+  await page.keyboard.press("Tab");
+  await expect(settings).toBeFocused();
+  await settings.press("Enter");
+  await expect(settings).toHaveAttribute("aria-selected", "true");
+  await expect(settings).toBeDisabled();
+  await expect(settings).toHaveJSProperty("disabled", true);
+  await expect(settings).toHaveCSS("opacity", "1");
+  await expect(settings).toHaveCSS("color", "rgb(216, 243, 106)");
+  await expect(settings).toHaveCSS("background-color", "rgb(48, 51, 53)");
+  const shapeBounds = await sidebar
+    .getByRole("radiogroup", { name: "Image shape", exact: true })
+    .boundingBox();
+  const commandBounds = await commands.boundingBox();
+  expect(Math.abs(shapeBounds.x - commandBounds.x)).toBeLessThan(1);
+  expect(Math.abs(shapeBounds.width - commandBounds.width)).toBeLessThan(1);
+  await expect(images).toBeEnabled();
+  await expect(
+    sidebar.getByRole("group", { name: "Canvas style", exact: true }),
+  ).toBeVisible();
+  await exportButton.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(images).toBeFocused();
+  await images.press("Enter");
+  await expect(images).toHaveAttribute("aria-selected", "true");
+  await exportButton.click();
+  const dialog = page.getByRole("dialog", { name: "Export grid", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(exportButton).toBeFocused();
+  await commands.screenshot({
+    path: testInfo.outputPath("sidebar-command-tiles.png"),
+  });
+  await settings.click();
+  const canvasStyle = sidebar.getByRole("group", {
+    name: "Canvas style",
+    exact: true,
+  });
+  expect(
+    (await commands.boundingBox()).y + (await commands.boundingBox()).height,
+  ).toBeLessThanOrEqual((await canvasStyle.boundingBox()).y);
+  await page.locator("#background-value").fill("#112233");
+  await page.locator("#background-value").press("Enter");
+  await closeSidebar.click();
+  await expect(sidebar).toHaveCount(0);
+  const canvasHeader = page.locator("[data-canvas-header]");
+  expect((await canvasHeader.boundingBox()).y).toBe(0);
+  expect(
+    (
+      await page
+        .getByRole("region", { name: "Grid editor", exact: true })
+        .boundingBox()
+    ).width,
+  ).toBe(1440);
+  const canvasSettings = canvasHeader.getByRole("button", {
+    name: "Settings",
+    exact: true,
+  });
+  await expect(canvasSettings).toBeFocused();
+  await expect(canvasSettings).toHaveCSS("width", "44px");
+  await expect(canvasSettings).toHaveCSS("height", "44px");
+  await expect(
+    canvasHeader
+      .getByRole("group", { name: "Editor panels", exact: true })
+      .locator(":scope > button"),
+  ).toHaveCount(2);
+  await page.screenshot({
+    path: testInfo.outputPath("desktop-sidebar-closed.png"),
+  });
+  await canvasSettings.click();
+  await expect(sidebar).toBeVisible();
+  await expect(canvasHeader).toHaveCount(0);
+  await expect(settings).toHaveJSProperty("disabled", true);
+  await expect(page.locator("#background-value")).toHaveValue("#112233");
+  await closeSidebar.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(canvasHeader).toBeVisible();
+  await expect(canvasSettings).toHaveCSS("width", "44px");
+  await expect(canvasSettings).toHaveCSS("height", "44px");
+  await page.screenshot({
+    path: testInfo.outputPath("mobile-sidebar-closed.png"),
+  });
+  await canvasSettings.click();
+  const mobileSettings = page.getByRole("dialog", {
+    name: "Settings",
+    exact: true,
+  });
+  await expect(mobileSettings).toBeVisible();
+  await expect(mobileSettings.getByRole("tab")).toHaveCount(0);
+  await mobileSettings
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await expect(mobileSettings).toHaveCount(0);
+  await expect(canvasSettings).toBeFocused();
+});
+
+test("sticky sidebar branding and padded controls stay above scrolling images", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.goto("./");
+  await useComicExample(page, "dc");
+  const sidebar = page.locator("[data-editor-sidebar]");
+  const sticky = sidebar.locator("[data-sidebar-sticky]");
+  const controls = sidebar.locator("[data-panel-controls]");
+  await expect(
+    sticky.getByRole("link", { name: "Grids", exact: true }),
+  ).toBeVisible();
+  await expect(controls).toHaveCSS("padding-top", "16px");
+  await expect(controls).toHaveCSS("padding-bottom", "16px");
+  await expect(sidebar).toHaveCSS("overflow-y", "auto");
+  await expect(sidebar.locator("[data-sidebar-panels]")).toHaveCSS(
+    "isolation",
+    "isolate",
+  );
+  const initial = await sticky.boundingBox();
+  expect(initial.y).toBe(0);
+  expect(
+    await sidebar.evaluate(
+      (element) => element.scrollHeight > element.clientHeight,
+    ),
+  ).toBe(true);
+  for (const scrollTop of [100, 200, 300, 400, 500, 600]) {
+    await sidebar.evaluate((element, top) => {
+      element.scrollTop = top;
+    }, scrollTop);
+    expect(await sticky.boundingBox()).toEqual(initial);
+    expect(
+      await sticky.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        for (let offset = 4; offset < bounds.height; offset += 8) {
+          const foreground = document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + offset,
+          );
+          if (!element.contains(foreground)) return false;
+        }
+        return true;
+      }),
+    ).toBe(true);
+  }
+  await sidebar.screenshot({
+    path: testInfo.outputPath("sticky-sidebar-scrolled.png"),
+  });
+});
+
+test("desktop sidebar is 350px and mobile settings slide out from the right without tabs", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const sidebar = page.locator("[data-editor-sidebar]");
+  expect((await sidebar.boundingBox()).width).toBe(350);
+  await expect(sidebar.getByRole("tab")).toHaveCount(2);
+  for (const width of [390, 320, 780]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(sidebar).toHaveCount(0);
+    await expect(page.locator("[data-editor-drawer]")).toHaveCount(0);
+    await expect(
+      page.getByRole("region", { name: "Grid editor", exact: true }),
+    ).toHaveCSS("height", "844px");
+    const tools = page.getByRole("button", {
+      name: "Settings",
+      expanded: false,
+      exact: true,
+    });
+    const frame = await page.locator("[data-resize-frame]").boundingBox();
+    const header = page.locator("[data-canvas-header]");
+    expect((await header.boundingBox()).y).toBe(0);
+    const commands = header.getByRole("group", {
+      name: "Editor panels",
+      exact: true,
+    });
+    await expect(commands.locator(":scope > button")).toHaveCount(2);
+    await expect(tools).toHaveAttribute("title", "Settings");
+    await expect(tools).toHaveCSS("width", "44px");
+    await expect(tools).toHaveCSS("height", "44px");
+    await expect(tools.locator("svg")).toHaveClass(/lucide-settings2/);
+    await expect(tools).toHaveText("");
+    const exportButton = commands.getByRole("button", {
+      name: "Export grid",
+      exact: true,
+    });
+    const settingsBounds = await tools.boundingBox();
+    const exportBounds = await exportButton.boundingBox();
+    expect(
+      Math.abs(settingsBounds.x + settingsBounds.width - exportBounds.x - 1),
+    ).toBeLessThan(1);
+    await page.evaluate(() => {
+      const probe = { running: true, panelFrames: 0, violations: [] };
+      window.sidePanelOverflow = probe;
+      const sample = () => {
+        const scroll = document
+          .querySelector("[data-editor-settings]")
+          ?.closest("[data-modal-scroll]");
+        if (scroll) {
+          probe.panelFrames++;
+          const overflow = getComputedStyle(scroll).overflowX;
+          if (scroll.scrollWidth > scroll.clientWidth && overflow !== "hidden")
+            probe.violations.push({
+              overflow,
+              width: scroll.clientWidth,
+              content: scroll.scrollWidth,
+            });
+        }
+        if (document.documentElement.scrollWidth > innerWidth)
+          probe.violations.push({
+            page: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+          });
+        if (probe.running) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await tools.click();
+    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[data-modal-scroll]")).toHaveCSS(
+      "overflow-x",
+      "hidden",
+    );
+    await expect(dialog.getByRole("tab")).toHaveCount(0);
+    await expect(
+      dialog.locator(".asset-panel, #sidebar-image-source"),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("radiogroup", { name: "Image shape", exact: true }),
+    ).toBeVisible();
+    const panel = dialog.locator("[data-modal-panel]");
+    await expect
+      .poll(async () => {
+        const bounds = await panel.boundingBox();
+        return Math.abs(bounds.x + bounds.width - width);
+      })
+      .toBeLessThan(1);
+    expect((await panel.boundingBox()).width).toBe(Math.min(width, 350));
+    await expect
+      .poll(async () => {
+        const section = await dialog
+          .getByRole("group", { name: "Canvas style", exact: true })
+          .boundingBox();
+        return Math.abs(section.width - (await panel.boundingBox()).width + 32);
+      })
+      .toBeLessThan(1);
+    await expect(dialog.locator("[data-modal-scroll]")).toHaveCSS(
+      "overflow-y",
+      "auto",
+    );
+    expect(await page.locator("[data-resize-frame]").boundingBox()).toEqual(
+      frame,
+    );
+    expect(
+      await page.evaluate(() =>
+        ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName),
+      ),
+    ).toBe(false);
+    await page.screenshot({
+      path: testInfo.outputPath(`settings-side-panel-${width}.png`),
+    });
+    if (width === 390) {
+      const reset = dialog.getByRole("button", {
+        name: "Reset grid settings",
+        exact: true,
+      });
+      await reset.click();
+      const confirmation = page.getByRole("dialog", {
+        name: "Reset grid settings",
+        exact: true,
+      });
+      await expect(confirmation).toBeVisible();
+      await confirmation
+        .getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await expect(confirmation).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await expect(reset).toBeFocused();
+    }
+    const landscape = dialog.getByRole("radio", {
+      name: "Landscape",
+      exact: true,
+    });
+    if (!(await landscape.isChecked())) await landscape.click();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(tools).toBeFocused();
+    const overflow = await page.evaluate(() => {
+      const probe = window.sidePanelOverflow;
+      probe.running = false;
+      delete window.sidePanelOverflow;
+      return { panelFrames: probe.panelFrames, violations: probe.violations };
+    });
+    expect(overflow.panelFrames).toBeGreaterThan(0);
+    expect(overflow.violations).toEqual([]);
+    expect((await savedWorkspace(page)).grid.imageAspect).toBe("landscape");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await openSidebarPanel(page, "Settings");
+  await page.setViewportSize({ width: 1440, height: 844 });
+  await expect(
+    page.getByRole("dialog", { name: "Settings", exact: true }),
+  ).toHaveCount(0);
+  await expect(sidebar.getByRole("tab")).toHaveCount(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("dialog", { name: "Settings", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("right sidebar switches images and settings with an image source dropdown", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const sidebar = page.locator("[data-editor-sidebar]");
+  const images = sidebar.getByRole("tab", { name: "Images", exact: true });
+  const settings = sidebar.getByRole("tab", { name: "Settings", exact: true });
+  await expect(page.locator(".app-layout > aside")).toHaveCount(1);
+  await expect(images).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#sidebar-image-source")).toBeVisible();
+  await expect(page.locator("#background-value")).toBeHidden();
+  for (const width of [1440, 960]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await expect
+      .poll(() =>
+        sidebar.evaluate((el) => {
+          const bounds = el.getBoundingClientRect();
+          return [bounds.width, bounds.right];
+        }),
+      )
+      .toEqual([350, width]);
+    const workspace = await page
+      .getByRole("region", { name: "Grid editor", exact: true })
+      .boundingBox();
+    expect(workspace.x).toBe(0);
+    expect(workspace.width).toBe(width - 350);
+  }
+  await page.locator("#sidebar-image-source").click();
+  await expect(
+    page.getByRole("option", { name: "Imported", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("option", { name: "Imported", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("option", { name: "Online", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("listbox").press("Escape");
+  await page.locator("#upload").setInputFiles({
+    name: "panel-image.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#ff0000"/></svg>',
+    ),
+  });
+  await expect(sidebar.locator(".asset")).toHaveCount(1);
+  await settings.click();
+  await expect(page.locator("#sidebar-image-source")).toBeHidden();
+  await page.locator("#background-value").fill("#112233");
+  await page.locator("#background-value").press("Enter");
+  await images.click();
+  await expect(sidebar.locator(".asset")).toBeVisible();
+  await settings.press("Enter");
+  await expect(settings).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#background-value")).toHaveValue("#112233");
+  const content = sidebar;
+  await content.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(
+    page.getByRole("button", { name: "Reset grid settings", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+  await images.click();
+  await page
+    .getByRole("button", { name: "Add image to cell 1", exact: true })
+    .click({ position: { x: 5, y: 5 } });
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await expect(picker.locator("#picker-image-source")).toBeVisible();
+  await expect(picker.getByRole("tablist")).toHaveCount(0);
+  await picker
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await expect(picker).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(sidebar).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
+    .click();
+  await expect(page.locator("#background-value")).toHaveValue("#112233");
+});
+
 test("canvas preview fits both row and column changes without resizing controls", async ({
   page,
 }, testInfo) => {
@@ -484,9 +1152,6 @@ test("canvas preview fits both row and column changes without resizing controls"
           const columns = document
             .querySelector('[aria-label="Column controls"]')
             .getBoundingClientRect();
-          const toolbar = document
-            .querySelector('[aria-label="Grid appearance"] > div:last-child')
-            .getBoundingClientRect();
           return Math.max(
             Math.abs(columns.left - grid.right - 8),
             Math.abs(rows.top - grid.bottom - 8),
@@ -499,15 +1164,13 @@ test("canvas preview fits both row and column changes without resizing controls"
                 grid.y -
                 viewport.clientHeight / 2,
             ),
-            Math.abs(
-              toolbar.x + toolbar.width / 2 - grid.x - viewport.clientWidth / 2,
-            ),
           );
         }),
       )
       .toBeLessThan(1);
   }
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page.locator(".cell-heading").first().fill("Keep caption");
   const original = await savedWorkspace(page);
   for (const viewport of [
@@ -754,10 +1417,11 @@ test("canvas preview fits both row and column changes without resizing controls"
     .toBeGreaterThanOrEqual(13.8);
 });
 
-test("desktop asides use 250px columns with stable edge scrollbars and modal alignment", async ({
+test("desktop sidebar has stable panel scrollbars and modal alignment", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page.locator("#upload").setInputFiles(
     ["One", "Two", "Three"].map((name) => ({
       name: `${name}.svg`,
@@ -771,6 +1435,10 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   await savedWorkspace(page);
   for (const width of [1440, 960]) {
     await page.setViewportSize({ width, height: 2000 });
+    await page
+      .locator("[data-editor-sidebar]")
+      .getByRole("tab", { name: "Images", exact: true })
+      .click();
     expect(
       await page
         .locator(".asset-library")
@@ -780,9 +1448,18 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
         ),
     ).toBe(2);
     for (const selector of [".asset-panel", ".settings-panel"]) {
+      const sidebar = page.locator("[data-editor-sidebar]");
+      await sidebar
+        .getByRole("tab", {
+          name: selector === ".asset-panel" ? "Images" : "Settings",
+          exact: true,
+        })
+        .click();
       const aside = page.locator(selector);
-      await expect(aside).toHaveCSS("width", "250px");
-      await expect(aside).toHaveCSS("height", "2000px");
+      await expect(sidebar).toHaveCSS("width", "250px");
+      await expect(sidebar).toHaveCSS("height", "2000px");
+      await expect(aside).toHaveCSS("width", "249px");
+      expect((await aside.boundingBox()).height).toBeLessThan(2000);
       await expect(aside).toHaveCSS("overflow-y", "hidden");
       const body = aside.locator("[data-sidebar-content]");
       await expect(body).toHaveCSS("overflow-y", "auto");
@@ -792,7 +1469,7 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
         "direction",
         "ltr",
       );
-      const header = aside.locator(":scope > div").first();
+      const header = sidebar.locator(":scope > [data-sidebar-header]");
       const headerBounds = await header.boundingBox();
       const before = await body.evaluate((element) => {
         element.scrollTop = 0;
@@ -867,7 +1544,7 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   expect(await settings.boundingBox()).toEqual(settingsBounds);
   await page.setViewportSize({ width: 390, height: 844 });
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   await expect(page.locator(".settings-panel")).toHaveCSS("direction", "ltr");
   await expect(page.locator(".settings-panel")).toHaveCSS(
@@ -889,6 +1566,7 @@ test("font previews and independent weights persist and match exports without th
     };
   });
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await expect(page.locator("#theme-selector")).toHaveCount(0);
   await expect(
     page.getByRole("group", { name: "Superhero sub-theme", exact: true }),
@@ -901,6 +1579,19 @@ test("font previews and independent weights persist and match exports without th
       "Boogaloo",
       "Manrope",
     ]);
+    const selected = page
+      .getByRole("listbox")
+      .locator('[aria-selected="true"]');
+    await expect(selected).toHaveJSProperty("disabled", true);
+    await expect(selected).toHaveCSS("opacity", "1");
+    await expect(selected).toHaveCSS("color", "rgb(216, 243, 106)");
+    await expect(selected).toHaveCSS("background-color", "rgb(48, 51, 53)");
+    await page.getByRole("listbox").press("Home");
+    await expect(
+      page.getByRole("option", { name: "Bangers", exact: true }),
+    ).toHaveAttribute("data-focus", "");
+    await expect(selected).not.toHaveAttribute("data-focus", "");
+    await expect(selected).toHaveCSS("background-color", "rgb(48, 51, 53)");
     for (const font of ["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]) {
       const option = page
         .getByRole("listbox")
@@ -1044,7 +1735,7 @@ test("font previews and independent weights persist and match exports without th
   expect(settings).not.toHaveProperty("themeSettings");
   await page.setViewportSize({ width: 390, height: 844 });
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   await page.locator("#cell-font-weight").fill("600");
   await expect(page.locator("#board-grid .cell-heading").first()).toHaveCSS(
@@ -1084,6 +1775,7 @@ test("heading and card typography controls are independent across previews, expo
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page
     .getByRole("button", { name: "Edit grid heading", exact: true })
     .click();
@@ -1100,10 +1792,12 @@ test("heading and card typography controls are independent across previews, expo
       '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
     ),
   });
+  await openSidebarPanel(page, "Images");
   await page
     .locator("[data-library-thumbnail]")
     .first()
     .dragTo(page.locator(".cell-image-button").first());
+  await openSidebarPanel(page, "Settings");
   await expect(
     page.getByRole("group", { name: "Heading style", exact: true }),
   ).toContainText("Font");
@@ -1174,20 +1868,14 @@ test("heading and card typography controls are independent across previews, expo
     await verify();
     if (width <= 900)
       await page
-        .getByRole("button", { name: "Tools", expanded: false, exact: true })
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
         .click();
-    const sectionColors = [];
     for (const name of ["Canvas style", "Heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
-      await expect(section).toHaveCSS("border-top-width", "1px");
-      await expect(section).toHaveCSS("border-radius", "6px");
-      sectionColors.push(
-        await section.evaluate(
-          (element) => getComputedStyle(element).backgroundColor,
-        ),
-      );
+      await expect(section).toHaveCSS("border-left-width", "0px");
+      await expect(section).toHaveCSS("border-radius", "0px");
+      await expect(section).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     }
-    expect(new Set(sectionColors).size).toBe(3);
     for (const name of ["Heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
       await section.scrollIntoViewIfNeeded();
@@ -1263,6 +1951,7 @@ test("empty headings use faded inline placeholders and reserve no export bands",
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page.locator("#gap").fill("2");
   await page.locator("#canvas-padding").fill("2");
   await selectField(page, "image-shape", "square");
@@ -1439,6 +2128,7 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
     }
   }
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page
     .getByRole("button", { name: "Edit grid heading", exact: true })
     .click();
@@ -1527,7 +2217,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
   await page.goto("./");
   await savedWorkspace(page);
   const activeBackground = await page
-    .getByRole("tab", { name: "Imported", exact: true })
+    .getByRole("tab", { name: "Images", exact: true })
     .evaluate((element) => getComputedStyle(element).backgroundColor);
   await selectField(page, "caption-position", "overlay-bottom");
   for (const width of [1440, 390]) {
@@ -1664,7 +2354,9 @@ test("button groups join edges with single dividers and outer-only corners", asy
       }
     }
     await selectField(page, "image-shape", "landscape");
-    await expect(page.locator("#image-shape")).toHaveText("Landscape");
+    await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
+      "Landscape",
+    );
     await page.getByRole("button", { name: "Add column", exact: true }).click();
     await page
       .getByRole("button", { name: "Remove column", exact: true })
@@ -1676,14 +2368,16 @@ test("button groups join edges with single dividers and outer-only corners", asy
   }
 });
 
-test("canvas controls align with the grid and sidebar headers stay fixed", async ({
+test("canvas has no appearance toolbar and the sidebar header stays fixed", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
   await useComicExample(page);
   for (const width of [1440, 960, 780, 390, 320]) {
     await page.setViewportSize({ width, height: 600 });
-    const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
+    await expect(
+      page.getByRole("toolbar", { name: "Grid appearance" }),
+    ).toHaveCount(0);
     const frame = page.locator("[data-resize-frame]");
     const trigger = page.getByRole("button", {
       name: "Export grid",
@@ -1691,24 +2385,19 @@ test("canvas controls align with the grid and sidebar headers stay fixed", async
     });
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(trigger).toHaveCount(1);
-    await expect
-      .poll(async () => {
-        const controls = await toolbar.boundingBox();
-        const grid = await frame.boundingBox();
-        if (!controls || !grid) return Infinity;
-        return Math.max(
-          Math.abs(controls.x - grid.x),
-          Math.abs(controls.width - grid.width),
-        );
-      })
-      .toBeLessThan(1);
+    await expect(frame).toBeInViewport({ ratio: 1 });
     if (width > 900) {
-      for (const selector of [".asset-panel", ".settings-panel"]) {
-        const aside = page.locator(selector);
-        const header = aside.locator("[data-sidebar-header]");
+      const sidebar = page.locator("[data-editor-sidebar]");
+      const header = sidebar.locator(":scope > [data-sidebar-header]");
+      expect((await sidebar.boundingBox()).y).toBe(0);
+      expect((await sidebar.boundingBox()).height).toBe(600);
+      for (const [panel, selector] of [
+        ["Images", ".asset-panel"],
+        ["Settings", ".settings-panel"],
+      ]) {
+        await openSidebarPanel(page, panel);
+        const aside = sidebar.locator(selector);
         const before = await header.boundingBox();
-        expect((await aside.boundingBox()).y).toBe(0);
-        expect((await aside.boundingBox()).height).toBe(600);
         const scroller = aside.locator("[data-sidebar-content]");
         expect(
           await scroller.evaluate(
@@ -1726,14 +2415,16 @@ test("canvas controls align with the grid and sidebar headers stay fixed", async
       await expect(trigger).toBeInViewport({ ratio: 1 });
     } else {
       await selectField(page, "caption-position", "overlay-bottom");
-      const controls = await toolbar.boundingBox();
+      const workspace = await page
+        .getByRole("region", { name: "Grid editor", exact: true })
+        .boundingBox();
       const button = await trigger.boundingBox();
       expect(button.width).toBe(44);
       expect(button.height).toBe(44);
-      expect(Math.abs(button.y - controls.y)).toBeLessThan(1);
-      expect(
-        Math.abs(button.x + button.width - controls.x - controls.width),
-      ).toBeLessThan(1);
+      expect(button.y).toBeGreaterThanOrEqual(workspace.y);
+      expect(button.x + button.width).toBeLessThanOrEqual(
+        workspace.x + workspace.width,
+      );
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -1758,6 +2449,7 @@ test("export combines settings and downloads on desktop and mobile", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await expect(
     page.getByRole("tab", { name: "Export", exact: true }),
   ).toHaveCount(0);
@@ -2167,7 +2859,7 @@ test("hovering another header clears the previous card outline without moving fo
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Tools", expanded: false, exact: true })
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
         .click();
     await selectField(page, "caption-position", "above");
     for (const selector of width > 900
@@ -2224,7 +2916,7 @@ test("movable cards show a move cursor without changing editing and action curso
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Tools", expanded: false, exact: true })
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
         .click();
     const movable = page.locator('[draggable="true"]');
     await expect(movable).toHaveCount(width > 900 ? 4 : 2);
@@ -2800,7 +3492,7 @@ test("small library caption clicks retain caret focus after image hover", async 
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Tools", expanded: false, exact: true })
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
         .click();
     await selectField(page, "image-shape", "landscape");
     for (const placement of [
@@ -2812,7 +3504,7 @@ test("small library caption clicks retain caret focus after image hover", async 
       await selectField(page, "caption-position", placement);
       if (width <= 900) {
         const collapse = page.getByRole("button", {
-          name: "Tools",
+          name: "Settings",
           expanded: true,
           exact: true,
         });
@@ -2855,7 +3547,7 @@ test("small library caption clicks retain caret focus after image hover", async 
         if (expanded)
           await page
             .getByRole("button", {
-              name: "Tools",
+              name: "Settings",
               expanded: false,
               exact: true,
             })
@@ -2894,7 +3586,7 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
     await page.setViewportSize({ width, height: 1080 });
     if (expanded)
       await page
-        .getByRole("button", { name: "Tools", expanded: false, exact: true })
+        .getByRole("button", { name: "Settings", expanded: false, exact: true })
         .click();
     await expect(thumbnail).toBeVisible();
     await expect
@@ -3073,7 +3765,11 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       expect(marks.some((mark) => !mark)).toBe(true);
       if (expanded)
         await page
-          .getByRole("button", { name: "Tools", expanded: true, exact: true })
+          .getByRole("button", {
+            name: "Settings",
+            expanded: true,
+            exact: true,
+          })
           .click();
       await expect
         .poll(
@@ -3121,7 +3817,11 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
       if (expanded) {
         await page
-          .getByRole("button", { name: "Tools", expanded: false, exact: true })
+          .getByRole("button", {
+            name: "Settings",
+            expanded: false,
+            exact: true,
+          })
           .click();
         await expect(thumbnail).toBeInViewport({ ratio: 1 });
       }
@@ -4080,7 +4780,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
     ),
   ).toBe(true);
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   await expect(cardStyle.locator("#caption-overlay-value")).toBeVisible();
   await expect(cardStyle.locator("#caption-opacity")).toBeEnabled();
@@ -4095,29 +4795,32 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   });
 });
 
-test("appearance toolbar preserves content and matches exported ratios and captions", async ({
+test("appearance settings preserve content and match exported ratios and captions", async ({
   page,
 }, testInfo) => {
   test.setTimeout(60000);
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await page.locator("#gap").fill("2");
   await page.locator("#canvas-padding").fill("2");
-  const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
-  await expect(page.locator("#image-shape")).toHaveText("Portrait");
-  await expect(page.locator("#caption-position")).toHaveText("Overlay bottom");
-  await expect(toolbar.getByRole("button")).toHaveCount(2);
-  await page.locator("#caption-position").click();
-  await expect(page.getByRole("option")).toHaveCount(4);
+  await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
+    "Portrait",
+  );
   await expect(
-    page.getByRole("option", { name: /middle|center/i }),
+    page.locator('#caption-position [aria-checked="true"]'),
+  ).toHaveText("Overlay bottom");
+  await expect(
+    page.locator("#caption-position").getByRole("radio"),
+  ).toHaveCount(4);
+  await expect(
+    page
+      .locator("#caption-position")
+      .getByRole("radio", { name: /middle|center/i }),
   ).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("listbox")).toHaveCount(0);
-  await page.locator("#image-shape").focus();
-  await page.locator("#image-shape").press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#image-shape")).toHaveText("Landscape");
+  await page.locator('#image-shape [aria-checked="true"]').press("ArrowRight");
+  await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
+    "Landscape",
+  );
   await selectField(page, "image-shape", "portrait");
   await page.locator("#upload").setInputFiles({
     name: "solid.svg",
@@ -4129,8 +4832,10 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   await expect(page.locator(".asset")).toHaveCount(1);
   const image = page.locator(".cell-image-button").first();
   const caption = page.locator(".cell-heading").first();
+  await openSidebarPanel(page, "Images");
   await page.locator(".asset").dragTo(image);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await openSidebarPanel(page, "Settings");
   await image.hover();
   await caption.fill("Blue");
   const identity = (await savedWorkspace(page)).grid.cells[0];
@@ -4192,7 +4897,9 @@ test("appearance toolbar preserves content and matches exported ratios and capti
     ["Square", 1, 150],
   ]) {
     await selectField(page, "image-shape", aspect.toLowerCase());
-    await expect(page.locator("#image-shape")).toHaveText(aspect);
+    await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
+      aspect,
+    );
     for (const placement of ["above", "below", "overlay"]) {
       await selectField(
         page,
@@ -4210,7 +4917,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
         expect(field.y).toBeCloseTo(bounds.y + bounds.height, 0);
       if (placement !== "overlay") {
         await expect(
-          toolbar.getByRole("button", { name: "Text overlay settings" }),
+          page.getByRole("button", { name: "Text overlay settings" }),
         ).toHaveCount(0);
         expect(await pixels(imageHeight, placement)).toEqual([32, 35, 37, 255]);
         continue;
@@ -4306,30 +5013,21 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   await page.setViewportSize({ width: 390, height: 844 });
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    await page
+      .getByRole("button", { name: "Settings", expanded: false, exact: true })
+      .click();
     await expect(page.locator("#image-shape")).toHaveAccessibleName(
-      "Image shape Square",
+      "Image shape",
     );
     await expect(page.locator("#caption-position")).toHaveAccessibleName(
-      "Caption position Overlay bottom",
+      "Card heading",
     );
-    await expect
-      .poll(() =>
-        toolbar.evaluate((element) => element.getBoundingClientRect().height),
-      )
-      .toBeLessThanOrEqual(45);
-    await page.locator("#caption-position").click();
-    await expect(page.getByRole("option")).toHaveCount(4);
-    const menu = await page.getByRole("listbox").boundingBox();
-    expect(menu.x).toBeGreaterThanOrEqual(0);
-    expect(menu.x + menu.width).toBeLessThanOrEqual(width);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("listbox")).toHaveCount(0);
-  }
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect
-    .poll(() =>
-      toolbar.evaluate((element) =>
-        [...element.querySelectorAll("button")].every((button) => {
+    const positions = page.locator("#caption-position");
+    await expect(positions.getByRole("radio")).toHaveCount(4);
+    await positions.scrollIntoViewIfNeeded();
+    expect(
+      await positions.getByRole("radio").evaluateAll((buttons) =>
+        buttons.every((button) => {
           const rect = button.getBoundingClientRect();
           return (
             rect.x >= 0 &&
@@ -4339,15 +5037,19 @@ test("appearance toolbar preserves content and matches exported ratios and capti
           );
         }),
       ),
-    )
-    .toBe(true);
+    ).toBe(true);
+    await page
+      .getByRole("button", { name: "Settings", expanded: true, exact: true })
+      .click();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   const color = page.getByRole("textbox", {
     name: "Overlay color hex value",
@@ -4359,7 +5061,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   expect(colorBounds.x).toBeGreaterThanOrEqual(0);
   expect(colorBounds.x + colorBounds.width).toBeLessThanOrEqual(390);
   await page
-    .getByRole("button", { name: "Tools", expanded: true, exact: true })
+    .getByRole("button", { name: "Settings", expanded: true, exact: true })
     .click();
   await selectField(page, "image-shape", "landscape");
   await selectField(page, "caption-position", "overlay-bottom");
@@ -4392,6 +5094,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   page,
 }, testInfo) => {
   await page.goto("./");
+  await openSidebarPanel(page, "Settings");
   await expect(
     page.getByRole("switch", { name: "Show heading", exact: true }),
   ).toHaveCount(0);
@@ -4509,7 +5212,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
   await page.setViewportSize({ width: 390, height: 844 });
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   await page.locator("#heading-font").click();
   await expect(async () => {
@@ -4579,7 +5282,7 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
   await expect(picker).toHaveCount(0);
   await assertStable();
   await page
-    .getByRole("button", { name: "Tools", expanded: false, exact: true })
+    .getByRole("button", { name: "Settings", expanded: false, exact: true })
     .click();
   await expect(drawer.locator(".section-heading")).toBeHidden();
   await expect.poll(gutter).toBeCloseTo(collapsedGutter, 0);
@@ -4671,7 +5374,7 @@ test("bottom drawer stays horizontally fixed through modal open and close", asyn
   });
 });
 
-test("mobile settings shelf and image picker restore desktop sidebars", async ({
+test("mobile settings shelf and image picker restore the right sidebar", async ({
   browser,
 }, testInfo) => {
   const context = await browser.newContext({
@@ -4683,7 +5386,7 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
   await page.goto(testInfo.project.use.baseURL);
   const drawer = page.locator("[data-editor-drawer]");
   const expand = page.getByRole("button", {
-    name: "Tools",
+    name: "Settings",
     expanded: false,
     exact: true,
   });
@@ -4723,15 +5426,14 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
     name: "Choose image",
     exact: true,
   });
-  const sources = picker.getByRole("tablist", {
-    name: "Image source",
-    exact: true,
-  });
-  await expect(sources.getByRole("tab")).toHaveText(["Imported", "Online"]);
+  const sources = picker.locator("#picker-image-source");
+  await expect(sources).toHaveText("Imported");
   await expect(sources).toHaveCSS("border-radius", "4px");
+  await sources.click();
   await expect(
-    sources.getByRole("tab", { name: "Online", exact: true }),
+    page.getByRole("option", { name: "Online", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("listbox").press("Escape");
   await expect(picker.locator("[data-upload-tile]")).toBeVisible();
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Add images", exact: true }).tap();
@@ -4770,7 +5472,7 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
   await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
   await expand.tap();
   const collapse = page.getByRole("button", {
-    name: "Tools",
+    name: "Settings",
     expanded: true,
     exact: true,
   });
@@ -4812,6 +5514,7 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
     page.getByRole("button", { name: "Load example", exact: true }),
   ).toHaveCount(0);
   await expect(page.locator(".workspace-toolbar")).toHaveCount(0);
+  await openSidebarPanel(page, "Settings");
   const settings = page.getByRole("complementary", {
     name: "Grid settings",
     exact: true,
@@ -4831,6 +5534,7 @@ test("mobile settings shelf and image picker restore desktop sidebars", async ({
   await expect(page.locator("#upload")).toHaveCount(1);
   await expect(page.locator(".asset")).toHaveCount(3);
   await expect(page.locator(".grid-cell").nth(1).locator("img")).toHaveCount(1);
+  await openSidebarPanel(page, "Images");
   await assertUploadTileSize();
   await page.screenshot({
     path: testInfo.outputPath("image-drawer-desktop-sidebars.png"),
@@ -5010,7 +5714,7 @@ test("touch cell overlays target the tapped image without autofocus", async ({
   await context.close();
 });
 
-test("image source tabs fit narrow panels without category filters", async ({
+test("image source dropdown fits narrow panels without category filters", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 960, height: 900 });
@@ -5024,43 +5728,37 @@ test("image source tabs fit narrow panels without category filters", async ({
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(9);
-  const tabs = page.getByRole("tablist", { name: "Image source", exact: true });
-  await expect(tabs.getByRole("tab")).toHaveText(["Imported", "Online"]);
+  let source = page.locator("#sidebar-image-source");
+  await expect(source).toHaveText("Imported");
+  await source.click();
   await expect(
-    tabs.getByRole("tab", { name: "Imported", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(
-    tabs.getByRole("tab", { name: "Online", exact: true }),
+    page.getByRole("option", { name: "Online", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("listbox").press("Escape");
   const assertContained = async () => {
     await expect
       .poll(() =>
-        tabs.evaluate((element) => {
+        source.evaluate((element) => {
           const panel = element.getBoundingClientRect();
-          return [...element.querySelectorAll('[role="tab"]')].every((tab) => {
-            const bounds = tab.getBoundingClientRect();
-            const range = document.createRange();
-            range.selectNodeContents(tab);
-            return (
-              bounds.left >= panel.left - 1 &&
-              bounds.right <= panel.right + 1 &&
-              bounds.bottom <= panel.bottom + 1 &&
-              range.getBoundingClientRect().right <= bounds.right + 1
-            );
-          });
+          return (
+            panel.left >= 0 &&
+            panel.right <= innerWidth &&
+            element.scrollWidth <= element.clientWidth
+          );
         }),
       )
       .toBe(true);
   };
   await assertContained();
-  await tabs.getByRole("tab", { name: "Imported", exact: true }).click();
+  await source.click();
+  await page.getByRole("option", { name: "Imported", exact: true }).click();
   await expect(page.locator(".asset")).toHaveCount(9);
   const document = await savedWorkspace(page);
   document.assets.find((asset) => asset.category === "Imported").category =
     "ExtraordinarilyLongImportedCategory";
   await localDatabase(page, "write", document);
   await page.reload();
-  await expect(tabs).toBeVisible();
+  await expect(source).toBeVisible();
   await assertContained();
   await page.setViewportSize({ width: 390, height: 844 });
   await beginCellUpload(page, 0);
@@ -5068,6 +5766,7 @@ test("image source tabs fit narrow panels without category filters", async ({
     name: "Choose image",
     exact: true,
   });
+  source = picker.locator("#picker-image-source");
   await assertContained();
   const thumbnail = page.locator(".asset [data-library-thumbnail]").first();
   await thumbnail.hover({ position: { x: 5, y: 50 } });
@@ -6398,9 +7097,7 @@ test("single grid starts neutral and uploaded content persists", async ({
   await expect(
     page.getByRole("link", { name: "Grids", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("tab", { name: "Imported", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator("#sidebar-image-source")).toBeVisible();
   await expect(
     page.locator("#add-board, #board-tabs, #export-all"),
   ).toHaveCount(0);
@@ -6908,7 +7605,7 @@ test("touch dialogs do not autofocus text inputs", async ({
       "INPUT",
     );
     await page
-      .getByRole("button", { name: "Tools", expanded: false, exact: true })
+      .getByRole("button", { name: "Settings", expanded: false, exact: true })
       .tap();
     await page
       .getByRole("button", { name: "Reset grid settings", exact: true })
@@ -7369,10 +8066,12 @@ test("page metadata assets resolve and desktop library keeps mouse dragging", as
   await expect(
     page.locator("[data-library-thumbnail]").first(),
   ).toHaveAttribute("draggable", "true");
+  await openSidebarPanel(page, "Images");
   await page
     .locator("[data-library-thumbnail]")
     .first()
     .dragTo(page.locator(".cell-image-button").first());
+  await openSidebarPanel(page, "Settings");
   await expect(
     page.locator(".grid-cell").first().locator("img"),
   ).toHaveAttribute("alt", "Image 0");
@@ -7426,12 +8125,12 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     exact: true,
   });
   const panel = picker.locator('[id^="headlessui-dialog-panel"]');
+  await expect(picker.locator("#picker-image-source")).toHaveText("Imported");
+  await picker.locator("#picker-image-source").click();
   await expect(
-    picker.getByRole("tab", { name: "Imported", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(
-    picker.getByRole("tab", { name: "Online", exact: true }),
+    page.getByRole("option", { name: "Online", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("listbox").press("Escape");
   await expect(picker.getByRole("tab", { name: /Choose|Library/ })).toHaveCount(
     0,
   );
@@ -7462,13 +8161,15 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     await expect
       .poll(async () => (await panel.boundingBox()).width)
       .toBe(Math.min(800, availableWidth));
-    const grid = picker.getByRole("tabpanel").locator('[class~="grid"]');
+    const grid = picker
+      .getByRole("region", { name: "Imported", exact: true })
+      .locator('[class~="grid"]');
     await expect(
       grid.locator(":scope > [data-upload-tile]").first(),
     ).toBeVisible();
     await expect(grid.locator(":scope > [data-library-image]")).toHaveCount(8);
     const layout = await picker
-      .getByRole("tabpanel")
+      .getByRole("region", { name: "Imported", exact: true })
       .locator('[class~="grid"]')
       .evaluate((element) => {
         const style = getComputedStyle(element);
@@ -7553,7 +8254,11 @@ test("mobile picker has clear all images without deletion mode and preserves can
   const drawer = page.locator("[data-editor-drawer]");
   await expect(drawer.getByRole("button")).toHaveCount(1);
   await expect(
-    drawer.getByRole("button", { name: "Tools", expanded: false, exact: true }),
+    drawer.getByRole("button", {
+      name: "Settings",
+      expanded: false,
+      exact: true,
+    }),
   ).toBeVisible();
   const openPicker = async () => {
     await page
@@ -7951,7 +8656,7 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
       .poll(async () => (await drawer.boundingBox()).height)
       .toBeLessThanOrEqual(72);
     const expand = drawer.getByRole("button", {
-      name: "Tools",
+      name: "Settings",
       expanded: false,
       exact: true,
     });
@@ -7982,17 +8687,19 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
     await expect
       .poll(async () => {
         const area = await page.locator(".canvas-area").boundingBox();
-        const toolbar = await page
-          .getByRole("toolbar", { name: "Grid appearance" })
+        const exportButton = await page
+          .locator("#export-grid-header")
           .boundingBox();
         const frame = await page.locator("[data-resize-frame]").boundingBox();
         return Math.abs(
-          (toolbar.y + frame.y + frame.height) / 2 - area.y - area.height / 2,
+          (exportButton.y + frame.y + frame.height) / 2 -
+            area.y -
+            area.height / 2,
         );
       })
       .toBeLessThan(1);
     await drawer
-      .getByRole("button", { name: "Tools", expanded: false, exact: true })
+      .getByRole("button", { name: "Settings", expanded: false, exact: true })
       .tap();
     await expect(
       drawer.locator(".asset-panel, .asset-library, img"),
@@ -8001,7 +8708,7 @@ test("mobile shelf remains toggle-only with fixed settings controls", async ({
       drawer.getByRole("group", { name: "Card style", exact: true }),
     ).toBeVisible();
     const collapse = drawer.getByRole("button", {
-      name: "Tools",
+      name: "Settings",
       expanded: true,
       exact: true,
     });

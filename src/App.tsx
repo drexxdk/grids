@@ -25,8 +25,12 @@ import {
   PanelTopDashed,
   PanelBottomDashed,
 } from "lucide-react";
-import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
-import { Button, ColorField, SelectField } from "./components/ui/controls";
+import {
+  Button,
+  ColorField,
+  IconRadioField,
+  SelectField,
+} from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer } from "./components/GridResizer";
 import {
@@ -37,7 +41,7 @@ import {
 import { EditorLayout } from "./components/EditorLayout";
 import { LibraryImage } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
-import { ImageTabs } from "./components/ui/ImageTabs";
+import { ImageSourceSelect } from "./components/ui/ImageTabs";
 import {
   fontOptions,
   fontWeightOptions,
@@ -787,40 +791,40 @@ export default function App() {
   }
   return (
     <>
-      <main className="app-layout min-h-dvh! min-[901px]:grid-cols-[250px_minmax(0,1fr)_250px]! max-[900px]:block! max-[900px]:pb-(--editor-drawer-height,160px)">
+      <main className="app-layout min-h-dvh! min-[901px]:grid-cols-1! min-[901px]:has-data-editor-sidebar:grid-cols-[minmax(0,1fr)_350px]! max-[900px]:block!">
         <EditorLayout
+          status={
+            <span
+              id="save-status"
+              className="save-status max-[900px]:col-span-3 max-[900px]:row-start-2 max-[900px]:min-w-0 max-[900px]:wrap-break-word"
+              hidden={
+                saveStatus === "Saved locally" ||
+                saveStatus === "Saving locally"
+              }
+              title={t("save.tooltip")}
+            >
+              {saveStatus === "Saved locally"
+                ? t("save.saved")
+                : saveStatus === "Saving locally"
+                  ? t("save.saving")
+                  : saveStatus}
+            </span>
+          }
           actions={
-            <div className="flex flex-col items-end gap-2 max-[900px]:contents">
-              <span
-                id="save-status"
-                className="save-status max-[900px]:col-span-3 max-[900px]:row-start-2 max-[900px]:min-w-0 max-[900px]:wrap-break-word"
-                hidden={
-                  saveStatus === "Saved locally" ||
-                  saveStatus === "Saving locally"
-                }
-                title={t("save.tooltip")}
-              >
-                {saveStatus === "Saved locally"
-                  ? t("save.saved")
-                  : saveStatus === "Saving locally"
-                    ? t("save.saving")
-                    : saveStatus}
-              </span>
-              <button
-                id="export-grid-header"
-                ref={exportButton}
-                type="button"
-                aria-haspopup="dialog"
-                title={t("export.title")}
-                aria-label={t("export.title")}
-                className="button secondary min-[901px]:w-full max-[900px]:col-start-3 max-[900px]:row-start-1 max-[900px]:h-11 max-[900px]:w-11 max-[900px]:p-0"
-                disabled={exporting}
-                onClick={() => setExportOpen(true)}
-              >
-                <Download />
-                <span className="max-[900px]:hidden">{t("export.title")}</span>
-              </button>
-            </div>
+            <button
+              id="export-grid-header"
+              ref={exportButton}
+              type="button"
+              aria-haspopup="dialog"
+              title={t("export.title")}
+              aria-label={t("export.title")}
+              className="button secondary size-11! p-0! [&_svg]:size-5!"
+              disabled={exporting}
+              onClick={() => setExportOpen(true)}
+            >
+              <Download />
+              <span className="sr-only">{t("export.title")}</span>
+            </button>
           }
         >
           {(drawerToggle, toolsExpanded) => (
@@ -865,19 +869,9 @@ export default function App() {
                 className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pt-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <TabGroup>
-                    <ImageTabs
-                      label={t("library.source.label")}
-                      tabs={[
-                        { label: t("library.source.imported") },
-                        {
-                          label: t("library.source.online"),
-                          disabled: true,
-                          title: t("library.source.unavailable"),
-                        },
-                      ]}
-                    />
-                  </TabGroup>
+                  <div className="min-w-0 flex-1">
+                    <ImageSourceSelect id="sidebar-image-source" />
+                  </div>
                   {drawerToggle}
                 </div>
                 <div id="asset-library" className="asset-library">
@@ -947,7 +941,7 @@ export default function App() {
           )}
           {(canvasActions) => (
             <section
-              className="workspace flex h-dvh flex-col overflow-hidden max-[900px]:h-[calc(100dvh-var(--editor-drawer-height,160px))]"
+              className="workspace flex h-dvh flex-col overflow-hidden"
               style={
                 {
                   backgroundColor: "#121415",
@@ -970,103 +964,15 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
+              {canvasActions && (
                 <div
-                  role="toolbar"
-                  aria-label={t("editor.appearance")}
-                  className="mx-auto mb-3 grid max-w-full shrink-0 grid-cols-[44px_minmax(0,1fr)_44px] items-start"
-                  style={{ width: previewSize?.width }}
+                  data-canvas-header
+                  className="flex min-h-19 shrink-0 justify-end border-0 border-b border-solid border-(--line) px-3 py-4"
                 >
                   {canvasActions}
-                  <div
-                    className="col-start-2 row-start-1 translate-x-(--row-control-offset,0px) flex min-w-0 flex-wrap items-center justify-center gap-2"
-                    style={
-                      {
-                        "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
-                      } as CSSProperties
-                    }
-                  >
-                    <div className="w-29 max-[600px]:w-15">
-                      <SelectField
-                        compact
-                        id="image-shape"
-                        label={t("editor.imageShape.label")}
-                        value={board.imageAspect ?? "square"}
-                        options={[
-                          {
-                            value: "portrait",
-                            label: t("editor.imageShape.portrait"),
-                            icon: RectangleVertical,
-                          },
-                          {
-                            value: "landscape",
-                            label: t("editor.imageShape.landscape"),
-                            icon: RectangleHorizontal,
-                          },
-                          {
-                            value: "square",
-                            label: t("editor.imageShape.square"),
-                            icon: Square,
-                          },
-                        ]}
-                        onChange={(imageAspect) =>
-                          patchBoard({
-                            imageAspect: imageAspect as NonNullable<
-                              Board["imageAspect"]
-                            >,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="w-37 max-[600px]:w-15">
-                      <SelectField
-                        compact
-                        id="caption-position"
-                        label={t("editor.captionPosition.label")}
-                        value={
-                          board.captionPlacement === "overlay"
-                            ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
-                            : (board.captionPlacement ?? "below")
-                        }
-                        options={[
-                          {
-                            value: "above",
-                            label: t("editor.captionPosition.above"),
-                            icon: PanelTop,
-                          },
-                          {
-                            value: "below",
-                            label: t("editor.captionPosition.below"),
-                            icon: PanelBottom,
-                          },
-                          {
-                            value: "overlay-top",
-                            label: t("editor.captionPosition.overlayTop"),
-                            icon: PanelTopDashed,
-                          },
-                          {
-                            value: "overlay-bottom",
-                            label: t("editor.captionPosition.overlayBottom"),
-                            icon: PanelBottomDashed,
-                          },
-                        ]}
-                        onChange={(position) =>
-                          patchBoard(
-                            position === "above" || position === "below"
-                              ? { captionPlacement: position }
-                              : {
-                                  captionPlacement: "overlay",
-                                  captionAlignment:
-                                    position === "overlay-top"
-                                      ? "top"
-                                      : "bottom",
-                                },
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
                 </div>
+              )}
+              <div className="canvas-area m-0! flex min-h-0 w-full flex-1 flex-col justify-center p-3! max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
                 <GridResizer
                   ref={setPreviewFrame}
                   viewportHeight={previewSize?.height}
@@ -1236,16 +1142,46 @@ export default function App() {
               )}
               <div
                 data-sidebar-content
-                className="contents rounded-md min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
+                className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="flex flex-col gap-3 border">
+                <div className="flex flex-col gap-6 py-4">
                   <fieldset
-                    className="m-0 min-w-0 rounded-md border border-[#3c4248] bg-[#24282c] border-solid p-3 font-semibold"
+                    className="m-0 min-w-0 border-0 p-0"
                     aria-label={t("settings.canvas")}
                   >
-                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                    <h3 className="m-0 text-sm font-semibold text-(--text)">
                       {t("settings.canvas")}
                     </h3>
+                    <IconRadioField
+                      id="image-shape"
+                      label={t("editor.imageShape.label")}
+                      value={board.imageAspect ?? "square"}
+                      columns={3}
+                      options={[
+                        {
+                          value: "portrait",
+                          label: t("editor.imageShape.portrait"),
+                          icon: RectangleVertical,
+                        },
+                        {
+                          value: "landscape",
+                          label: t("editor.imageShape.landscape"),
+                          icon: RectangleHorizontal,
+                        },
+                        {
+                          value: "square",
+                          label: t("editor.imageShape.square"),
+                          icon: Square,
+                        },
+                      ]}
+                      onChange={(imageAspect) =>
+                        patchBoard({
+                          imageAspect: imageAspect as NonNullable<
+                            Board["imageAspect"]
+                          >,
+                        })
+                      }
+                    />
                     <ColorField
                       id="background"
                       label={t("settings.fields.background")}
@@ -1292,10 +1228,10 @@ export default function App() {
                     />
                   </fieldset>
                   <fieldset
-                    className="m-0 min-w-0 rounded-md border border-solid border-[#4b3b45] bg-[#2b2328] p-3 font-semibold"
+                    className="m-0 min-w-0 border-0 border-t border-solid border-(--line) p-0 pt-6"
                     aria-label={t("settings.heading")}
                   >
-                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                    <h3 className="m-0 text-sm font-semibold text-(--text)">
                       {t("settings.heading")}
                     </h3>
                     <SelectField
@@ -1401,12 +1337,55 @@ export default function App() {
                     />
                   </fieldset>
                   <fieldset
-                    className="m-0 min-w-0 rounded-md border border-[#3a4b3e] bg-[#202a24] border-solid p-3 font-semibold"
+                    className="m-0 min-w-0 border-0 border-t border-solid border-(--line) p-0 pt-6"
                     aria-label={t("settings.card")}
                   >
-                    <h3 className="border-[#3a4b3e] text-sm bg-[#202a24]">
+                    <h3 className="m-0 text-sm font-semibold text-(--text)">
                       {t("settings.card")}
                     </h3>
+                    <IconRadioField
+                      id="caption-position"
+                      label={t("editor.captionPosition.label")}
+                      value={
+                        board.captionPlacement === "overlay"
+                          ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
+                          : (board.captionPlacement ?? "below")
+                      }
+                      columns={2}
+                      options={[
+                        {
+                          value: "above",
+                          label: t("editor.captionPosition.above"),
+                          icon: PanelTop,
+                        },
+                        {
+                          value: "below",
+                          label: t("editor.captionPosition.below"),
+                          icon: PanelBottom,
+                        },
+                        {
+                          value: "overlay-top",
+                          label: t("editor.captionPosition.overlayTop"),
+                          icon: PanelTopDashed,
+                        },
+                        {
+                          value: "overlay-bottom",
+                          label: t("editor.captionPosition.overlayBottom"),
+                          icon: PanelBottomDashed,
+                        },
+                      ]}
+                      onChange={(position) =>
+                        patchBoard(
+                          position === "above" || position === "below"
+                            ? { captionPlacement: position }
+                            : {
+                                captionPlacement: "overlay",
+                                captionAlignment:
+                                  position === "overlay-top" ? "top" : "bottom",
+                              },
+                        )
+                      }
+                    />
                     <SelectField
                       id="cell-font"
                       largeFontPreview
@@ -1660,7 +1639,7 @@ export default function App() {
         returnFocus={imageReturnFocus}
         size="wide"
       >
-        <TabGroup
+        <div
           style={
             {
               "--picker-card-min-width": `${previewCardMinWidth}px`,
@@ -1669,84 +1648,74 @@ export default function App() {
           }
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <ImageTabs
-              label={t("library.source.label")}
-              tabs={[
-                { label: t("library.source.imported") },
-                {
-                  label: t("library.source.online"),
-                  disabled: true,
-                  title: t("library.source.unavailable"),
-                },
-              ]}
-            />
+            <div className="w-60 max-w-full">
+              <ImageSourceSelect id="picker-image-source" />
+            </div>
           </div>
-          <TabPanels>
-            <TabPanel>
-              <div className={pickerGridClassName}>
-                <UploadTile
-                  progress={importProgress}
-                  gridStyle={board}
-                  captionRows={captionRows}
-                  onClick={() =>
-                    document.getElementById("picker-cell-upload")?.click()
-                  }
-                  onDropFiles={(files) => {
-                    void importFiles(files, imageTarget);
-                    closeImagePicker();
-                  }}
-                />
-                {activeAssets.map((asset) => (
-                  <LibraryImage
-                    key={asset.id}
-                    className=""
-                    asset={asset}
-                    cell={board.cells.find((cell) => cell.assetId === asset.id)}
-                    gridStyle={board}
-                    captionRows={captionRows}
-                    disabled={false}
-                    onTitle={(title) =>
-                      dispatchDocument({
-                        type: "asset/title",
-                        assetId: asset.id,
-                        title,
-                      })
-                    }
-                    onDelete={() => deleteImages([asset.id])}
-                    onSelect={() => {
-                      if (imageTarget) placeAsset(asset.id, imageTarget);
-                      closeImagePicker();
-                    }}
-                  />
-                ))}
-              </div>
-              <input
-                id="picker-cell-upload"
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(event) => {
-                  if (!event.currentTarget.files?.length) return;
-                  void upload(event, imageTarget);
+          <div role="region" aria-label={t("library.source.imported")}>
+            <div className={pickerGridClassName}>
+              <UploadTile
+                progress={importProgress}
+                gridStyle={board}
+                captionRows={captionRows}
+                onClick={() =>
+                  document.getElementById("picker-cell-upload")?.click()
+                }
+                onDropFiles={(files) => {
+                  void importFiles(files, imageTarget);
                   closeImagePicker();
                 }}
               />
-              {activeAssets.length === 0 && <p>{t("library.empty")}</p>}
-              {activeAssets.length > 0 && (
-                <Button
-                  className="mt-2 min-h-11 w-full"
-                  onClick={() =>
-                    deleteImages(activeAssets.map((asset) => asset.id))
+              {activeAssets.map((asset) => (
+                <LibraryImage
+                  key={asset.id}
+                  className=""
+                  asset={asset}
+                  cell={board.cells.find((cell) => cell.assetId === asset.id)}
+                  gridStyle={board}
+                  captionRows={captionRows}
+                  disabled={false}
+                  onTitle={(title) =>
+                    dispatchDocument({
+                      type: "asset/title",
+                      assetId: asset.id,
+                      title,
+                    })
                   }
-                >
-                  <Trash2 aria-hidden="true" />
-                  {t("library.clearAll")}
-                </Button>
-              )}
-            </TabPanel>
-          </TabPanels>
-        </TabGroup>
+                  onDelete={() => deleteImages([asset.id])}
+                  onSelect={() => {
+                    if (imageTarget) placeAsset(asset.id, imageTarget);
+                    closeImagePicker();
+                  }}
+                />
+              ))}
+            </div>
+            <input
+              id="picker-cell-upload"
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(event) => {
+                if (!event.currentTarget.files?.length) return;
+                void upload(event, imageTarget);
+                closeImagePicker();
+              }}
+            />
+            {activeAssets.length === 0 && <p>{t("library.empty")}</p>}
+            {activeAssets.length > 0 && (
+              <Button
+                className="mt-2 min-h-11 w-full"
+                onClick={() =>
+                  deleteImages(activeAssets.map((asset) => asset.id))
+                }
+              >
+                <Trash2 aria-hidden="true" />
+                {t("library.clearAll")}
+              </Button>
+            )}
+          </div>
+        </div>
       </Modal>
       <Modal
         open={reloadOpen}
