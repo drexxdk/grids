@@ -1,6 +1,6 @@
 import { t } from "../i18n";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { Crop, ImagePlus, Trash2 } from "lucide-react";
+import { Crop, ImagePlus, Move, Trash2 } from "lucide-react";
 import { useDrag } from "@use-gesture/react";
 import {
   useEffect,
@@ -116,33 +116,44 @@ export function GridCell({
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   const touchDragged = useRef(false);
   const bindTouchDrag = useDrag(
-    ({ xy, initial, first, last, canceled, tap, event, args }) => {
+    ({ xy, initial, last, canceled, tap, event, args }) => {
       if (tap || !asset || !card.current || !onTouchDrag) return;
       if ("pointerType" in event && event.pointerType !== "touch") return;
       touchDragged.current = true;
-      if (first) (args[0] as (() => void) | undefined)?.();
       setImageHovered(false);
       setHoverTools(false);
       const bounds = card.current.getBoundingClientRect();
-      onTouchDrag(
-        library
-          ? { kind: "asset", assetId: asset.id }
-          : { kind: "cell", gridId, cellId: cell.id },
-        {
-          cell,
-          asset,
-          width: bounds.width,
-          height: bounds.height,
-          offsetX: initial[0] - bounds.left,
-          offsetY: initial[1] - bounds.top,
-          x: xy[0],
-          y: xy[1],
-        },
-        last,
+      const notify = () =>
+        onTouchDrag(
+          library
+            ? { kind: "asset", assetId: asset.id }
+            : { kind: "cell", gridId, cellId: cell.id },
+          {
+            cell,
+            asset,
+            width: bounds.width,
+            height: bounds.height,
+            offsetX: initial[0] - bounds.left,
+            offsetY: initial[1] - bounds.top,
+            x: xy[0],
+            y: xy[1],
+          },
+          last,
+          canceled ||
+            event.type === "pointercancel" ||
+            event.type === "touchcancel",
+        );
+      if (
+        last ||
         canceled ||
-          event.type === "pointercancel" ||
-          event.type === "touchcancel",
-      );
+        event.type === "pointercancel" ||
+        event.type === "touchcancel"
+      ) {
+        requestAnimationFrame(() => {
+          notify();
+          (args[0] as (() => void) | undefined)?.();
+        });
+      } else notify();
     },
     {
       enabled:
@@ -153,7 +164,7 @@ export function GridCell({
         !previewOnly,
       threshold: 8,
       filterTaps: true,
-      pointer: { keys: false },
+      pointer: { keys: false, touch: true },
     },
   );
   useEffect(() => () => dragPreview.current?.remove(), []);
@@ -192,6 +203,24 @@ export function GridCell({
       : null;
   const overlay = gridStyle.captionPlacement === "overlay";
   const alignment = gridStyle.captionAlignment ?? "bottom";
+  const toolTop =
+    overlay && alignment === "top"
+      ? Math.min(
+          geometry.imageHeight,
+          Math.max(
+            0,
+            geometry.captionTop + geometry.captionHeight - geometry.imageTop,
+          ),
+        )
+      : 0;
+  const toolBottom =
+    overlay && alignment === "bottom"
+      ? geometry.imageHeight -
+        Math.min(
+          geometry.imageHeight,
+          Math.max(0, geometry.captionTop - geometry.imageTop),
+        )
+      : 0;
   const freeImageHeight = Math.max(
     0,
     geometry.imageHeight - (overlay ? geometry.captionHeight : 0),
@@ -337,15 +366,13 @@ export function GridCell({
             >
               {asset ? (
                 <PopoverButton
-                  {...bindTouchDrag(close)}
                   ref={trigger}
                   className={`${previewOnly ? "drag-preview-image" : library ? "library-image-button" : "cell-image-button"} peer/image overflow-hidden outline-none! ${library?.onSelect ? "cursor-pointer!" : "cursor-move!"}`}
                   data-library-thumbnail={library ? "" : undefined}
                   style={{
                     height: "100%",
                     aspectRatio: geometry.aspectRatio,
-                    touchAction:
-                      coarsePointer && onTouchDrag ? "none" : undefined,
+                    touchAction: coarsePointer ? "auto" : undefined,
                   }}
                   aria-label={
                     library
@@ -380,6 +407,11 @@ export function GridCell({
                     }
                   }}
                   onPointerDownCapture={(event) => {
+                    event.currentTarget.draggable =
+                      event.pointerType !== "touch" &&
+                      !previewOnly &&
+                      !library?.disabled &&
+                      !library?.onSelect;
                     if (event.pointerType === "touch")
                       touchDragged.current = false;
                   }}
@@ -521,21 +553,39 @@ export function GridCell({
                   role="group"
                   aria-label={t("cell.actions.tools")}
                   className="pointer-events-none absolute inset-0 z-10"
+                  style={
+                    {
+                      "--card-tool-inset":
+                        "calc(4.5cqw + var(--card-paint-inset, 0px))",
+                      "--card-tool-top-inset":
+                        overlay && alignment === "top"
+                          ? "4.5cqw"
+                          : "var(--card-tool-inset)",
+                      "--card-tool-bottom-inset":
+                        overlay && alignment === "bottom"
+                          ? "4.5cqw"
+                          : "var(--card-tool-inset)",
+                      top: `${(toolTop / geometry.imageHeight) * 100}%`,
+                      bottom: `${(toolBottom / geometry.imageHeight) * 100}%`,
+                    } as React.CSSProperties
+                  }
                 >
-                  {!library && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap justify-center gap-[1.5cqw] p-[1.5cqw] [&_button]:pointer-events-auto"
-                      style={{
-                        bottom:
-                          overlay &&
-                          (gridStyle.captionAlignment ?? "bottom") === "bottom"
-                            ? `${(geometry.captionHeight / geometry.imageHeight) * 100}%`
-                            : undefined,
-                      }}
+                  {coarsePointer && onTouchDrag && !library?.onSelect && (
+                    <Button
+                      {...bindTouchDrag(close)}
+                      variant="icon"
+                      aria-label={t("cell.actions.dragImage")}
+                      title={t("cell.actions.dragImage")}
+                      className="pointer-events-auto absolute left-(--card-tool-inset) top-(--card-tool-top-inset) size-[min(25cqw,var(--cell-tool-space))]! touch-none p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!"
                     >
+                      <Move aria-hidden="true" />
+                    </Button>
+                  )}
+                  {!library && (
+                    <div className="contents">
                       <Button
                         variant="icon"
-                        className="size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
+                        className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
                         aria-label={
                           asset
                             ? t("cell.actions.replaceImage")
@@ -556,7 +606,7 @@ export function GridCell({
                       </Button>
                       <Button
                         variant="icon"
-                        className="size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
+                        className="pointer-events-auto absolute right-(--card-tool-inset) bottom-(--card-tool-bottom-inset) size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
                         aria-label={t("crop.title")}
                         title={t("crop.title")}
                         onClick={() => {
@@ -572,7 +622,7 @@ export function GridCell({
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
-                      className={`pointer-events-auto absolute ${library ? "size-11!" : "size-[min(25cqw,var(--cell-tool-space))]!"} p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!`}
+                      className={`pointer-events-auto absolute right-(--card-tool-inset) top-(--card-tool-top-inset) ${library ? "size-11!" : "size-[min(25cqw,var(--cell-tool-space))]!"} p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!`}
                       aria-label={
                         library
                           ? t("cell.actions.deleteImage", {
@@ -581,13 +631,6 @@ export function GridCell({
                           : t("cell.actions.clear")
                       }
                       disabled={library?.disabled}
-                      style={{
-                        right: "calc(4.5cqw + var(--card-paint-inset, 0px))",
-                        top:
-                          overlay && gridStyle.captionAlignment === "top"
-                            ? `calc(${(geometry.captionHeight / geometry.imageHeight) * 100}% + 4.5cqw + var(--card-paint-inset, 0px))`
-                            : "calc(4.5cqw + var(--card-paint-inset, 0px))",
-                      }}
                       title={
                         library
                           ? t("cell.actions.deleteImage", {

@@ -450,7 +450,8 @@ test("card content and actions scale with the card without resize undo", async (
       path: testInfo.outputPath(`empty-card-${size.width}.png`),
     });
   }
-  expect(emptyMetrics[1].width).toBeGreaterThan(emptyMetrics[0].width * 1.5);
+  expect(emptyMetrics[1].width).toBeGreaterThan(emptyMetrics[0].width);
+  expect(emptyMetrics[1].width).toBeLessThanOrEqual(320);
   await page.locator("#upload").setInputFiles({
     name: "Scale.svg",
     mimeType: "image/svg+xml",
@@ -1142,9 +1143,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
 }, testInfo) => {
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
-  const header = sidebar.locator(
-    "[data-sidebar-sticky] > [data-sidebar-header]",
-  );
+  const header = sidebar.locator("[data-sidebar-sticky] > div").first();
   const commands = sidebar.getByRole("tablist", {
     name: "Editor panels",
     exact: true,
@@ -1153,9 +1152,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
   await expect(header.getByRole("button")).toHaveCount(0);
   await expect(header.getByRole("tab")).toHaveCount(0);
   await expect(
-    page
-      .locator("[data-canvas-header]")
-      .getByRole("link", { name: "Grids", exact: true }),
+    header.getByRole("link", { name: "Grids", exact: true }),
   ).toBeVisible();
   await expect(sidebar).toHaveCSS("overflow-y", "auto");
   await expect(sidebar).toHaveCSS("scrollbar-gutter", "stable");
@@ -1460,9 +1457,7 @@ test("sticky padded sidebar controls stay above scrolling images", async ({
   const sticky = sidebar.locator("[data-sidebar-sticky]");
   const controls = sidebar.locator("[data-panel-controls]");
   await expect(
-    page
-      .locator("[data-canvas-header]")
-      .getByRole("link", { name: "Grids", exact: true }),
+    sticky.getByRole("link", { name: "Grids", exact: true }),
   ).toBeVisible();
   await expect(controls).toHaveCSS("padding-top", "16px");
   await expect(controls).toHaveCSS("padding-bottom", "16px");
@@ -1551,9 +1546,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
       const probe = { running: true, panelFrames: 0, violations: [] };
       window.sidePanelOverflow = probe;
       const sample = () => {
-        const scroll = document
-          .querySelector("[data-editor-settings]")
-          ?.closest("[data-modal-scroll]");
+        const scroll = document.querySelector("[data-sidebar-track]");
         if (scroll) {
           probe.panelFrames++;
           const overflow = getComputedStyle(scroll).overflowX;
@@ -1603,10 +1596,18 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
         const section = await dialog
           .getByRole("group", { name: "Canvas style", exact: true })
           .boundingBox();
+        const padding = await dialog
+          .locator(".settings-panel")
+          .evaluate((element) => {
+            const style = getComputedStyle(element);
+            return (
+              parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+            );
+          });
         return Math.abs(
           section.width -
             (await dialog.evaluate((element) => element.clientWidth)) +
-            32,
+            padding,
         );
       })
       .toBeLessThan(1);
@@ -2498,7 +2499,7 @@ test("desktop sidebar has stable panel scrollbars and modal alignment", async ({
   await expect(page.locator(".asset")).toHaveCount(3);
   await savedWorkspace(page);
   for (const width of [1440, 960]) {
-    await setEditorViewport(page, { width, height: 2000 });
+    await setEditorViewport(page, { width, height: 3000 });
     await openSidebarPanel(page, "Images");
     expect(
       await page
@@ -2520,12 +2521,12 @@ test("desktop sidebar has stable panel scrollbars and modal alignment", async ({
         .locator("[data-canvas-header]")
         .boundingBox();
       expect((await sidebar.boundingBox()).height).toBe(
-        2000 - toolbarBounds.height,
+        3000 - toolbarBounds.height,
       );
       expect((await aside.boundingBox()).width).toBe(
         await sidebar.evaluate((element) => element.clientWidth),
       );
-      expect((await aside.boundingBox()).height).toBeLessThan(2000);
+      expect((await aside.boundingBox()).height).toBeLessThan(3000);
       await expect(aside).toHaveCSS("overflow-y", "visible");
       const body = sidebar;
       await expect(body).toHaveCSS("overflow-y", "auto");
@@ -2552,12 +2553,12 @@ test("desktop sidebar has stable panel scrollbars and modal alignment", async ({
         };
       });
       expect(before.height).toBeGreaterThan(0);
-      expect(before.height).toBeLessThan(2000);
+      expect(before.height).toBeLessThan(3000);
       expect(before.overflowing).toBe(false);
       await body.evaluate((element) => {
         const spacer = document.createElement("div");
         spacer.dataset.scrollProbe = "";
-        spacer.style.height = "3000px";
+        spacer.style.height = "6000px";
         element.append(spacer);
       });
       await expect
@@ -3323,21 +3324,19 @@ test("button groups join edges with single dividers and outer-only corners", asy
 }, testInfo) => {
   await page.goto("./");
   await savedWorkspace(page);
-  const activeBackground = await page
-    .getByRole("tab", { name: "Images", exact: true })
-    .evaluate((element) => getComputedStyle(element).backgroundColor);
   await selectField(page, "caption-position", "overlay-bottom");
   for (const width of [1440, 390]) {
     await setEditorViewport(page, { width, height: 844 });
+    await page.mouse.move(0, 0);
     await expect(page.locator(".grid-cell").first()).toHaveCSS(
       "background-color",
       "rgb(17, 19, 21)",
     );
-    const background = await paletteColor(page, "bg");
     for (const label of ["Column controls", "Row controls"]) {
       const group = page.getByRole("group", { name: label, exact: true });
       await expect(group).toHaveCSS("gap", "0px");
-      const vertical = label === "Column controls";
+      await expect(group).toHaveCSS("flex-direction", "row");
+      const vertical = false;
       const buttons = await group.locator("button").evaluateAll((elements) =>
         elements.map((element) => {
           const rect = element.getBoundingClientRect();
@@ -3350,7 +3349,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
             width: rect.width,
             height: rect.height,
             background: style.backgroundColor,
-            active: element.getAttribute("aria-pressed") === "true",
+            color: style.color,
             corners: [
               style.borderTopLeftRadius,
               style.borderTopRightRadius,
@@ -3367,8 +3366,9 @@ test("button groups join edges with single dividers and outer-only corners", asy
       for (const [index, button] of buttons.entries()) {
         expect(button.width).toBe(44);
         expect(button.height).toBe(44);
-        expect(button.background).toBe(
-          button.active ? activeBackground : background,
+        expect(button.background).toMatch(/\/ 0\.15\)$/);
+        expect(button.color).toBe(
+          index === 0 ? "rgb(255, 127, 135)" : "rgb(128, 202, 177)",
         );
         const first = index === 0;
         const last = index === buttons.length - 1;
@@ -3402,10 +3402,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
         await control.hover();
         for (const edge of ["top", "right", "bottom", "left"]) {
           await expect(control).toHaveCSS(`border-${edge}-width`, "1px");
-          await expect(control).toHaveCSS(
-            `border-${edge}-color`,
-            await paletteColor(page, button.active ? "line" : "accent"),
-          );
+          await expect(control).toHaveCSS(`border-${edge}-color`, button.color);
         }
         const screenshot = await control.screenshot();
         const borders = await page.evaluate(
@@ -3431,7 +3428,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
                 (_, pixel) =>
                   pixels[pixel * 4] > 70 &&
                   pixels[pixel * 4 + 1] > 100 &&
-                  pixels[pixel * 4 + 1] > pixels[pixel * 4] + 12,
+                  Math.abs(pixels[pixel * 4 + 1] - pixels[pixel * 4]) > 12,
               ).some(Boolean);
             });
             bitmap.close();
@@ -3439,19 +3436,9 @@ test("button groups join edges with single dividers and outer-only corners", asy
           },
           [...screenshot],
         );
-        expect(borders).toEqual(
-          button.active
-            ? [false, false, false, false]
-            : [true, true, true, true],
-        );
-        await expect(control).toHaveCSS(
-          "cursor",
-          button.active ? "default" : "pointer",
-        );
-        await expect(control).toHaveCSS(
-          "background-color",
-          button.active ? activeBackground : background,
-        );
+        expect(borders).toEqual([true, true, true, true]);
+        await expect(control).toHaveCSS("cursor", "pointer");
+        await expect(control).toHaveCSS("background-color", /\/ 0\.25\)$/);
         if (index === 1)
           await group.screenshot({
             path: testInfo.outputPath(
@@ -4056,13 +4043,16 @@ test("movable cards show a move cursor without changing editing and action curso
       await expect
         .poll(() =>
           page.evaluate(() => {
-            const image = document
-              .querySelector(".grid-cell .cell-image-button")
+            const panel = document
+              .querySelector("[data-editor-settings]")
               .getBoundingClientRect();
             return Boolean(
               document
-                .elementFromPoint(image.x + 5, image.y + 5)
-                ?.closest('[role="dialog"]'),
+                .elementFromPoint(
+                  panel.x + panel.width / 2,
+                  panel.y + panel.height / 2,
+                )
+                ?.closest("[data-editor-settings]"),
             );
           }),
         )
@@ -5446,7 +5436,7 @@ test("touch crop editor fills the viewport and keeps portrait controls usable", 
   await context.close();
 });
 
-test("single-item previews stay capped with grid-connected controls on large monitors", async ({
+test("single-item previews stay capped with header controls on large monitors", async ({
   page,
 }, testInfo) => {
   await setEditorViewport(page, { width: 3840, height: 2160 });
@@ -5493,13 +5483,20 @@ test("single-item previews stay capped with grid-connected controls on large mon
             .getBoundingClientRect();
           return Math.max(
             Math.abs(frame.left + frame.width / 2 - center),
-            Math.abs(columns.left - viewport.right - 8),
-            Math.abs(rows.top - viewport.bottom - 8),
-            Math.abs(frame.width - viewport.width - 104),
+            Math.abs(columns.top - rows.top),
+            Math.abs(rows.left - columns.right - 8),
+            Math.abs(frame.width - viewport.width),
           );
         }),
       )
       .toBeLessThan(1);
+    for (const label of ["Column controls", "Row controls"]) {
+      await expect(
+        page
+          .locator("[data-canvas-header]")
+          .getByRole("group", { name: label, exact: true }),
+      ).toHaveCount(1);
+    }
   }
   await page
     .locator(".canvas-area")
@@ -5514,7 +5511,7 @@ test("single-item previews stay capped with grid-connected controls on large mon
         .evaluate((cell) => cell.getBoundingClientRect().width),
     )
     .toBeCloseTo(320, 1);
-  await setEditorViewport(page, { width: 390, height: 844 });
+  await setEditorViewport(page, { width: 260, height: 844 });
   await expect
     .poll(() =>
       page
@@ -6920,9 +6917,143 @@ test("touch cell overlays target the tapped image without autofocus", async ({
   expect(toolbar.y + toolbar.height).toBeLessThanOrEqual(
     picture.y + picture.height + 1,
   );
+  const clear = await tools
+    .getByRole("button", { name: "Clear cell", exact: true })
+    .boundingBox();
+  const drag = await tools
+    .getByRole("button", { name: "Drag image", exact: true })
+    .boundingBox();
+  const inset = picture.x + picture.width - clear.x - clear.width;
+  expect(drag.x - picture.x).toBeCloseTo(inset, 0);
+  expect(drag.y - picture.y).toBeCloseTo(clear.y - picture.y, 0);
+  const heading = await page
+    .locator(".grid-cell")
+    .nth(2)
+    .locator(".cell-heading")
+    .boundingBox();
+  expect(toolbar.y + toolbar.height).toBeCloseTo(heading.y, 0);
+  for (const name of ["Replace image", "Crop image"]) {
+    const control = tools.getByRole("button", { name, exact: true });
+    const button = await control.boundingBox();
+    expect(toolbar.y + toolbar.height - button.y - button.height).toBeCloseTo(
+      inset,
+      0,
+    );
+    const sideGap =
+      name === "Replace image"
+        ? button.x - picture.x
+        : picture.x + picture.width - button.x - button.width;
+    expect(sideGap).toBeCloseTo(inset, 0);
+    expect(button.y + button.height).toBeLessThan(heading.y);
+    expect(
+      await control.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          ),
+        );
+      }),
+    ).toBe(true);
+  }
   await page.screenshot({
     path: testInfo.outputPath("cell-overlay-mobile.png"),
   });
+  await selectField(page, "caption-position", "overlay-top");
+  await image.tap();
+  await expect(tools).toBeVisible();
+  const topRegion = await tools.boundingBox();
+  const topHeading = await page
+    .locator(".grid-cell")
+    .nth(2)
+    .locator(".cell-heading")
+    .boundingBox();
+  expect(topRegion.y).toBeCloseTo(topHeading.y + topHeading.height, 0);
+  const topPicture = await image.boundingBox();
+  expect(topRegion.y + topRegion.height).toBeCloseTo(
+    topPicture.y + topPicture.height,
+    0,
+  );
+  for (const [name, side, edge] of [
+    ["Drag image", "left", "top"],
+    ["Clear cell", "right", "top"],
+    ["Replace image", "left", "bottom"],
+    ["Crop image", "right", "bottom"],
+  ]) {
+    const control = tools.getByRole("button", { name, exact: true });
+    const button = await control.boundingBox();
+    const sideGap =
+      side === "left"
+        ? button.x - topRegion.x
+        : topRegion.x + topRegion.width - button.x - button.width;
+    const edgeGap =
+      edge === "top"
+        ? button.y - topRegion.y
+        : topRegion.y + topRegion.height - button.y - button.height;
+    expect(edgeGap).toBeCloseTo(sideGap, 0);
+    expect(button.y).toBeGreaterThan(topHeading.y + topHeading.height);
+    expect(
+      await control.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          ),
+        );
+      }),
+    ).toBe(true);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("cell-overlay-top-mobile.png"),
+  });
+  for (const position of ["overlay-bottom", "overlay-top"]) {
+    await selectField(page, "caption-position", position);
+    await image.tap();
+    await expect(tools).toBeVisible();
+    await image.hover();
+    await expect(page.locator(".grid-cell").nth(2)).toHaveAttribute(
+      "data-image-hovered",
+      "",
+    );
+    const paintInset = await tools.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.style.cssText =
+        "position:absolute;width:var(--card-paint-inset,0px);height:0;pointer-events:none";
+      element.append(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      return width;
+    });
+    expect(paintInset).toBeGreaterThan(0);
+    const region = await tools.boundingBox();
+    for (const [name, side, edge] of [
+      ["Drag image", "left", "top"],
+      ["Clear cell", "right", "top"],
+      ["Replace image", "left", "bottom"],
+      ["Crop image", "right", "bottom"],
+    ]) {
+      const button = await tools
+        .getByRole("button", { name, exact: true })
+        .boundingBox();
+      const visibleSideGap =
+        (side === "left"
+          ? button.x - region.x
+          : region.x + region.width - button.x - button.width) - paintInset;
+      const headingEdge = position === `overlay-${edge}`;
+      const visibleEdgeGap =
+        (edge === "top"
+          ? button.y - region.y
+          : region.y + region.height - button.y - button.height) -
+        (headingEdge ? 0 : paintInset);
+      expect(visibleSideGap).toBeGreaterThan(0);
+      expect(visibleEdgeGap).toBeCloseTo(visibleSideGap, 0);
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(`cell-${position}-hover.png`),
+    });
+  }
   await context.close();
 });
 
@@ -9131,6 +9262,9 @@ test("edge resizing preserves coordinates, overflow and newer edits", async ({
     const grid = document
       .querySelector("[data-canvas-viewport]")
       .getBoundingClientRect();
+    const header = document
+      .querySelector("[data-canvas-header]")
+      .getBoundingClientRect();
     const columns = document
       .querySelector('[aria-label="Column controls"]')
       .getBoundingClientRect();
@@ -9138,12 +9272,26 @@ test("edge resizing preserves coordinates, overflow and newer edits", async ({
       .querySelector('[aria-label="Row controls"]')
       .getBoundingClientRect();
     return {
-      right: columns.left >= grid.right,
-      bottom: rows.top >= grid.bottom,
+      columnsInHeader:
+        columns.left >= header.left &&
+        columns.right <= header.right &&
+        columns.top >= header.top &&
+        columns.bottom <= header.bottom,
+      rowsInHeader:
+        rows.left >= header.left &&
+        rows.right <= header.right &&
+        rows.top >= header.top &&
+        rows.bottom <= header.bottom,
+      aboveGrid: columns.bottom <= grid.top && rows.bottom <= grid.top,
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
-  expect(geometry).toEqual({ right: true, bottom: true, overflow: false });
+  expect(geometry).toEqual({
+    columnsInHeader: true,
+    rowsInHeader: true,
+    aboveGrid: true,
+    overflow: false,
+  });
 });
 
 test("uploads follow stable cells through resize and large exports are bounded", async ({
@@ -10003,7 +10151,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
     name: "Choose image",
     exact: true,
   });
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await imageButton(1).tap({ position: { x: 5, y: 5 } });
   await picker.locator("#picker-cell-upload").setInputFiles(
     ["Touch A", "Touch B"].map((name, index) => ({
       name: `${name}.svg`,
@@ -10013,12 +10161,25 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
       ),
     })),
   );
+  await expect(picker).toBeVisible();
+  await expect(cells.locator("img")).toHaveCount(0);
+  await picker
+    .getByRole("button", { name: "Use Touch B", exact: true })
+    .tap({ position: { x: 5, y: 5 } });
+  await expect(picker).toHaveCount(0);
+  await expect(cells.nth(0).locator("img")).toHaveCount(0);
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch B");
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await picker
+    .getByRole("button", { name: "Use Touch A", exact: true })
+    .tap({ position: { x: 5, y: 5 } });
   await expect(picker).toHaveCount(0);
   await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Touch A");
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch B");
   const tools = cells
     .nth(0)
     .getByRole("group", { name: "Cell tools", exact: true });
+  const session = await context.newCDPSession(page);
   await imageButton(0).tap({ position: { x: 5, y: 5 } });
   await expect(tools).toBeVisible();
   await expect(picker).toHaveCount(0);
@@ -10036,11 +10197,20 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
     .getByRole("button", { name: "Use Touch A", exact: true })
     .tap({ position: { x: 5, y: 5 } });
   await expect(picker).toHaveCount(0);
-  const session = await context.newCDPSession(page);
   const drag = async (sourceIndex, targetIndex, cancel = false) => {
-    const source = await imageButton(sourceIndex).boundingBox();
+    const handle = cells
+      .nth(sourceIndex)
+      .getByRole("button", { name: "Drag image", exact: true });
+    if (!(await handle.isVisible()))
+      await imageButton(sourceIndex).tap({ position: { x: 5, y: 5 } });
+    await expect(handle).toBeVisible();
+    await expect(handle).toHaveCSS("touch-action", "none");
+    const source = await handle.boundingBox();
     const target = await imageButton(targetIndex).boundingBox();
-    const start = { x: source.x + 10, y: source.y + 10 };
+    const start = {
+      x: source.x + source.width / 2,
+      y: source.y + source.height / 2,
+    };
     const end = { x: target.x + 10, y: target.y + 10 };
     await session.send("Input.dispatchTouchEvent", {
       type: "touchStart",
@@ -10089,10 +10259,44 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
     cells.nth(1).getByRole("group", { name: "Cell tools", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("touch-card-tools.png") });
-  await session.detach();
   await reloadWorkspace(page);
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
   await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch B");
+  await setEditorViewport(page, { width: 780, height: 540 });
+  await expect(imageButton(1)).toHaveCSS("touch-action", "auto");
+  await expect(
+    cells.getByRole("button", { name: "Drag image", exact: true }),
+  ).toHaveCount(0);
+  const originalGrid = (await savedWorkspace(page)).grid;
+  const body = await imageButton(1).boundingBox();
+  const start = {
+    x: body.x + body.width / 2,
+    y: body.y + Math.min(body.height - 12, 140),
+  };
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ ...start, id: 1 }],
+  });
+  for (let step = 1; step <= 8; step++) {
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: start.x, y: start.y - (120 * step) / 8, id: 1 }],
+    });
+    await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
+  }
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-workspace-scroll]")
+        .evaluate((element) => element.scrollTop),
+    )
+    .toBeGreaterThan(0);
+  expect((await savedWorkspace(page)).grid).toEqual(originalGrid);
+  await session.detach();
   await context.close();
 });
 

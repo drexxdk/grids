@@ -77,6 +77,7 @@
       "tools": "Cell tools",
       "chooseImage": "Choose image",
       "replaceImage": "Replace image",
+      "dragImage": "Drag image",
       "deleteImage": "Delete {value1}",
       "clear": "Clear cell"
     },

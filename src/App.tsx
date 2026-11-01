@@ -588,6 +588,8 @@ export default function App() {
     if (!store) return;
     const batch = Array.from(files ?? []);
     if (!batch.length) return;
+    const chooseImportedImage = batch.length > 1 && targetCellId !== null;
+    if (chooseImportedImage) setImageTarget(targetCellId);
     setImportProgress((current) => ({
       completed: current?.completed ?? 0,
       total: (current?.total ?? 0) + batch.length,
@@ -633,7 +635,7 @@ export default function App() {
       dispatchDocument({
         type: "assets/import",
         gridId: targetId,
-        cellId: targetCellId ?? null,
+        cellId: chooseImportedImage ? null : targetCellId,
         assets,
       });
     } finally {
@@ -1599,6 +1601,7 @@ export default function App() {
         id="replace-upload"
         type="file"
         accept="image/*"
+        multiple
         hidden
         onChange={(event) => upload(event, uploadTarget.current)}
       />
@@ -1696,7 +1699,7 @@ export default function App() {
                 }
                 onDropFiles={(files) => {
                   void importFiles(files, imageTarget);
-                  closeImagePicker();
+                  if (files.length === 1) closeImagePicker();
                 }}
               />
               {activeAssets.map((asset) => (
@@ -1731,8 +1734,9 @@ export default function App() {
               hidden
               onChange={(event) => {
                 if (!event.currentTarget.files?.length) return;
+                const singleImage = event.currentTarget.files.length === 1;
                 void upload(event, imageTarget);
-                closeImagePicker();
+                if (singleImage) closeImagePicker();
               }}
             />
             {activeAssets.length === 0 && <p>{t("library.empty")}</p>}
