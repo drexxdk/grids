@@ -4261,6 +4261,20 @@ test("captions wrap at a fixed size and share height across canvas, library and 
     await setEditorViewport(page, { width, height: 1080 });
     for (const placement of ["above", "below", "overlay-bottom"]) {
       await selectField(page, "caption-position", placement);
+      await expect
+        .poll(() =>
+          page.locator(".image-card:has(textarea)").evaluateAll(
+            (cards) =>
+              cards.length > 0 &&
+              cards.every((card) => {
+                const field = card.querySelector("textarea");
+                const width = field.getBoundingClientRect().width;
+                const fontSize = parseFloat(getComputedStyle(field).fontSize);
+                return width > 0 && Math.abs(fontSize - width * 0.11) < 0.05;
+              }),
+          ),
+        )
+        .toBe(true);
       const metrics = await page
         .locator(".image-card:has(textarea)")
         .evaluateAll((cards) =>
@@ -7017,6 +7031,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   await chooseImage(page, "used");
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await page.locator(".cell-heading").first().fill("Keep this caption");
+  await expect(page.locator(".library-heading").first()).toHaveValue("used");
   await openSidebarPanel(page, "Settings");
   await page.locator("#gap").fill("4");
   await page
@@ -7056,22 +7071,20 @@ test("reset and library deletion retain canvas images without confirmation", asy
   expect(tileBox.height).toBeCloseTo(cardBox.height, 1);
   await page
     .getByRole("button", {
-      name: "Image options: Keep this caption",
+      name: "Image options: used",
       exact: true,
     })
     .hover();
   await page.screenshot({
     path: testInfo.outputPath("library-delete-hover-desktop.png"),
   });
-  await page
-    .getByRole("button", { name: "Delete Keep this caption", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Delete used", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(
       async () =>
         (await localDatabase(page)).document?.assets.find(
-          (asset) => asset.title === "Keep this caption",
+          (asset) => asset.title === "used",
         )?.libraryHidden,
     )
     .toBe(true);
@@ -7089,7 +7102,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     exact: true,
   });
   await expect(
-    picker.getByRole("button", { name: "Use Keep this caption", exact: true }),
+    picker.getByRole("button", { name: "Use used", exact: true }),
   ).toHaveCount(0);
   await picker.getByRole("button", { name: "Use unused", exact: true }).click();
   await expect(picker).toHaveCount(0);
@@ -7132,7 +7145,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   );
   const retained = await savedWorkspace(page);
   expect(retained.grid.cells[0].assetId).toBe(
-    retained.assets.find((asset) => asset.title === "Keep this caption").id,
+    retained.assets.find((asset) => asset.title === "used").id,
   );
   await page.screenshot({
     path: testInfo.outputPath("clear-reset-library-cleanup-desktop.png"),
