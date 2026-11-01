@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { generateSW, getManifest } from "workbox-build";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 
@@ -193,12 +195,12 @@ async function openSidebarPanel(page, name) {
     await expect(page.locator("[data-editor-settings]")).toHaveCount(0);
     await sidebarToggle(page, false).click();
   }
-  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  const dialog = sidebar;
   if (name === "Settings") {
     await expect(dialog).toBeVisible();
     await expect
       .poll(() =>
-        dialog.locator("[data-editor-settings]").evaluate((element) => {
+        dialog.evaluate((element) => {
           const bounds = element.getBoundingClientRect();
           return Math.max(0, -bounds.left, bounds.right - innerWidth);
         }),
@@ -756,11 +758,9 @@ test("settings have open sections and joined appearance radio grids", async ({
       captionAlignment: "top",
     });
     if (width <= 900) {
-      const dialog = page.getByRole("dialog", {
-        name: "Settings",
-        exact: true,
-      });
-      await dialog
+      const dialog = page.locator("[data-editor-settings]");
+      await page
+        .locator("[data-canvas-header]")
         .getByRole("button", { name: "Close sidebar", exact: true })
         .click();
       await expect(dialog).toHaveCount(0);
@@ -888,21 +888,35 @@ test("header actions stay top right with branding in the aside and panel-open an
     await expect(sidebar).toHaveCount(0);
     await expect(header).toBeVisible();
     const before = await page.locator("[data-resize-frame]").boundingBox();
+    const beforeHeader = await header.boundingBox();
     await header
       .getByRole("button", { name: "Show sidebar", exact: true })
       .click();
-    const settings = page.getByRole("dialog", {
-      name: "Settings",
-      exact: true,
-    });
+    const settings = page.locator("[data-editor-settings]");
     await expect(settings).toBeVisible();
-    const toolbar = settings.locator("[data-modal-toolbar]");
+    const toolbar = settings.locator("[data-sidebar-sticky]");
     await expect(toolbar).toBeVisible();
+    await expect(settings.locator("[data-modal-toolbar]")).toHaveCount(0);
+    await expect(
+      settings.getByRole("button", { name: "Close sidebar", exact: true }),
+    ).toHaveCount(0);
+    expect(await header.boundingBox()).toEqual(beforeHeader);
+    await expect
+      .poll(
+        async () =>
+          (await settings.boundingBox()).x +
+          (await settings.boundingBox()).width -
+          width,
+      )
+      .toBeLessThan(1);
     await expect(
       settings.getByRole("button", { name: "Close dialog", exact: true }),
     ).toHaveCount(0);
     await expect(settings.getByRole("tab")).toHaveCount(0);
-    expect((await toolbar.boundingBox()).y).toBe(0);
+    expect((await toolbar.boundingBox()).y).toBeCloseTo(
+      beforeHeader.y + beforeHeader.height,
+      1,
+    );
     const mobileBrand = toolbar.getByRole("link", {
       name: "Grids",
       exact: true,
@@ -913,8 +927,11 @@ test("header actions stay top right with branding in the aside and panel-open an
     });
     await expect(mobileBrand).toBeVisible();
     await expect(mobileExport).toHaveCount(0);
-    expect((await mobileBrand.boundingBox()).x).toBe(12);
-    const mobileToggle = toolbar.getByRole("button", {
+    expect((await mobileBrand.boundingBox()).x).toBeCloseTo(
+      (await settings.boundingBox()).x + 17,
+      1,
+    );
+    const mobileToggle = header.getByRole("button", {
       name: "Close sidebar",
       exact: true,
     });
@@ -930,7 +947,7 @@ test("header actions stay top right with branding in the aside and panel-open an
     await page.screenshot({
       path: testInfo.outputPath(`mobile-toolbar-panel-${width}.png`),
     });
-    await toolbar
+    await header
       .getByRole("button", { name: "Close sidebar", exact: true })
       .click();
     await expect(settings).toHaveCount(0);
@@ -965,10 +982,15 @@ test("buttons and headers use the filled dropdown background without changing se
   for (const control of [
     header.getByRole("button", { name: "Export grid", exact: true }),
     header.getByRole("button", { name: "Close sidebar", exact: true }),
-    page.getByRole("button", { name: "Add column", exact: true }),
     sidebar.getByRole("button", { name: "Reset grid settings", exact: true }),
   ])
     await expect(control).toHaveCSS("background-color", background);
+  await expect(
+    page.getByRole("button", { name: "Add column", exact: true }),
+  ).toHaveCSS("background-color", /\/ 0\.15\)$/);
+  await expect(
+    page.getByRole("button", { name: "Add column", exact: true }),
+  ).toHaveCSS("color", "rgb(128, 202, 177)");
   const selected = sidebar.getByRole("radio", {
     name: "Portrait",
     exact: true,
@@ -980,18 +1002,83 @@ test("buttons and headers use the filled dropdown background without changing se
   await header
     .getByRole("button", { name: "Show sidebar", exact: true })
     .click();
-  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
-  const mobileHeader = settings.locator("[data-modal-toolbar]");
-  await expect(mobileHeader).toHaveCSS("background-color", background);
+  const settings = page.locator("[data-editor-settings]");
+  const mobileHeader = settings.locator("[data-sidebar-sticky]");
+  await expect(mobileHeader).toHaveCSS(
+    "background-color",
+    await paletteColor(page, "panel"),
+  );
   await expect(mobileHeader).toHaveCSS("background-image", "none");
   await expect(
-    mobileHeader.getByRole("button", { name: "Close sidebar", exact: true }),
+    header.getByRole("button", { name: "Close sidebar", exact: true }),
   ).toHaveCSS("background-color", background);
-  await settings
+  await header
     .getByRole("button", { name: "Close sidebar", exact: true })
     .click();
   await expect(settings).toHaveCount(0);
 });
+
+scrollbarTest(
+  "closed mobile aside does not intercept canvas input or move the canvas when opened",
+  async ({ page }) => {
+    await page.goto("./");
+    for (const width of [390, 780]) {
+      await setEditorViewport(page, { width, height: 844 });
+      const track = page.locator("[data-sidebar-track]");
+      const caption = page.locator(".cell-heading").nth(width === 390 ? 1 : 2);
+      const checkCanvas = async () => {
+        await expect(page.locator("[data-editor-sidebar]")).toHaveCount(0);
+        await expect(track).toHaveCSS("pointer-events", "none");
+        expect(
+          await caption.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return (
+              document.elementFromPoint(bounds.left + 5, bounds.top + 5) ===
+              element
+            );
+          }),
+        ).toBe(true);
+        await caption.click({ position: { x: 5, y: 5 } });
+        await expect(caption).toBeFocused();
+      };
+      await checkCanvas();
+      const header = page.locator("[data-canvas-header]");
+      const before = await header.boundingBox();
+      const workspace = page.locator(".workspace");
+      const frame = page.locator("[data-resize-frame]");
+      const workspaceBefore = await workspace.boundingBox();
+      const frameBefore = await frame.boundingBox();
+      expect(
+        await page.evaluate(() =>
+          parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+              "--native-scrollbar-width",
+            ),
+          ),
+        ),
+      ).toBeGreaterThan(0);
+      await header
+        .getByRole("button", { name: "Show sidebar", exact: true })
+        .click();
+      const aside = page.locator("[data-editor-sidebar]");
+      await expect(aside).toBeVisible();
+      await expect(aside).toHaveCSS("pointer-events", "auto");
+      await expect(aside.getByRole("tab")).toHaveCount(0);
+      await expect(
+        aside.getByRole("button", { name: "Close sidebar", exact: true }),
+      ).toHaveCount(0);
+      expect(await header.boundingBox()).toEqual(before);
+      expect(await workspace.boundingBox()).toEqual(workspaceBefore);
+      expect(await frame.boundingBox()).toEqual(frameBefore);
+      await header
+        .getByRole("button", { name: "Close sidebar", exact: true })
+        .click();
+      await checkCanvas();
+      expect(await workspace.boundingBox()).toEqual(workspaceBefore);
+      expect(await frame.boundingBox()).toEqual(frameBefore);
+    }
+  },
+);
 
 test("mobile sidebar keeps the header opaque throughout opening and closing", async ({
   page,
@@ -1002,16 +1089,14 @@ test("mobile sidebar keeps the header opaque throughout opening and closing", as
   await page.evaluate(() => {
     window.toolbarFrames = [];
     const sample = () => {
-      const header =
-        document.querySelector("[data-modal-toolbar]") ??
-        document.querySelector("[data-canvas-header]");
+      const header = document.querySelector("[data-canvas-header]");
       let opacity = 1;
       for (let element = header; element; element = element.parentElement)
         opacity *= Number(getComputedStyle(element).opacity);
       window.toolbarFrames.push({
         opacity,
         brand: Boolean(header?.querySelector(".brand")),
-        aside: Boolean(header?.matches("[data-modal-toolbar]")),
+        aside: Boolean(document.querySelector("[data-editor-settings]")),
         bounds: header?.getBoundingClientRect().toJSON(),
       });
       window.toolbarFrame = requestAnimationFrame(sample);
@@ -1019,9 +1104,10 @@ test("mobile sidebar keeps the header opaque throughout opening and closing", as
     window.toolbarFrame = requestAnimationFrame(sample);
   });
   await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const settings = page.locator("[data-editor-settings]");
   await expect(settings).toBeVisible();
-  await settings
+  await page
+    .locator("[data-canvas-header]")
     .getByRole("button", { name: "Close sidebar", exact: true })
     .click();
   await expect(settings).toHaveCount(0);
@@ -1038,10 +1124,10 @@ test("mobile sidebar keeps the header opaque throughout opening and closing", as
       ),
   );
   expect(frames.length).toBeGreaterThan(1);
-  expect(
-    frames.every((frame) => frame.opacity === 1 && frame.brand === frame.aside),
-  ).toBe(true);
-  expect(frames.some((frame) => frame.aside && frame.brand)).toBe(true);
+  expect(frames.every((frame) => frame.opacity === 1 && !frame.brand)).toBe(
+    true,
+  );
+  expect(frames.some((frame) => frame.aside)).toBe(true);
   expect(frames.some((frame) => !frame.aside && !frame.brand)).toBe(true);
   expect(
     frames.every(
@@ -1206,13 +1292,11 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
     path: testInfo.outputPath("mobile-sidebar-closed.png"),
   });
   await canvasSettings.click();
-  const mobileSettings = page.getByRole("dialog", {
-    name: "Settings",
-    exact: true,
-  });
+  const mobileSettings = page.locator("[data-editor-settings]");
   await expect(mobileSettings).toBeVisible();
   await expect(mobileSettings.getByRole("tab")).toHaveCount(0);
-  await mobileSettings
+  await page
+    .locator("[data-canvas-header]")
     .getByRole("button", { name: "Close sidebar", exact: true })
     .click();
   await expect(mobileSettings).toHaveCount(0);
@@ -1340,18 +1424,20 @@ scrollbarTest(
       await header
         .getByRole("button", { name: "Show sidebar", exact: true })
         .click();
-      const settings = page.getByRole("dialog", {
-        name: "Settings",
-        exact: true,
-      });
-      const mobileScroll = settings.locator("[data-modal-scroll]");
-      expect(
-        await mobileScroll.evaluate((element) => ({
-          width: element.offsetWidth - element.clientWidth,
-          right: element.getBoundingClientRect().right,
-        })),
-      ).toEqual({ width: gutter, right: 390 });
-      await settings
+      const settings = page.locator("[data-editor-settings]");
+      const mobileScroll = settings;
+      await expect
+        .poll(() =>
+          mobileScroll.evaluate((element) => ({
+            width:
+              element.offsetWidth -
+              element.clientWidth -
+              parseFloat(getComputedStyle(element).borderLeftWidth),
+            right: element.getBoundingClientRect().right,
+          })),
+        )
+        .toEqual({ width: gutter, right: 390 });
+      await header
         .getByRole("button", { name: "Close sidebar", exact: true })
         .click();
       await expect(settings).toHaveCount(0);
@@ -1488,12 +1574,9 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
       requestAnimationFrame(sample);
     });
     await tools.click();
-    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+    const dialog = page.locator("[data-editor-settings]");
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator("[data-modal-scroll]")).toHaveCSS(
-      "overflow-x",
-      "hidden",
-    );
+    await expect(dialog).toHaveCSS("overflow-x", "hidden");
     await expect(dialog.getByRole("tab")).toHaveCount(0);
     await expect(
       dialog.locator(".asset-panel, #sidebar-image-source"),
@@ -1501,13 +1584,11 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
     await expect(
       dialog.getByRole("radiogroup", { name: "Image shape", exact: true }),
     ).toBeVisible();
-    const panel = dialog.locator("[data-modal-panel]");
-    const available = await dialog
-      .locator("[data-modal-scroll]")
-      .evaluate((element) => ({
-        right: element.getBoundingClientRect().left + element.clientWidth,
-        width: element.clientWidth,
-      }));
+    const panel = page.locator("[data-sidebar-track]");
+    const available = await panel.evaluate((element) => ({
+      right: element.getBoundingClientRect().left + element.clientWidth,
+      width: element.clientWidth,
+    }));
     await expect
       .poll(async () => {
         const bounds = await panel.boundingBox();
@@ -1522,13 +1603,14 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
         const section = await dialog
           .getByRole("group", { name: "Canvas style", exact: true })
           .boundingBox();
-        return Math.abs(section.width - (await panel.boundingBox()).width + 32);
+        return Math.abs(
+          section.width -
+            (await dialog.evaluate((element) => element.clientWidth)) +
+            32,
+        );
       })
       .toBeLessThan(1);
-    await expect(dialog.locator("[data-modal-scroll]")).toHaveCSS(
-      "overflow-y",
-      "auto",
-    );
+    await expect(dialog).toHaveCSS("overflow-y", "auto");
     expect(await page.locator("[data-resize-frame]").boundingBox()).toEqual(
       frame,
     );
@@ -1678,6 +1760,90 @@ test("right sidebar switches images and settings with an image source dropdown",
   await expect(page.locator("#background-value")).toHaveValue("#112233");
 });
 
+test("header hides Export text before wrapping only when the buttons no longer fit", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page
+    .getByRole("button", { name: "Close sidebar", exact: true })
+    .click();
+  await setEditorViewport(page, { width: 760, height: 720 });
+  await page.evaluate(() => document.fonts.ready);
+  const header = page.locator("[data-canvas-header]");
+  const controls = page.locator("[data-canvas-controls]");
+  const actions = header.getByRole("group", {
+    name: "Editor panels",
+    exact: true,
+  });
+  const exporter = page.locator("#export-grid-header");
+  await expect(header).toHaveAttribute("data-header-layout", "full");
+  const fullActionsWidth = (await actions.boundingBox()).width;
+  const buttons = await controls.locator("button").all();
+  const initialBounds = await Promise.all(
+    buttons.map((button) => button.boundingBox()),
+  );
+  const controlsWidth =
+    Math.max(...initialBounds.map((bounds) => bounds.x + bounds.width)) -
+    Math.min(...initialBounds.map((bounds) => bounds.x));
+  const modes = new Set();
+  for (const width of [
+    760, 700, 691, 650, 600, 520, 500, 480, 440, 390, 260, 390, 440, 480, 500,
+    520, 600, 650, 691, 700, 760,
+  ]) {
+    await setEditorViewport(page, { width, height: 720 });
+    const mode = await header.getAttribute("data-header-layout");
+    modes.add(mode);
+    const actionBounds = await actions.boundingBox();
+    const exportBounds = await exporter.boundingBox();
+    const center = await controls.evaluate(
+      (element) =>
+        element.getBoundingClientRect().left + element.clientWidth / 2,
+    );
+    const requiredRight = center + controlsWidth / 2 + 8;
+    const leftRequiredRight =
+      (await controls.boundingBox()).x + 12 + controlsWidth + 8;
+    if (mode === "wrapped") {
+      expect(actionBounds.x + actionBounds.width - 96).toBeLessThan(
+        leftRequiredRight + 1,
+      );
+      expect((await buttons[0].boundingBox()).y).toBeGreaterThanOrEqual(
+        exportBounds.y + exportBounds.height + 7,
+      );
+    } else {
+      expect(actionBounds.x).toBeGreaterThanOrEqual(
+        (mode === "shifted" ? leftRequiredRight : requiredRight) - 1,
+      );
+      expect((await buttons[0].boundingBox()).y).toBeCloseTo(exportBounds.y, 1);
+      if (mode === "shifted")
+        expect((await buttons[0].boundingBox()).x).toBeCloseTo(
+          (await controls.boundingBox()).x + 12,
+          1,
+        );
+      if (mode === "icon" || mode === "shifted") {
+        expect(
+          actionBounds.x + actionBounds.width - fullActionsWidth,
+        ).toBeLessThan(requiredRight + 1);
+        expect(exportBounds.width).toBe(44);
+        await expect(exporter.locator("span")).toHaveCSS(
+          "position",
+          "absolute",
+        );
+      } else {
+        await expect(exporter.locator("span")).not.toHaveCSS(
+          "position",
+          "absolute",
+        );
+      }
+    }
+    await expect(exporter).toHaveAccessibleName("Export grid");
+    if ([700, 600, 520, 440, 390].includes(width))
+      await header.screenshot({
+        path: testInfo.outputPath(`header-${width}.png`),
+      });
+  }
+  expect([...modes].sort()).toEqual(["full", "icon", "shifted", "wrapped"]);
+});
+
 test("canvas preview fits both row and column changes without resizing controls", async ({
   page,
 }, testInfo) => {
@@ -1717,6 +1883,17 @@ test("canvas preview fits both row and column changes without resizing controls"
           ].map((button) => button.getBoundingClientRect());
           const left = Math.min(...buttons.map((button) => button.left));
           const right = Math.max(...buttons.map((button) => button.right));
+          if (
+            document.querySelector("[data-canvas-header]").dataset
+              .headerLayout === "shifted"
+          )
+            return Math.abs(
+              left -
+                document
+                  .querySelector("[data-canvas-controls]")
+                  .getBoundingClientRect().left -
+                12,
+            );
           return Math.abs(
             (left + right) / 2 -
               workspace.getBoundingClientRect().left -
@@ -6342,17 +6519,13 @@ test("mobile workspace stays horizontally fixed through nested modal open and cl
     name: "Reset grid settings",
     exact: true,
   });
-  const settingsScroll = page
-    .getByRole("dialog", { name: "Settings", exact: true })
-    .locator("[data-modal-scroll]");
+  const settingsScroll = page.locator("[data-editor-settings]");
   await expect(settingsScroll).toHaveCSS("scrollbar-gutter", "stable");
   await resetTrigger.scrollIntoViewIfNeeded();
   const sheetState = () =>
     drawer.evaluate((element) => {
       const rect = element.getBoundingClientRect();
-      const panel = document
-        .querySelector("[data-editor-settings]")
-        .closest("[data-modal-scroll]");
+      const panel = document.querySelector("[data-editor-settings]");
       return {
         x: rect.x,
         y: rect.y,
@@ -9070,6 +9243,161 @@ test("uploads follow stable cells through resize and large exports are bounded",
   expect(size).toEqual({ width: 1839, height: 2439 });
 });
 
+test("PWA updates activate without reloading an unsaved or focused caption", async ({
+  page,
+}, testInfo) => {
+  const dist = path.join(projectRoot, "dist");
+  const directory = testInfo.outputPath("pwa-worker");
+  await mkdir(directory, { recursive: true });
+  const { manifestEntries } = await getManifest({
+    globDirectory: dist,
+    globPatterns: ["**/*.{html,js,css,woff2,png,svg}"],
+    globIgnores: ["sw.js", "workbox-*.js"],
+    dontCacheBustURLsMatching: /-[A-Za-z0-9_-]{8}\.(?:js|css)$/,
+  });
+  let worker;
+  const deploy = async (version) => {
+    await generateSW({
+      swDest: path.join(directory, "sw.js"),
+      globDirectory: directory,
+      globPatterns: [],
+      additionalManifestEntries: manifestEntries.map((entry) =>
+        entry.url === "index.html"
+          ? { ...entry, revision: `release-${version}` }
+          : entry,
+      ),
+      skipWaiting: true,
+      clientsClaim: true,
+      navigateFallback: "index.html",
+    });
+    worker = Buffer.concat([
+      await readFile(path.join(directory, "sw.js")),
+      Buffer.from(
+        `\nself.addEventListener("message", event => { if (event.data === "release") event.ports[0].postMessage(${version}); });`,
+      ),
+    ]);
+  };
+  await deploy(1);
+  const server = createServer(async (request, response) => {
+    try {
+      const pathname = new URL(request.url, "http://localhost").pathname;
+      if (!pathname.startsWith("/grids/")) {
+        response.writeHead(404).end();
+        return;
+      }
+      const filename =
+        decodeURIComponent(pathname.slice("/grids/".length)) || "index.html";
+      const content =
+        filename === "sw.js"
+          ? worker
+          : await readFile(
+              path.join(
+                filename.startsWith("workbox-") ? directory : dist,
+                filename,
+              ),
+            );
+      const extension = path.extname(filename);
+      const contentType =
+        {
+          ".js": "application/javascript",
+          ".html": "text/html",
+          ".css": "text/css",
+          ".woff2": "font/woff2",
+          ".png": "image/png",
+          ".svg": "image/svg+xml",
+          ".webmanifest": "application/manifest+json",
+        }[extension] ?? "application/octet-stream";
+      response
+        .writeHead(200, {
+          "Content-Type": contentType,
+          "Cache-Control": "max-age=31536000",
+        })
+        .end(content);
+    } catch {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "localhost", resolve));
+  try {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "test-boots",
+        String(Number(localStorage.getItem("test-boots") ?? 0) + 1),
+      ),
+    );
+    await page.goto(`http://localhost:${server.address().port}/grids/`);
+    await expect(page.locator("#save-status")).toHaveAttribute(
+      "data-save-state",
+      "saved",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
+      )
+      .toBe(true);
+    expect(
+      await page.evaluate(
+        async () => (await navigator.serviceWorker.ready).updateViaCache,
+      ),
+    ).toBe("none");
+    const release = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = (event) => {
+              channel.port1.close();
+              resolve(event.data);
+            };
+            navigator.serviceWorker.controller.postMessage("release", [
+              channel.port2,
+            ]);
+          }),
+      );
+    expect(await release()).toBe(1);
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    const caption = page.locator(".cell-heading").first();
+    await caption.fill("Keep this edit through update");
+    await expect(page.locator("#save-status")).toHaveAttribute(
+      "data-save-state",
+      "saving",
+    );
+    await deploy(2);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(release).toBe(2);
+    expect(await page.evaluate(() => localStorage.getItem("test-boots"))).toBe(
+      "1",
+    );
+    await expect(caption).toBeFocused();
+    await caption.blur();
+    expect(await page.evaluate(() => localStorage.getItem("test-boots"))).toBe(
+      "1",
+    );
+    await expect(page.locator("#save-status")).toHaveAttribute(
+      "data-save-state",
+      "saving",
+    );
+    const reloaded = page.waitForEvent("load");
+    await page.clock.resume();
+    await reloaded;
+    expect(await page.evaluate(() => localStorage.getItem("test-boots"))).toBe(
+      "2",
+    );
+    await expect(page.locator(".cell-heading").first()).toHaveValue(
+      "Keep this edit through update",
+    );
+    expect(await release()).toBe(2);
+    expect((await savedWorkspace(page)).grid.cells[0].title).toBe(
+      "Keep this edit through update",
+    );
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 touchTest(
   "phone app manifest and offline launch preserve images, edits and export",
   async ({ page, context }, testInfo) => {
@@ -9782,10 +10110,7 @@ touchTest(
         .locator("[data-canvas-header]")
         .boundingBox();
       await expand.tap();
-      const settings = page.getByRole("dialog", {
-        name: "Settings",
-        exact: true,
-      });
+      const settings = page.locator("[data-editor-settings]");
       await expect(settings).toBeVisible();
       await expect(
         settings.locator(".asset-panel, .asset-library, img"),
@@ -9796,10 +10121,10 @@ touchTest(
       const collapse = sidebarToggle(page, true);
       const openToggle = await collapse.boundingBox();
       expect(openToggle).toEqual(beforeToggle);
-      expect(
-        await settings.locator("[data-modal-toolbar]").boundingBox(),
-      ).toEqual(beforeHeader);
-      const panel = settings.locator("[data-modal-scroll]");
+      expect(await page.locator("[data-canvas-header]").boundingBox()).toEqual(
+        beforeHeader,
+      );
+      const panel = settings;
       await panel.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
       });

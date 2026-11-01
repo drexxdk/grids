@@ -2,10 +2,12 @@ import { createRoot } from "react-dom/client";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import App from "./App";
 import { publishScrollbarWidth } from "./browser/scrollbar";
+import { registerAppUpdates } from "./browser/pwa";
 import "./i18n";
 import "../styles.css";
 
 const cleanupScrollbar = publishScrollbarWidth();
+registerAppUpdates();
 if (import.meta.hot) import.meta.hot.dispose(cleanupScrollbar);
 
 const root = document.getElementById("root");

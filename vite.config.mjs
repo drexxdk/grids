@@ -9,7 +9,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
+      injectRegister: false,
       manifest: {
         id: "./",
         name: "Grids",

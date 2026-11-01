@@ -828,6 +828,15 @@ export default function App() {
           status={
             <span
               id="save-status"
+              data-save-state={
+                saveStatus === "Saved locally" &&
+                savedDocument.current === workspace &&
+                canSave
+                  ? "saved"
+                  : saveStatus === "Saving locally"
+                    ? "saving"
+                    : "blocked"
+              }
               className="save-status max-[900px]:col-span-3 max-[900px]:row-start-2 max-[900px]:min-w-0 max-[900px]:wrap-break-word"
               hidden={
                 saveStatus === "Saved locally" ||
@@ -850,12 +859,12 @@ export default function App() {
               aria-haspopup="dialog"
               title={t("export.title")}
               aria-label={t("export.title")}
-              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! max-[400px]:px-2! max-[300px]:size-11! max-[300px]:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
+              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! group-data-compact-export/header:size-11! group-data-compact-export/header:gap-0! group-data-compact-export/header:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
               disabled={exporting}
               onClick={() => setExportOpen(true)}
             >
               <Download />
-              <span className="whitespace-nowrap max-[400px]:text-xs max-[300px]:sr-only">
+              <span className="whitespace-nowrap group-data-compact-export/header:sr-only">
                 {t("export.title")}
               </span>
             </button>
