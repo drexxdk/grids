@@ -1,5 +1,5 @@
 import type { Asset, Cell, GridStyle } from "../model";
-import { GridCell } from "./GridCell";
+import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
 
 export function LibraryImage({
   asset,
@@ -9,6 +9,9 @@ export function LibraryImage({
   gridStyle,
   onTitle,
   captionRows,
+  onMoveStart,
+  moving,
+  dragAffected,
 }: {
   asset: Asset;
   onDelete: () => void;
@@ -17,6 +20,9 @@ export function LibraryImage({
   gridStyle: GridStyle;
   onTitle: (title: string) => void;
   captionRows: number;
+  onMoveStart?: (source: CardDragSource, visual: CardDragVisual) => void;
+  moving?: boolean;
+  dragAffected?: boolean;
 }) {
   return (
     <div
@@ -47,6 +53,10 @@ export function LibraryImage({
         onUpload={() => {}}
         onDrop={(event) => event.preventDefault()}
         library={{ onDelete, disabled }}
+        onMoveStart={onMoveStart}
+        moving={moving}
+        dragAffected={dragAffected}
+        dragSource={dragAffected}
       />
     </div>
   );

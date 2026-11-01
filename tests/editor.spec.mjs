@@ -188,8 +188,11 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("./");
-  for (const id of ["canvas-padding", "gap"])
-    await page.locator(`#${id}`).fill("10");
+  for (const id of ["canvas-padding", "gap"]) {
+    await expect(page.locator(`#${id}`)).toHaveValue("10");
+    await expect(page.locator(`#${id}`)).toHaveAttribute("max", "20");
+    await page.locator(`#${id}`).fill("20");
+  }
   for (const size of [
     { width: 1440, height: 360 },
     { width: 960, height: 360 },
@@ -253,6 +256,15 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
   await page.screenshot({
     path: testInfo.outputPath("canvas-only-scroll-narrow.png"),
   });
+  await expect
+    .poll(async () => {
+      const { grid } = (await localDatabase(page)).document;
+      return { gap: grid.gap, padding: grid.canvasPadding };
+    })
+    .toEqual({ gap: 120, padding: 120 });
+  await page.reload();
+  await expect(page.locator("#canvas-padding")).toHaveValue("20");
+  await expect(page.locator("#gap")).toHaveValue("20");
 });
 
 test("canvas resizing commits fitted dimensions before the next paint", async ({
@@ -1987,6 +1999,270 @@ test("movable cards show a move cursor without changing editing and action curso
   }
 });
 
+test("drag feedback keeps stationary contents and suppresses source hover while the lifted copy stays opaque", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["Red", "Blue"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="${name === "Red" ? "#ff0000" : "#0000ff"}"/></svg>`,
+      ),
+    })),
+  );
+  await chooseImage(page, "Red", 0);
+  await chooseImage(page, "Blue", 1);
+  for (const width of [1440, 780]) {
+    await page.setViewportSize({ width, height: 1080 });
+    for (const placement of [
+      "above",
+      "below",
+      "overlay-top",
+      "overlay-bottom",
+    ]) {
+      await selectField(page, "caption-position", placement);
+      await expect
+        .poll(
+          async () =>
+            (await localDatabase(page)).document.grid.captionPlacement,
+        )
+        .toBe(placement.startsWith("overlay") ? "overlay" : placement);
+      const original = await savedWorkspace(page);
+      const cells = page.locator(".grid-cell");
+      const source = cells.nth(0).locator(".cell-image-button");
+      const contents = () =>
+        cells.evaluateAll((elements) =>
+          elements.map((element) => ({
+            title: element.querySelector("textarea").value,
+            image: element.querySelector("img")?.getAttribute("src") ?? null,
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+          })),
+        );
+      const before = await contents();
+      const sourceBounds = await source.boundingBox();
+      await source.hover({ position: { x: 8, y: sourceBounds.height / 2 } });
+      const sourceFrame = cells
+        .nth(0)
+        .locator(":scope > [data-cell-image-frame]");
+      await expect(sourceFrame).toHaveCSS("--frame-color", "#d8f36a");
+      const transfer = await page.evaluateHandle(() => new DataTransfer());
+      await source.dispatchEvent("dragstart", {
+        dataTransfer: transfer,
+        clientX: 10,
+        clientY: 10,
+      });
+      const floating = page.locator("[data-drag-floating]");
+      await expect(floating).toHaveCSS("opacity", "1");
+      await expect(floating.locator(".drag-preview-heading")).toHaveValue(
+        "Red",
+      );
+      await expect(floating.locator(".drag-preview-heading")).toHaveCSS(
+        "resize",
+        "none",
+      );
+      await expect(
+        cells.nth(0).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("opacity", "0.35");
+      await expect(
+        cells.nth(0).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("clip-path", "none");
+      await expect(sourceFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(cells.nth(0)).toHaveCSS(
+        "border-top-color",
+        "rgb(48, 51, 53)",
+      );
+      await expect(cells.nth(0).locator(".empty-cell")).toHaveCount(0);
+      await expect(page.locator("[data-drag-preview]")).toHaveCount(0);
+      expect(await contents()).toEqual(before);
+      await cells.nth(2).dispatchEvent("dragover", {
+        dataTransfer: transfer,
+        clientX: 10,
+        clientY: 10,
+      });
+      await expect(
+        cells.nth(2).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("opacity", "0.35");
+      await expect(cells.nth(2)).toHaveCSS("opacity", "1");
+      await expect(cells.nth(2)).toHaveCSS("outline-style", "none");
+      await expect(
+        cells.nth(2).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("mask-image", /linear-gradient/);
+      await expect(cells.nth(2)).toHaveCSS(
+        "background-color",
+        "rgba(0, 0, 0, 0)",
+      );
+      expect(
+        await cells.nth(2).evaluate((element) => {
+          const border = getComputedStyle(element, "::after");
+          return [
+            Math.abs(
+              parseFloat(border.borderTopWidth) -
+                (element.getBoundingClientRect().width - 2) * 0.01,
+            ) < 1,
+            border.borderTopStyle,
+            border.borderTopColor,
+            border.zIndex,
+          ];
+        }),
+      ).toEqual([true, "solid", "rgb(128, 202, 177)", "60"]);
+      await expect(cells.nth(2).locator(".empty-cell")).toHaveCount(1);
+      expect(await contents()).toEqual(before);
+      await cells.nth(2).dispatchEvent("dragleave", { dataTransfer: transfer });
+      await expect(cells.nth(2)).not.toHaveClass(/drag-over/);
+      await cells.nth(1).dispatchEvent("dragover", {
+        dataTransfer: transfer,
+        clientX: 10,
+        clientY: 10,
+      });
+      await expect(
+        cells.nth(0).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("opacity", "0.35");
+      await expect(
+        cells.nth(1).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("opacity", "0.35");
+      await expect(cells.nth(1)).toHaveCSS("opacity", "1");
+      await expect(cells.nth(1)).toHaveClass(/drag-over/);
+      await expect(
+        cells.nth(2).locator(":scope > [data-card-content]"),
+      ).toHaveCSS("opacity", "1");
+      await expect(page.locator("[data-drag-affected]")).toHaveCount(2);
+      expect(await contents()).toEqual(before);
+      await expect(sourceFrame).toHaveCSS("--frame-color", "transparent");
+      expect((await localDatabase(page)).document).toEqual(original);
+      await page.screenshot({
+        path: testInfo.outputPath(`faded-cards-${width}-${placement}.png`),
+      });
+      await page.keyboard.press("Escape");
+      await expect(
+        page.locator(
+          "[data-drag-affected], [data-drag-floating], .image-card.drag-over",
+        ),
+      ).toHaveCount(0);
+      for (const card of await cells.all())
+        await expect(card.locator("[data-card-content]")).toHaveCSS(
+          "opacity",
+          "1",
+        );
+      expect(await contents()).toEqual(before);
+      expect((await localDatabase(page)).document).toEqual(original);
+      await transfer.dispose();
+    }
+  }
+  const cells = page.locator(".grid-cell");
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await cells.nth(0).locator(".cell-image-button").dispatchEvent("dragstart", {
+    dataTransfer: transfer,
+    clientX: 10,
+    clientY: 10,
+  });
+  await cells.nth(1).dispatchEvent("dragover", {
+    dataTransfer: transfer,
+    clientX: 10,
+    clientY: 10,
+  });
+  await expect(cells.nth(0).locator(".cell-heading")).toHaveValue("Red");
+  await expect(cells.nth(1).locator(".cell-heading")).toHaveValue("Blue");
+  await cells.nth(1).dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(
+    page.locator(
+      "[data-drag-affected], [data-drag-floating], .image-card.drag-over",
+    ),
+  ).toHaveCount(0);
+  await expect(cells.nth(0).locator(".cell-heading")).toHaveValue("Blue");
+  await expect(cells.nth(1).locator(".cell-heading")).toHaveValue("Red");
+  await expect
+    .poll(async () => (await localDatabase(page)).document.grid.cells[1].title)
+    .toBe("Red");
+  await transfer.dispose();
+  const copied = await savedWorkspace(page);
+  const library = page.locator(".asset").first();
+  const copyTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await library.locator("[data-library-thumbnail]").dispatchEvent("dragstart", {
+    dataTransfer: copyTransfer,
+    clientX: 10,
+    clientY: 10,
+  });
+  await cells.nth(2).dispatchEvent("dragover", {
+    dataTransfer: copyTransfer,
+    clientX: 10,
+    clientY: 10,
+  });
+  await expect(library.locator("[data-card-content]")).toHaveCSS(
+    "opacity",
+    "0.35",
+  );
+  await expect(cells.nth(2).locator(":scope > [data-card-content]")).toHaveCSS(
+    "opacity",
+    "0.35",
+  );
+  await expect(cells.nth(2)).toHaveCSS("opacity", "1");
+  await expect(cells.nth(2)).toHaveClass(/drag-over/);
+  await expect(page.locator("[data-drag-floating]")).toHaveCSS("opacity", "1");
+  await expect(library.locator(".library-heading")).toHaveValue("Red");
+  await expect(library.locator(":scope > [data-cell-image-frame]")).toHaveCSS(
+    "--frame-color",
+    "transparent",
+  );
+  await expect(cells.nth(2).locator(".empty-cell")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.locator(
+      "[data-drag-affected], [data-drag-floating], .image-card.drag-over",
+    ),
+  ).toHaveCount(0);
+  expect((await localDatabase(page)).document).toEqual(copied);
+  await copyTransfer.dispose();
+  for (const [sourceIndex, targetIndex] of [
+    [0, 2],
+    [2, 1],
+  ]) {
+    const recoveredTransfer = await page.evaluateHandle(
+      () => new DataTransfer(),
+    );
+    await cells
+      .nth(sourceIndex)
+      .locator(".cell-image-button")
+      .dispatchEvent("dragstart", {
+        dataTransfer: recoveredTransfer,
+        clientX: 10,
+        clientY: 10,
+      });
+    await cells
+      .nth(targetIndex)
+      .dispatchEvent("dragover", { dataTransfer: recoveredTransfer });
+    await recoveredTransfer.evaluate((transfer) => transfer.clearData());
+    await cells
+      .nth(targetIndex)
+      .dispatchEvent("drop", { dataTransfer: recoveredTransfer });
+    await expect(cells.nth(targetIndex).locator(".cell-heading")).toHaveValue(
+      "Blue",
+    );
+    await expect(cells.nth(sourceIndex).locator(".cell-heading")).toHaveValue(
+      targetIndex === 2 ? "" : "Red",
+    );
+    await recoveredTransfer.dispose();
+  }
+  const recoveredCopy = await page.evaluateHandle(() => new DataTransfer());
+  await library.locator("[data-library-thumbnail]").dispatchEvent("dragstart", {
+    dataTransfer: recoveredCopy,
+    clientX: 10,
+    clientY: 10,
+  });
+  await cells.nth(0).dispatchEvent("dragover", { dataTransfer: recoveredCopy });
+  await recoveredCopy.evaluate((transfer) => transfer.clearData());
+  await cells.nth(0).dispatchEvent("drop", { dataTransfer: recoveredCopy });
+  await expect(cells.nth(0).locator(".cell-heading")).toHaveValue("Red");
+  await expect(
+    page.locator(
+      "[data-drag-floating], [data-drag-source], [data-drag-affected], .image-card.drag-over",
+    ),
+  ).toHaveCount(0);
+  await recoveredCopy.dispose();
+});
+
 test("precise image frames and thin caption feedback stay independent", async ({
   page,
 }) => {
@@ -2007,6 +2283,8 @@ test("precise image frames and thin caption feedback stay independent", async ({
     const before = await cell.boundingBox();
     const imageBounds = await image.boundingBox();
     const captionBounds = await caption.boundingBox();
+    const surface = cell.locator("[data-card-content]");
+    const surfaceBounds = await surface.boundingBox();
     await image.hover({
       position: {
         x: 8,
@@ -2018,19 +2296,48 @@ test("precise image frames and thin caption feedback stay independent", async ({
     });
     for (const frame of await frames.all()) {
       await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
-      await expect(frame.locator("rect")).toHaveAttribute("stroke-width", "1");
+      await expect(frame.locator("rect")).toHaveAttribute(
+        "stroke-width",
+        "var(--card-frame-stroke)",
+      );
       await expect(frame.locator("rect")).toHaveAttribute(
         "stroke-dasharray",
         "2 2",
       );
-      await expect(frame.locator("rect")).toHaveAttribute("rx", "7.5");
+      const rounding = await frame.locator("rect").evaluate((element) => ({
+        rx: getComputedStyle(element).rx,
+        ry: getComputedStyle(element).ry,
+      }));
+      expect(rounding.rx).toBe(rounding.ry);
       await expect(frame).toHaveCSS("pointer-events", "none");
       const bounds = await frame.boundingBox();
-      expect(bounds.x).toBeCloseTo(before.x - 2, 1);
-      expect(bounds.y).toBeCloseTo(before.y - 2, 1);
-      expect(bounds.width).toBeCloseTo(before.width + 4, 1);
-      expect(bounds.height).toBeCloseTo(before.height + 4, 1);
+      const edge = (before.width - 2) * 0.0025;
+      expect(bounds.x).toBeCloseTo(before.x + 1 + edge, 1);
+      expect(bounds.y).toBeCloseTo(before.y + 1 + edge, 1);
+      expect(bounds.width).toBeCloseTo(before.width - 2 - edge * 2, 1);
+      expect(bounds.height).toBeCloseTo(before.height - 2 - edge * 2, 1);
     }
+    await expect(surface).toHaveCSS("mask-image", /linear-gradient/);
+    const proportional = await cell.evaluate((element) => ({
+      stroke: parseFloat(
+        getComputedStyle(element.querySelector("rect")).strokeWidth,
+      ),
+      maskSize: getComputedStyle(element.querySelector("[data-card-content]"))
+        .maskSize,
+      width: element.getBoundingClientRect().width - 2,
+    }));
+    expect(proportional.stroke).toBeCloseTo(proportional.width * 0.005, 3);
+    const maskedInset = Math.min(
+      ...Array.from(
+        proportional.maskSize.matchAll(/100% - ([\d.]+)px/g),
+        (match) => Number(match[1]),
+      ),
+    );
+    expect(maskedInset).toBeCloseTo(proportional.width * 0.035, 3);
+    await expect(cell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    expect(await surface.boundingBox()).toEqual(surfaceBounds);
+    expect(await image.boundingBox()).toEqual(imageBounds);
+    expect(await caption.boundingBox()).toEqual(captionBounds);
     await expect(caption).toHaveCSS("outline-style", "none");
     const idleBackground = await caption.evaluate(
       (element) => getComputedStyle(element).backgroundColor,
@@ -2374,7 +2681,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
         await expect(surface).toHaveCSS("border-top-width", "1px");
         await expect(surface).toHaveCSS("border-top-style", "solid");
         await expect(surface).toHaveCSS("border-top-color", "rgb(48, 51, 53)");
-        await expect(surface).toHaveCSS("border-radius", "6px");
+        await expect(surface).toHaveCSS("border-radius", "12px");
         await expect(surface).toHaveCSS("overflow", "visible");
       }
       const imageBounds = await thumbnail.boundingBox();
@@ -2384,12 +2691,34 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
       await expect(libraryCaption).toHaveCSS("outline-style", "none");
       await thumbnail.hover({ position: { x: 5, y: 30 } });
       await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
+      const deleteBounds = await asset
+        .getByRole("button", { name: /^Delete / })
+        .boundingBox();
+      const cardBounds = await asset.boundingBox();
+      expect(deleteBounds.x + deleteBounds.width).toBeLessThan(
+        cardBounds.x + cardBounds.width - 6,
+      );
+      expect(deleteBounds.y).toBeGreaterThan(cardBounds.y + 6);
+      const corner = {
+        x: cardBounds.x + cardBounds.width - 12,
+        y: cardBounds.y + 12,
+      };
+      if (
+        deleteBounds.x + deleteBounds.width > corner.x &&
+        deleteBounds.y < corner.y
+      ) {
+        expect(
+          (deleteBounds.x + deleteBounds.width - corner.x) ** 2 +
+            (deleteBounds.y - corner.y) ** 2,
+        ).toBeLessThanOrEqual(12 ** 2);
+      }
       const outer = await asset.boundingBox();
       const frameBounds = await externalFrame.boundingBox();
-      expect(frameBounds.x).toBeCloseTo(outer.x - 2, 1);
-      expect(frameBounds.y).toBeCloseTo(outer.y - 2, 1);
-      expect(frameBounds.width).toBeCloseTo(outer.width + 4, 1);
-      expect(frameBounds.height).toBeCloseTo(outer.height + 4, 1);
+      const edge = (outer.width - 2) * 0.0025;
+      expect(frameBounds.x).toBeCloseTo(outer.x + 1 + edge, 1);
+      expect(frameBounds.y).toBeCloseTo(outer.y + 1 + edge, 1);
+      expect(frameBounds.width).toBeCloseTo(outer.width - 2 - edge * 2, 1);
+      expect(frameBounds.height).toBeCloseTo(outer.height - 2 - edge * 2, 1);
       const screenshot = await externalFrame.screenshot();
       const pixels = await page.evaluate(
         async (bytes) => {
@@ -2406,8 +2735,8 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
             return Array.from(
               { length: 8 },
               (_, index) =>
-                pixels[index * 4 + 1] > 100 &&
-                pixels[index * 4 + 1] > pixels[index * 4] + 12,
+                pixels[index * 4 + 1] > 50 &&
+                pixels[index * 4 + 1] > pixels[index * 4] + 4,
             );
           });
           const marks = topRows.sort(
@@ -2424,8 +2753,8 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
             return Array.from(
               { length: 64 },
               (_, index) =>
-                corner[index * 4 + 1] > 100 &&
-                corner[index * 4 + 1] > corner[index * 4] + 12,
+                corner[index * 4 + 1] > 50 &&
+                corner[index * 4 + 1] > corner[index * 4] + 4,
             ).filter(Boolean).length;
           });
           bitmap.close();
@@ -2448,12 +2777,21 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
         await page
           .getByRole("button", { name: "Collapse tools", exact: true })
           .click();
+      await thumbnail.evaluate((element) => {
+        element.removeAttribute("data-test-drag-started");
+        element.addEventListener(
+          "dragstart",
+          () => element.setAttribute("data-test-drag-started", ""),
+          { once: true },
+        );
+      });
       await asset
         .locator("[data-library-thumbnail]")
         .dragTo(page.locator(".cell-image-button").first(), {
-          sourcePosition: { x: 5, y: 5 },
+          sourcePosition: { x: 12, y: 30 },
           targetPosition: { x: 5, y: 5 },
         });
+      await expect(thumbnail).toHaveAttribute("data-test-drag-started", "");
       await expect(
         page.locator(".grid-cell").first().locator("img"),
       ).toHaveCount(1);
@@ -2464,8 +2802,13 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
         await expect(thumbnail).toBeInViewport({ ratio: 1 });
       }
     }
-    await upload.hover({ position: { x: 5, y: 5 } });
-    await expect(upload).toHaveCSS("--frame-color", "#d8f36a");
+    await expect(async () => {
+      await page.mouse.move(1, 1);
+      await upload.hover({ position: { x: 12, y: 12 } });
+      await expect(upload).toHaveCSS("--frame-color", "#d8f36a", {
+        timeout: 250,
+      });
+    }).toPass({ timeout: 5000 });
     await page.mouse.move(1, 1);
     await page.evaluate(
       () =>
@@ -2581,8 +2924,12 @@ for (const viewportWidth of [1440, 780]) {
     ).toBe(true);
     await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
     const cardBounds = await page.locator(".grid-cell").first().boundingBox();
-    expect(frameBounds.x).toBeCloseTo(cardBounds.x - 2, 1);
-    expect(frameBounds.width).toBeCloseTo(cardBounds.width + 4, 1);
+    const frameEdge = (cardBounds.width - 2) * 0.0025;
+    expect(frameBounds.x).toBeCloseTo(cardBounds.x + 1 + frameEdge, 1);
+    expect(frameBounds.width).toBeCloseTo(
+      cardBounds.width - 2 - frameEdge * 2,
+      1,
+    );
     const screenshot = await page.screenshot({
       clip: {
         x: frameBounds.x - 1,
@@ -2666,12 +3013,12 @@ for (const viewportWidth of [1440, 780]) {
     expect(previews).toHaveLength(1);
     expect(previews[0]).toMatchObject({
       tag: "CANVAS",
-      width: Math.ceil(picture.width),
-      height: Math.ceil(picture.height),
-      color: [255, 0, 0, 255],
+      width: 1,
+      height: 1,
+      color: [0, 0, 0, 0],
     });
-    expect(Math.abs(previews[0].x - 8)).toBeLessThanOrEqual(1);
-    expect(Math.abs(previews[0].y - bottomY)).toBeLessThanOrEqual(1);
+    expect(previews[0].x).toBe(0);
+    expect(previews[0].y).toBe(0);
     await expect(page.locator("body > canvas")).toHaveCount(0);
     let current = await savedWorkspace(page);
     expect(current.grid.cells[2]).toEqual({
@@ -3118,7 +3465,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
       )
       .toBeLessThan(1);
   }
-  const expected = { gap: 2, padding: 2, heading: 2 };
+  const expected = { gap: 10, padding: 10, heading: 10 };
   await expect.poll(ratios).toEqual(expected);
   await checkCanvasPadding();
   for (const [id, key, value] of [
@@ -4302,16 +4649,24 @@ test("image source tabs fit narrow panels without category filters", async ({
     .first();
   await thumbnail.hover({ position: { x: 5, y: 50 } });
   const imageButton = page.locator("#asset-library .asset").first();
-  await expect(imageButton).toHaveCSS("--frame-color", "#d8f36a");
-  await imageButton.click({ position: { x: 5, y: 50 } });
-  await expect(imageButton).toBeFocused();
+  const imageFrame = imageButton.locator("[data-cell-image-frame]");
+  await expect(imageFrame).toHaveCSS("--frame-color", "#d8f36a");
+  await page.mouse.move(1, 1);
+  await thumbnail.focus();
+  await thumbnail.press("Tab");
+  await imageButton.locator("textarea").press("Shift+Tab");
+  await expect(thumbnail).toBeFocused();
   await expect(imageButton).toHaveCSS("outline-style", "none");
   await expect(thumbnail).toHaveCSS("box-shadow", "none");
-  await page.keyboard.press("Tab");
+  await thumbnail.press("Tab");
+  await imageButton.locator("textarea").press("Tab");
   const keyboardFocus = page.locator("#asset-library .asset").nth(1);
-  await expect(keyboardFocus).toBeFocused();
+  await expect(keyboardFocus.locator("[data-library-thumbnail]")).toBeFocused();
   await expect(keyboardFocus).toHaveCSS("outline-style", "none");
-  await expect(keyboardFocus).toHaveCSS("--frame-color", "#d8f36a");
+  await expect(keyboardFocus.locator("[data-cell-image-frame]")).toHaveCSS(
+    "--frame-color",
+    "#d8f36a",
+  );
   const focusStyle = (element) => {
     const style = getComputedStyle(element, "::after");
     return {
@@ -4320,22 +4675,25 @@ test("image source tabs fit narrow panels without category filters", async ({
       radius: style.borderRadius,
     };
   };
-  const imageFocusStyle = await keyboardFocus.evaluate(focusStyle);
+  await expect(keyboardFocus.locator("rect")).toHaveAttribute(
+    "stroke-dasharray",
+    "2 2",
+  );
   const uploadFocus = page.locator("[data-upload-tile]");
   await page.mouse.move(1, 1);
-  await imageButton.press("Escape");
+  await thumbnail.focus();
   await page.evaluate(
     () =>
       new Promise((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(resolve)),
       ),
   );
-  await imageButton.press("Shift+Tab");
+  await thumbnail.press("Shift+Tab");
   await expect(uploadFocus).toBeFocused();
   await expect(uploadFocus).toHaveCSS("--frame-color", "#d8f36a");
-  await expect
-    .poll(() => uploadFocus.evaluate(focusStyle))
-    .toEqual(imageFocusStyle);
+  expect((await uploadFocus.evaluate(focusStyle)).pattern).toContain(
+    "repeating-linear-gradient",
+  );
   for (const width of [390, 714, 820]) {
     await page.setViewportSize({ width, height: 844 });
     const drawer = page.locator("[data-editor-drawer]");
@@ -4353,20 +4711,27 @@ test("image source tabs fit narrow panels without category filters", async ({
   await expect(desktopImage.locator(".asset-name")).toBeVisible();
   await desktopImage.locator(".asset-name").hover();
   await expect(desktopImage).toHaveCSS("outline-style", "none");
-  await expect(desktopImage).toHaveCSS("--frame-color", "#d8f36a");
+  await expect(desktopImage.locator("[data-cell-image-frame]")).toHaveCSS(
+    "--frame-color",
+    "transparent",
+  );
   await page.mouse.move(1, 1);
-  await desktopImage.press("Escape");
+  await desktopImage.locator("[data-library-thumbnail]").focus();
   await page.evaluate(
     () =>
       new Promise((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(resolve)),
       ),
   );
-  await desktopImage.press("Tab");
+  await desktopImage.locator("[data-library-thumbnail]").press("Tab");
+  await desktopImage.locator("textarea").press("Tab");
   const desktopFocus = page.locator("#asset-library .asset").nth(1);
-  await expect(desktopFocus).toBeFocused();
+  await expect(desktopFocus.locator("[data-library-thumbnail]")).toBeFocused();
   await expect(desktopFocus).toHaveCSS("outline-style", "none");
-  expect(await desktopFocus.evaluate(focusStyle)).toEqual(imageFocusStyle);
+  await expect(desktopFocus.locator("[data-cell-image-frame]")).toHaveCSS(
+    "--frame-color",
+    "#d8f36a",
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

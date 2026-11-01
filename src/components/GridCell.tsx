@@ -23,6 +23,21 @@ import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 
+export type CardDragSource =
+  | { kind: "cell"; gridId: string; cellId: string }
+  | { kind: "asset"; assetId: string };
+
+export type CardDragVisual = {
+  cell: Cell;
+  asset: Asset;
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  x: number;
+  y: number;
+};
+
 export function GridCell({
   cell,
   asset,
@@ -38,6 +53,13 @@ export function GridCell({
   canChoose,
   library,
   captionRows = 1,
+  onMoveStart,
+  onMoveOver,
+  onMoveLeave,
+  moving = false,
+  dragAffected = false,
+  dragSource = false,
+  previewOnly = false,
 }: {
   cell: Cell;
   asset?: Asset;
@@ -53,8 +75,16 @@ export function GridCell({
   canChoose: boolean;
   library?: { onDelete: () => void; disabled: boolean };
   captionRows?: number;
+  onMoveStart?: (source: CardDragSource, visual: CardDragVisual) => void;
+  onMoveOver?: () => void;
+  onMoveLeave?: () => void;
+  moving?: boolean;
+  dragAffected?: boolean;
+  dragSource?: boolean;
+  previewOnly?: boolean;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => () => dragPreview.current?.remove(), []);
@@ -134,30 +164,47 @@ export function GridCell({
   ]);
   return (
     <Popover
-      className={`image-card tw:relative tw:min-w-0 tw:bg-(--card-background)! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-move tw:w-full!" : "grid-cell"}`}
+      ref={card}
+      className={`image-card tw:@container tw:relative tw:min-w-0 tw:rounded-(--card-radius)! tw:border! tw:border-solid! tw:outline-offset-[-2px] tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${previewOnly ? "drag-preview-card tw:h-full tw:w-full" : library ? "asset tw:cursor-move tw:w-full!" : "grid-cell"}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
           "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
+          backgroundColor: "var(--card-background)",
+          borderColor: "var(--line)",
         } as React.CSSProperties
       }
       data-index={index}
+      data-drag-affected={dragAffected ? "" : undefined}
+      data-drag-source={dragSource ? "" : undefined}
       onDragOver={(event) => {
         event.preventDefault();
-        event.currentTarget.classList.add("drag-over");
+        event.dataTransfer.dropEffect =
+          event.dataTransfer.effectAllowed === "move" ||
+          event.dataTransfer.types.includes("application/x-gridroom-cell")
+            ? "move"
+            : "copy";
+        event.currentTarget.classList.toggle("drag-over", !dragSource);
+        onMoveOver?.();
       }}
       onDragLeave={(event) => {
         if (
           !(event.relatedTarget instanceof Node) ||
           !event.currentTarget.contains(event.relatedTarget)
-        )
+        ) {
           event.currentTarget.classList.remove("drag-over");
+          onMoveLeave?.();
+        }
       }}
       onDrop={onDrop}
     >
       {({ open, close }) => (
         <>
-          <div className="tw:absolute tw:inset-0 tw:overflow-hidden tw:rounded-[5px]">
+          <div
+            data-card-content
+            className="tw:absolute tw:inset-0 tw:overflow-hidden tw:rounded-[calc(var(--card-radius)-1px)] tw:bg-(--card-background)"
+            style={{ opacity: dragAffected ? 0.35 : 1 }}
+          >
             <div
               data-card-image
               className="tw:group/image tw:absolute tw:inset-x-0 tw:@container"
@@ -172,6 +219,8 @@ export function GridCell({
                 if (
                   event.pointerType === "mouse" &&
                   asset &&
+                  !moving &&
+                  !previewOnly &&
                   window.matchMedia("(hover: hover) and (pointer: fine)")
                     .matches &&
                   !open
@@ -188,7 +237,7 @@ export function GridCell({
               {asset ? (
                 <PopoverButton
                   ref={trigger}
-                  className={`${library ? "library-image-button" : "cell-image-button"} tw:peer/image tw:overflow-hidden tw:outline-none! tw:cursor-move!`}
+                  className={`${previewOnly ? "drag-preview-image" : library ? "library-image-button" : "cell-image-button"} tw:peer/image tw:overflow-hidden tw:outline-none! tw:cursor-move!`}
                   data-library-thumbnail={library ? "" : undefined}
                   style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                   aria-label={
@@ -196,9 +245,10 @@ export function GridCell({
                       ? `Image options: ${cell.title}`
                       : `Cell options ${index + 1}${cell.title ? `: ${cell.title}` : ""}`
                   }
-                  draggable={Boolean(asset)}
+                  draggable={!previewOnly && Boolean(asset)}
                   onMouseDownCapture={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
+                    if (!asset || previewOnly) return;
                     setHoverTools(false);
                     close();
                     if (library && asset) {
@@ -214,64 +264,39 @@ export function GridCell({
                       );
                       event.dataTransfer.effectAllowed = "move";
                     }
-                    const image = event.currentTarget.querySelector("img");
-                    if (image?.complete && image.naturalWidth) {
-                      const bounds =
-                        event.currentTarget.getBoundingClientRect();
-                      const preview = document.createElement("canvas");
-                      preview.width = Math.ceil(bounds.width);
-                      preview.height = Math.ceil(bounds.height);
-                      const context = preview.getContext("2d");
-                      if (context) {
-                        const source = sourceRectangle(
-                          cell.crop,
-                          image.naturalWidth,
-                          image.naturalHeight,
-                          geometry.aspectRatio,
-                        );
-                        context.drawImage(
-                          image,
-                          source.x,
-                          source.y,
-                          source.width,
-                          source.height,
-                          0,
-                          0,
-                          preview.width,
-                          preview.height,
-                        );
-                        preview.style.position = "fixed";
-                        preview.style.left = "-10000px";
-                        preview.style.top = "0";
-                        preview.style.pointerEvents = "none";
-                        preview.setAttribute("aria-hidden", "true");
-                        document.body.append(preview);
-                        dragPreview.current?.remove();
-                        dragPreview.current = preview;
-                        event.dataTransfer.setDragImage(
-                          preview,
-                          Math.max(
-                            0,
-                            Math.min(
-                              preview.width,
-                              event.clientX - bounds.left,
-                            ),
-                          ),
-                          Math.max(
-                            0,
-                            Math.min(
-                              preview.height,
-                              event.clientY - bounds.top,
-                            ),
-                          ),
-                        );
-                        requestAnimationFrame(() => {
-                          preview.remove();
-                          if (dragPreview.current === preview)
-                            dragPreview.current = null;
-                        });
-                      }
-                    }
+                    const bounds = (
+                      card.current ?? event.currentTarget
+                    ).getBoundingClientRect();
+                    const nativePreview = document.createElement("canvas");
+                    nativePreview.width = nativePreview.height = 1;
+                    nativePreview.style.position = "fixed";
+                    nativePreview.style.left = "-10000px";
+                    nativePreview.style.pointerEvents = "none";
+                    nativePreview.setAttribute("aria-hidden", "true");
+                    document.body.append(nativePreview);
+                    dragPreview.current?.remove();
+                    dragPreview.current = nativePreview;
+                    event.dataTransfer.setDragImage(nativePreview, 0, 0);
+                    requestAnimationFrame(() => {
+                      nativePreview.remove();
+                      if (dragPreview.current === nativePreview)
+                        dragPreview.current = null;
+                    });
+                    onMoveStart?.(
+                      library
+                        ? { kind: "asset", assetId: asset.id }
+                        : { kind: "cell", gridId, cellId: cell.id },
+                      {
+                        cell,
+                        asset,
+                        width: bounds.width,
+                        height: bounds.height,
+                        offsetX: event.clientX - bounds.left,
+                        offsetY: event.clientY - bounds.top,
+                        x: event.clientX,
+                        y: event.clientY,
+                      },
+                    );
                   }}
                   onDragEnd={() => {
                     dragPreview.current?.remove();
@@ -307,7 +332,7 @@ export function GridCell({
                 <button
                   ref={trigger}
                   type="button"
-                  className="cell-image-button tw:peer/image tw:outline-none!"
+                  className={`${previewOnly ? "drag-preview-image" : "cell-image-button"} tw:peer/image tw:outline-none!`}
                   style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                   aria-label={`Add image to cell ${index + 1}`}
                   title="Add or drop an image"
@@ -395,16 +420,18 @@ export function GridCell({
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
-                      className="tw:pointer-events-auto tw:absolute tw:top-[2px] tw:right-[2px] tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
+                      className="tw:pointer-events-auto tw:absolute tw:size-[min(clamp(24px,25cqw,44px),var(--cell-tool-space))]! tw:p-0! tw:rounded-sm tw:border-white/30! tw:bg-black/60! tw:text-white tw:backdrop-blur-sm tw:enabled:hover:bg-black/75! tw:[&_svg]:size-[min(16px,70%)]"
                       aria-label={
                         library ? `Delete ${asset?.title}` : "Clear cell"
                       }
                       disabled={library?.disabled}
                       style={{
+                        right:
+                          "calc(var(--card-radius) / 2 + var(--card-paint-inset, 0px))",
                         top:
                           overlay && gridStyle.captionAlignment === "top"
-                            ? `${(geometry.captionHeight / geometry.imageHeight) * 100}%`
-                            : undefined,
+                            ? `calc(${(geometry.captionHeight / geometry.imageHeight) * 100}% + var(--card-radius) / 2 + var(--card-paint-inset, 0px))`
+                            : "calc(var(--card-radius) / 2 + var(--card-paint-inset, 0px))",
                       }}
                       title={library ? `Delete ${asset?.title}` : "Clear cell"}
                       onClick={() => {
@@ -422,7 +449,7 @@ export function GridCell({
             </div>
             <textarea
               ref={caption}
-              className={`${library ? "library-heading asset-name" : "cell-heading"} tw:absolute tw:inset-x-0 tw:z-20 tw:hover:z-40 tw:focus:z-40 tw:min-h-0! tw:[field-sizing:fixed]! tw:placeholder:text-(--muted)/35 tw:hover:placeholder:text-(--muted)/80 tw:focus:placeholder:text-(--muted)/80 tw:outline-none! tw:hover:bg-[color-mix(in_srgb,var(--card-caption-color),white_8%)]! tw:focus:bg-[color-mix(in_srgb,var(--card-caption-color),white_12%)]!`}
+              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} tw:absolute tw:inset-x-0 tw:z-20 tw:hover:z-40 tw:focus:z-40 tw:min-h-0! tw:[field-sizing:fixed]! tw:placeholder:text-(--muted)/35 tw:hover:placeholder:text-(--muted)/80 tw:focus:placeholder:text-(--muted)/80 tw:outline-none! tw:hover:bg-[color-mix(in_srgb,var(--card-caption-color),white_8%)]! tw:focus:bg-[color-mix(in_srgb,var(--card-caption-color),white_12%)]!`}
               style={
                 {
                   top: `${(geometry.captionTop / geometry.height) * 100}%`,
@@ -472,23 +499,24 @@ export function GridCell({
           <span
             aria-hidden="true"
             data-cell-image-frame
-            className="tw:pointer-events-none tw:absolute tw:inset-[-3px] tw:z-50 tw:[--frame-color:var(--card-frame-color)]"
+            className="tw:pointer-events-none tw:absolute tw:inset-(--card-frame-edge) tw:z-50 tw:[--frame-color:var(--card-frame-color)]"
           >
             <svg
               className="tw:absolute tw:inset-0 tw:h-full tw:w-full tw:overflow-visible"
               aria-hidden="true"
             >
               <rect
-                x="0.5"
-                y="0.5"
-                rx="7.5"
                 fill="none"
                 stroke="var(--frame-color)"
-                strokeWidth="1"
+                strokeWidth="var(--card-frame-stroke)"
                 strokeDasharray="2 2"
                 style={{
-                  width: "calc(100% - 1px)",
-                  height: "calc(100% - 1px)",
+                  x: "calc(var(--card-frame-stroke) / 2)",
+                  y: "calc(var(--card-frame-stroke) / 2)",
+                  rx: "max(0px, calc(var(--card-radius) - 1px - var(--card-frame-edge) - var(--card-frame-stroke) / 2))",
+                  ry: "max(0px, calc(var(--card-radius) - 1px - var(--card-frame-edge) - var(--card-frame-stroke) / 2))",
+                  width: "calc(100% - var(--card-frame-stroke))",
+                  height: "calc(100% - var(--card-frame-stroke))",
                 }}
               />
             </svg>

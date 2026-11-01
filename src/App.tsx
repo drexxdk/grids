@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type DragEvent,
 } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { Toaster, toast } from "sonner";
 import {
   PanelsTopLeft,
@@ -30,7 +30,11 @@ import { Tab, TabGroup, TabList } from "@headlessui/react";
 import { Button, ColorField, SelectField } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer } from "./components/GridResizer";
-import { GridCell } from "./components/GridCell";
+import {
+  GridCell,
+  type CardDragSource,
+  type CardDragVisual,
+} from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
 import { LibraryImage } from "./components/LibraryImage";
 import {
@@ -130,7 +134,6 @@ function BoardHeading({
               background:
                 board.headingBackgroundColor ??
                 publishers[board.publisher].caption,
-              borderRadius: "6px",
             }
           : board.headingBackgroundColor
             ? { background: board.headingBackgroundColor }
@@ -210,6 +213,45 @@ export default function App() {
   const uploadTarget = useRef<string | null>(null);
   const addImagesButton = useRef<HTMLButtonElement>(null);
   const [libraryDragOver, setLibraryDragOver] = useState(false);
+  const [cardDrag, setCardDrag] = useState<{
+    source: CardDragSource;
+    visual: CardDragVisual;
+    targetId: string | null;
+  } | null>(null);
+  useEffect(() => {
+    const finish = () => {
+      setCardDrag(null);
+      document
+        .querySelectorAll(".image-card.drag-over")
+        .forEach((element) => element.classList.remove("drag-over"));
+    };
+    const move = (event: globalThis.DragEvent) => {
+      if (!event.clientX && !event.clientY) return;
+      setCardDrag((current) =>
+        current
+          ? {
+              ...current,
+              visual: { ...current.visual, x: event.clientX, y: event.clientY },
+            }
+          : current,
+      );
+    };
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === "Escape") finish();
+    };
+    window.addEventListener("dragend", finish);
+    window.addEventListener("dragover", move);
+    window.addEventListener("drop", finish);
+    window.addEventListener("keydown", cancel);
+    window.addEventListener("blur", finish);
+    return () => {
+      window.removeEventListener("dragend", finish);
+      window.removeEventListener("dragover", move);
+      window.removeEventListener("drop", finish);
+      window.removeEventListener("keydown", cancel);
+      window.removeEventListener("blur", finish);
+    };
+  }, []);
   const [importProgress, setImportProgress] = useState<{
     completed: number;
     total: number;
@@ -618,16 +660,22 @@ export default function App() {
   };
   const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
     event.preventDefault();
+    setCardDrag(null);
     event.currentTarget.classList.remove("drag-over");
-    const assetId = event.dataTransfer.getData("application/x-gridroom-asset");
+    const assetId =
+      event.dataTransfer.getData("application/x-gridroom-asset") ||
+      (cardDrag?.source.kind === "asset" ? cardDrag.source.assetId : "");
     const sourceIndex = event.dataTransfer.getData(
       "application/x-gridroom-cell",
     );
     if (assetId) placeAsset(assetId, board.cells[index].id);
-    else if (sourceIndex !== "") {
-      let dragged: { boardId?: string; cellId?: string } | null;
+    else if (sourceIndex !== "" || cardDrag?.source.kind === "cell") {
+      let dragged: { boardId?: string; cellId?: string } | null =
+        cardDrag?.source.kind === "cell"
+          ? { boardId: cardDrag.source.gridId, cellId: cardDrag.source.cellId }
+          : null;
       try {
-        dragged = JSON.parse(sourceIndex);
+        if (sourceIndex !== "") dragged = JSON.parse(sourceIndex);
       } catch {
         return;
       }
@@ -913,6 +961,14 @@ export default function App() {
                         })
                       }
                       disabled={loadingExample}
+                      moving={cardDrag !== null}
+                      dragAffected={
+                        cardDrag?.source.kind === "asset" &&
+                        cardDrag.source.assetId === asset.id
+                      }
+                      onMoveStart={(source, visual) =>
+                        setCardDrag({ source, visual, targetId: null })
+                      }
                       onDelete={() => deleteImages([asset.id])}
                     />
                   ))}
@@ -1128,6 +1184,10 @@ export default function App() {
                         const asset = workspace.assets.find(
                           (asset) => asset.id === item.assetId,
                         );
+                        const isSource =
+                          cardDrag?.source.kind === "cell" &&
+                          cardDrag.source.gridId === board.id &&
+                          cardDrag.source.cellId === item.id;
                         return (
                           <GridCell
                             key={item.id}
@@ -1138,6 +1198,28 @@ export default function App() {
                             gridId={board.id}
                             gridStyle={board}
                             captionRows={captionRows}
+                            moving={cardDrag !== null}
+                            dragSource={isSource}
+                            dragAffected={
+                              isSource || cardDrag?.targetId === item.id
+                            }
+                            onMoveStart={(source, visual) =>
+                              setCardDrag({ source, visual, targetId: null })
+                            }
+                            onMoveOver={() =>
+                              setCardDrag((current) =>
+                                current && current.targetId !== item.id
+                                  ? { ...current, targetId: item.id }
+                                  : current,
+                              )
+                            }
+                            onMoveLeave={() =>
+                              setCardDrag((current) =>
+                                current?.targetId === item.id
+                                  ? { ...current, targetId: null }
+                                  : current,
+                              )
+                            }
                             onCrop={(crop, assetId) =>
                               dispatchDocument({
                                 type: "cell/crop",
@@ -1230,7 +1312,7 @@ export default function App() {
                       id="canvas-padding"
                       type="range"
                       min="0"
-                      max="10"
+                      max="20"
                       step="0.5"
                       value={(board.canvasPadding ?? 12) / 6}
                       onChange={(event) =>
@@ -1249,7 +1331,7 @@ export default function App() {
                       id="gap"
                       type="range"
                       min="0"
-                      max="10"
+                      max="20"
                       step="0.5"
                       value={board.gap / 6}
                       onChange={(event) =>
@@ -1502,6 +1584,43 @@ export default function App() {
           )}
         </EditorLayout>
       </main>
+      {cardDrag?.visual &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            inert
+            data-drag-floating
+            className="tw:pointer-events-none tw:fixed tw:z-[100] tw:opacity-100"
+            style={{
+              width: cardDrag.visual.width,
+              height: cardDrag.visual.height,
+              left: cardDrag.visual.x - cardDrag.visual.offsetX,
+              top: cardDrag.visual.y - cardDrag.visual.offsetY - 8,
+              transform: "rotate(-2deg)",
+              transformOrigin: `${cardDrag.visual.offsetX}px ${cardDrag.visual.offsetY}px`,
+              boxShadow: "0 18px 32px #0008, 0 3px 8px #0006",
+              borderRadius: "var(--board-item-radius)",
+            }}
+          >
+            <GridCell
+              cell={cardDrag.visual.cell}
+              asset={cardDrag.visual.asset}
+              index={0}
+              gridId={board.id}
+              gridStyle={board}
+              captionRows={captionRows}
+              previewOnly
+              canChoose={false}
+              onPatch={() => {}}
+              onCrop={() => {}}
+              onClear={() => {}}
+              onChoose={() => {}}
+              onUpload={() => {}}
+              onDrop={(event) => event.preventDefault()}
+            />
+          </div>,
+          document.body,
+        )}
       <Toaster
         position="top-right"
         expand

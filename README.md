@@ -50,9 +50,9 @@ All editor document changes use typed commands and a React reducer: grid/cell/ex
 
 1. Push the project to the GitHub repository's `main` branch. The repository is already initialized with an `origin` remote.
 2. In the GitHub repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
-3. Push to `main`, or run **Deploy GitHub Pages** manually from the **Actions** tab.
+3. Push to `main`, or run **Test And Deploy GitHub Pages** manually from the **Actions** tab.
 
-The workflow installs locked dependencies, builds the site, runs the browser tests, and deploys `dist/` only after those checks pass. Pull requests run the same checks without deploying. The published URL is shown in the deployment environment, normally `https://<username>.github.io/<repository>/`.
+The workflow installs locked dependencies and typechecks/builds the site once. A successful build allows `main` to deploy `dist/` immediately; model tests and four browser-test shards run independently and do not block deployment. Failed tests still report errors and upload their reports, so the overall workflow can be red even when deployment succeeds. A failed build prevents deployment. Pull requests run the same checks without deploying. The published URL is shown in the deployment environment, normally `https://<username>.github.io/<repository>/`.
 
 No API keys or application secrets are needed for guest editing. Saved grids belong to each browser origin: a localhost grid will not automatically appear on the published site. GitHub Pages does not sync grids between devices. Planned provider login and account settings need a separately hosted backend; images will remain client-only. Review the rights to supplied images before publishing them in a public repository.
 

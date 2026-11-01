@@ -256,7 +256,8 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   captionAlignment: "bottom",
   rows: 3,
   columns: 3,
-  gap: 12,
+  gap: 60,
+  canvasPadding: 60,
   background: "#17191b",
   cells: Array.from({ length: 9 }, (_, index) => makeCell(assets[index])),
   overflow: [],
@@ -350,8 +351,8 @@ const styleSchema = z.strictObject({
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
     .optional(),
-  gap: z.number().min(0).max(60),
-  canvasPadding: z.number().min(0).max(60).optional(),
+  gap: z.number().min(0).max(120),
+  canvasPadding: z.number().min(0).max(120).optional(),
   canvasBackgroundColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)

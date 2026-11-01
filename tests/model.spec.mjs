@@ -332,8 +332,8 @@ test("independent spacing and background settings roundtrip and reset", () => {
   const workspace = localWorkspace();
   const settings = model.getEditorSettings(workspace);
   Object.assign(settings.style, {
-    gap: 60,
-    canvasPadding: 24,
+    gap: 120,
+    canvasPadding: 120,
     canvasBackgroundColor: "#d9e7f0",
     headingBackgroundColor: "#114455",
     cellBackgroundColor: "#335577",
@@ -341,20 +341,20 @@ test("independent spacing and background settings roundtrip and reset", () => {
   const restored = model.applyEditorSettings(workspace, settings);
   expect(model.getEditorSettings(restored)).toEqual(settings);
   expect(model.gridSpacing(restored.grid, 150)).toEqual({
-    gap: 15,
-    headingGap: 15,
-    padding: 6,
-  });
-  expect(model.gridSpacing(restored.grid, 300)).toEqual({
     gap: 30,
     headingGap: 30,
-    padding: 12,
+    padding: 30,
+  });
+  expect(model.gridSpacing(restored.grid, 300)).toEqual({
+    gap: 60,
+    headingGap: 60,
+    padding: 60,
   });
   expect(restored.assets).toBe(workspace.assets);
   expect(restored.grid.cells).toEqual(workspace.grid.cells);
   for (const invalid of [
-    { gap: 61 },
-    { canvasPadding: 61 },
+    { gap: 121 },
+    { canvasPadding: 121 },
     { headingBackgroundColor: "invalid" },
     { cellBackgroundColor: "invalid" },
   ]) {
@@ -367,12 +367,11 @@ test("independent spacing and background settings roundtrip and reset", () => {
   }
   const reset = model.resetWorkspace(restored);
   expect(model.gridSpacing(reset.grid, 600)).toEqual({
-    gap: 12,
-    headingGap: 12,
-    padding: 12,
+    gap: 60,
+    headingGap: 60,
+    padding: 60,
   });
   for (const field of [
-    "canvasPadding",
     "canvasBackgroundColor",
     "headingBackgroundColor",
     "cellBackgroundColor",
@@ -397,7 +396,8 @@ test("settings boundary extracts only allowlisted configuration and detached val
       imageAspect: "portrait",
       captionPlacement: "overlay",
       captionAlignment: "bottom",
-      gap: 12,
+      gap: 60,
+      canvasPadding: 60,
       background: "#17191b",
     },
     exportSettings: { format: "image/webp", resolution: 300, quality: 70 },
@@ -418,7 +418,7 @@ test("settings boundary extracts only allowlisted configuration and detached val
   settings.style.gap = 40;
   settings.exportSettings.quality = 50;
   expect(workspace.grid.rows).toBe(4);
-  expect(workspace.grid.gap).toBe(12);
+  expect(workspace.grid.gap).toBe(60);
   expect(workspace.exportSettings.quality).toBe(70);
 });
 

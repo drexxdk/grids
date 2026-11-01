@@ -64,6 +64,7 @@
   font-display: swap;
 }
 :root {
+  --board-item-radius: 12px;
   color-scheme: dark;
   --bg: #151718;
   --panel: #1b1d1f;
@@ -91,6 +92,7 @@
   text-transform: none;
 }
 .board-export-heading {
+  border-radius: var(--board-item-radius);
   grid-column: 1/-1;
   display: flex;
   align-items: center;
@@ -497,6 +499,13 @@ h1 {
   box-shadow: 0 10px 45px #0005;
   container-type: inline-size;
 }
+.image-card {
+  --card-radius: var(--board-item-radius);
+  --card-frame-edge: 0.25cqw;
+  --card-frame-stroke: 0.5cqw;
+  --card-frame-gap: 1cqw;
+  --card-drop-stroke: 1cqw;
+}
 .grid-cell {
   position: relative;
   min-width: 0;
@@ -509,12 +518,77 @@ h1 {
   outline-offset: 3px;
   z-index: 1;
 }
+.image-card:not([data-drag-source]):has([data-card-image]:hover),
+.image-card:not([data-drag-source]):has([data-card-image] button:focus-visible),
+.image-card[data-drag-affected]:not([data-drag-source]),
 .grid-cell.drag-over {
-  outline: 3px solid var(--mint);
-  outline-offset: 0;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+.image-card:not([data-drag-source]):has([data-card-image]:hover)
+  > [data-card-content],
+.image-card:not([data-drag-source]):has([data-card-image] button:focus-visible)
+  > [data-card-content],
+.image-card[data-drag-affected]:not([data-drag-source]) > [data-card-content] {
+  --card-paint-inset: calc(
+    var(--card-frame-edge) + var(--card-frame-stroke) + var(--card-frame-gap)
+  );
+  --card-surface-radius: max(
+    0.01px,
+    calc(var(--card-radius) - 1px - var(--card-paint-inset))
+  );
+  --card-corner-mask: radial-gradient(
+    circle closest-side,
+    #000 calc(100% - 0.5px),
+    transparent 100%
+  );
+  --card-corner-size: calc(var(--card-surface-radius) * 2);
+  mask:
+    var(--card-corner-mask) left var(--card-paint-inset) top
+      var(--card-paint-inset) / var(--card-corner-size) var(--card-corner-size)
+      no-repeat,
+    var(--card-corner-mask) right var(--card-paint-inset) top
+      var(--card-paint-inset) / var(--card-corner-size) var(--card-corner-size)
+      no-repeat,
+    var(--card-corner-mask) left var(--card-paint-inset) bottom
+      var(--card-paint-inset) / var(--card-corner-size) var(--card-corner-size)
+      no-repeat,
+    var(--card-corner-mask) right var(--card-paint-inset) bottom
+      var(--card-paint-inset) / var(--card-corner-size) var(--card-corner-size)
+      no-repeat,
+    linear-gradient(#000 0 0) center /
+      calc(100% - var(--card-paint-inset) * 2 - var(--card-corner-size))
+      calc(100% - var(--card-paint-inset) * 2) no-repeat,
+    linear-gradient(#000 0 0) center / calc(100% - var(--card-paint-inset) * 2)
+      calc(100% - var(--card-paint-inset) * 2 - var(--card-corner-size))
+      no-repeat;
+}
+.image-card[data-drag-source] {
+  --card-frame-color: transparent !important;
+}
+.grid-cell.drag-over > [data-card-content] {
+  --card-paint-inset: calc(
+    var(--card-frame-edge) + var(--card-drop-stroke) + var(--card-frame-gap)
+  ) !important;
+}
+.grid-cell.drag-over {
+  outline: none;
+}
+.grid-cell.drag-over::after {
+  content: "";
+  position: absolute;
+  inset: var(--card-frame-edge);
+  border: var(--card-drop-stroke) solid var(--mint);
+  border-radius: max(
+    0px,
+    calc(var(--card-radius) - 1px - var(--card-frame-edge))
+  );
+  pointer-events: none;
+  z-index: 60;
 }
 .cell-image-button,
-.library-image-button {
+.library-image-button,
+.drag-preview-image {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -527,13 +601,15 @@ h1 {
   overflow: hidden;
 }
 .cell-image-button img,
-.library-image-button img {
+.library-image-button img,
+.drag-preview-image img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
 }
-.cell-image-button .empty-cell {
+.cell-image-button .empty-cell,
+.drag-preview-image .empty-cell {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -559,7 +635,8 @@ h1 {
   pointer-events: none;
 }
 .cell-heading,
-.library-heading {
+.library-heading,
+.drag-preview-heading {
   display: block;
   width: 100%;
   min-height: 1.95em;
