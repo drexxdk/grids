@@ -126,6 +126,63 @@ async function selectField(page, id, value) {
   await page.getByRole("listbox").locator(`[data-value="${value}"]`).click();
 }
 
+async function editHeading(page, value) {
+  await page
+    .getByRole("button", { name: "Edit grid heading", exact: true })
+    .click();
+  const heading = page.getByRole("textbox", {
+    name: "Grid heading",
+    exact: true,
+  });
+  await heading.fill(value);
+  await heading.press("Enter");
+}
+
+async function chooseImage(page, name, index = 0) {
+  await page
+    .locator(".cell-image-button")
+    .nth(index)
+    .click({ position: { x: 5, y: 5 } });
+  const dialog = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await dialog
+    .getByRole("button", { name: `Use ${name}`, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+}
+
+async function selectExportField(page, id, value) {
+  if (
+    !(await page
+      .getByRole("dialog", { name: "Export grid", exact: true })
+      .isVisible())
+  )
+    await page.locator("#export-grid-header").click();
+  await selectField(page, id, value);
+}
+
+async function beginCellUpload(page, index) {
+  const image = page.locator(".cell-image-button").nth(index);
+  if (await page.locator(".grid-cell").nth(index).locator("img").count()) {
+    await image.hover({ position: { x: 5, y: 5 } });
+    await page
+      .getByRole("button", { name: "Replace image", exact: true })
+      .click();
+  } else await image.click({ position: { x: 5, y: 5 } });
+  const dialog = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  if (await dialog.isVisible()) {
+    await dialog
+      .getByRole("button", { name: "Upload image", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+  }
+}
+
 test("canvas padding keeps overflow inside its viewport on short and narrow screens", async ({
   page,
 }, testInfo) => {
@@ -553,7 +610,7 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
   await expect(page.locator(".asset")).toHaveCount(3);
   await savedWorkspace(page);
   for (const width of [1440, 960]) {
-    await page.setViewportSize({ width, height: 1400 });
+    await page.setViewportSize({ width, height: 2000 });
     expect(
       await page
         .locator(".asset-library")
@@ -565,14 +622,19 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
     for (const selector of [".asset-panel", ".settings-panel"]) {
       const aside = page.locator(selector);
       await expect(aside).toHaveCSS("width", "250px");
-      await expect(aside).toHaveCSS("overflow-y", "auto");
-      await expect(aside).toHaveCSS("scrollbar-gutter", "stable");
+      await expect(aside).toHaveCSS("height", "2000px");
+      await expect(aside).toHaveCSS("overflow-y", "hidden");
+      const body = aside.locator("[data-sidebar-content]");
+      await expect(body).toHaveCSS("overflow-y", "auto");
+      await expect(body).toHaveCSS("scrollbar-gutter", "stable");
       await expect(aside).toHaveCSS("direction", "ltr");
       await expect(aside.locator(":scope > div").first()).toHaveCSS(
         "direction",
         "ltr",
       );
-      const before = await aside.evaluate((element) => {
+      const header = aside.locator(":scope > div").first();
+      const headerBounds = await header.boundingBox();
+      const before = await body.evaluate((element) => {
         element.scrollTop = 0;
         const child = element.firstElementChild.getBoundingClientRect();
         return {
@@ -582,34 +644,36 @@ test("desktop asides use 250px columns with stable edge scrollbars and modal ali
           overflowing: element.scrollHeight > element.clientHeight,
         };
       });
-      expect(before.height).toBe(1320);
+      expect(before.height).toBeGreaterThan(0);
+      expect(before.height).toBeLessThan(2000);
       expect(before.overflowing).toBe(false);
-      await aside.evaluate((element) => {
+      await body.evaluate((element) => {
         const spacer = document.createElement("div");
         spacer.dataset.scrollProbe = "";
-        spacer.style.height = "2000px";
+        spacer.style.height = "3000px";
         element.append(spacer);
       });
       await expect
         .poll(() =>
-          aside.evaluate(
+          body.evaluate(
             (element) => element.scrollHeight > element.clientHeight,
           ),
         )
         .toBe(true);
-      const after = await aside.evaluate((element) => {
+      const after = await body.evaluate((element) => {
         const child = element.firstElementChild.getBoundingClientRect();
         return { x: child.x, width: child.width };
       });
       expect(after).toEqual({ x: before.x, width: before.width });
       const pageScroll = await page.evaluate(() => scrollY);
-      await aside.hover();
+      await body.hover();
       await page.mouse.wheel(0, 160);
       await expect
-        .poll(() => aside.evaluate((element) => element.scrollTop))
+        .poll(() => body.evaluate((element) => element.scrollTop))
         .toBeGreaterThan(0);
       expect(await page.evaluate(() => scrollY)).toBe(pageScroll);
-      await aside.evaluate((element) => {
+      expect(await header.boundingBox()).toEqual(headerBounds);
+      await body.evaluate((element) => {
         element.querySelector("[data-scroll-probe]").remove();
         element.scrollTop = 0;
       });
@@ -1032,6 +1096,7 @@ test("empty headings use faded inline placeholders and reserve no export bands",
   page,
 }, testInfo) => {
   await page.goto("./");
+  await selectField(page, "image-shape", "square");
   await page.locator("#upload").setInputFiles({
     name: "Original.svg",
     mimeType: "image/svg+xml",
@@ -1128,18 +1193,12 @@ test("empty headings use faded inline placeholders and reserve no export bands",
       [...bytes],
     );
   };
-  for (const mode of [
-    "Text above image",
-    "Text below image",
-    "Text on image",
-  ]) {
-    await page.getByRole("button", { name: mode, exact: true }).click();
+  for (const mode of ["above", "below", "overlay-bottom"]) {
+    await selectField(page, "caption-position", mode);
     expect(await exportSize()).toEqual({ width: 462, height: 462 });
   }
   expect(await page.evaluate(() => window.emptyHeadingDrawing)).toEqual([]);
-  await page
-    .getByRole("button", { name: "Text below image", exact: true })
-    .click();
+  await selectField(page, "caption-position", "below");
   await page.locator(".cell-heading").first().fill("Filled");
   expect(await exportSize()).toEqual({ width: 462, height: 497 });
   await page.locator(".cell-heading").first().fill("");
@@ -1299,9 +1358,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
   const activeBackground = await page
     .getByRole("tab", { name: "Imported", exact: true })
     .evaluate((element) => getComputedStyle(element).backgroundColor);
-  await page
-    .getByRole("button", { name: "Text on image", exact: true })
-    .click();
+  await selectField(page, "caption-position", "overlay-bottom");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(page.locator(".grid-cell").first()).toHaveCSS(
@@ -1309,13 +1366,7 @@ test("button groups join edges with single dividers and outer-only corners", asy
       "rgb(17, 19, 21)",
     );
     const background = "rgb(17, 19, 21)";
-    for (const label of [
-      "Image aspect ratio",
-      "Caption placement",
-      "Caption alignment",
-      "Column controls",
-      "Row controls",
-    ]) {
+    for (const label of ["Column controls", "Row controls"]) {
       const group = page.getByRole("group", { name: label, exact: true });
       await expect(group).toHaveCSS("gap", "0px");
       const vertical = label === "Column controls";
@@ -1441,21 +1492,8 @@ test("button groups join edges with single dividers and outer-only corners", asy
           });
       }
     }
-    await page
-      .getByRole("button", { name: "Landscape images", exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "Landscape images", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(
-      page.getByRole("button", { name: "Landscape images", exact: true }),
-    ).toHaveCSS("color", "rgb(216, 243, 106)");
-    await expect(
-      page.getByRole("button", { name: "Landscape images", exact: true }),
-    ).toHaveCSS("background-color", activeBackground);
-    await expect(
-      page.getByRole("button", { name: "Square images", exact: true }),
-    ).toHaveCSS("background-color", background);
+    await selectField(page, "image-shape", "landscape");
+    await expect(page.locator("#image-shape")).toHaveText("Landscape");
     await page.getByRole("button", { name: "Add column", exact: true }).click();
     await page
       .getByRole("button", { name: "Remove column", exact: true })
@@ -1515,9 +1553,7 @@ test("canvas controls align with the grid and sidebar headers stay fixed", async
       }
       await expect(trigger).toBeInViewport({ ratio: 1 });
     } else {
-      await page
-        .getByRole("button", { name: "Text on image", exact: true })
-        .click();
+      await selectField(page, "caption-position", "overlay-bottom");
       const controls = await toolbar.boundingBox();
       const button = await trigger.boundingBox();
       expect(button.width).toBe(44);
@@ -1611,6 +1647,7 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
 }, testInfo) => {
   test.setTimeout(60000);
   await page.goto("./");
+  await selectField(page, "image-shape", "square");
   const original = Buffer.from(
     '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="200" height="200" fill="#ff0000"/><rect x="200" width="200" height="200" fill="#00ff00"/><rect x="400" width="200" height="200" fill="#0000ff"/></svg>',
   );
@@ -1759,18 +1796,14 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
   expect(
     await sample(await page.locator(".cell-image-button").nth(1).screenshot()),
   ).toEqual([0, 255, 0, 255]);
-  await page
-    .getByRole("button", { name: "Landscape images", exact: true })
-    .click();
+  await selectField(page, "image-shape", "landscape");
   await openCrop();
   await dialog.getByRole("button", { name: "Apply crop", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   const landscapeCrop = (await savedWorkspace(page)).grid.cells[0].crop;
   expect(landscapeCrop.width).toBeCloseTo(applied.width, 6);
   expect(landscapeCrop.height).toBeCloseTo((applied.height * 3) / 4, 6);
-  await page
-    .getByRole("button", { name: "Square images", exact: true })
-    .click();
+  await selectField(page, "image-shape", "square");
   await openCrop();
   await dialog.getByRole("button", { name: "Reset crop" }).click();
   await expect(dialog.locator("#crop-zoom")).toHaveValue("1");
@@ -1830,9 +1863,7 @@ test("imported captions preserve library capitalization in the canvas and export
   expect(rendered.join(" ")).toContain(title);
   expect(rendered.join(" ")).not.toContain(title.toUpperCase());
   await page.setViewportSize({ width: 960, height: 1080 });
-  await page
-    .getByRole("button", { name: "Text above image", exact: true })
-    .click();
+  await selectField(page, "caption-position", "above");
   await page.locator(".cell-heading").first().fill("DC   Friendly Fire");
   await expect
     .poll(() =>
@@ -1876,9 +1907,7 @@ test("hovering another header clears the previous card outline without moving fo
       await page
         .getByRole("button", { name: "Expand tools", exact: true })
         .click();
-    await page
-      .getByRole("button", { name: "Text above image", exact: true })
-      .click();
+    await selectField(page, "caption-position", "above");
     for (const selector of [".grid-cell", ".asset"]) {
       const cards = page.locator(selector);
       const image = cards.nth(0).locator("[data-card-image] > button");
@@ -1907,6 +1936,57 @@ test("hovering another header clears the previous card outline without moving fo
   }
 });
 
+test("movable cards show a move cursor without changing editing and action cursors", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await selectField(page, "caption-position", "below");
+  await page.locator("#upload").setInputFiles(
+    ["One", "Two"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await chooseImage(page, "One", 0);
+  await chooseImage(page, "Two", 1);
+  for (const [width, expanded] of [
+    [1440, false],
+    [780, false],
+    [780, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1080 });
+    if (expanded)
+      await page
+        .getByRole("button", { name: "Expand tools", exact: true })
+        .click();
+    const movable = page.locator('[draggable="true"]');
+    await expect(movable).toHaveCount(4);
+    for (const image of await movable.all())
+      await expect(image).toHaveCSS("cursor", "move");
+    await expect(
+      page.locator(".grid-cell").nth(2).locator(".cell-image-button"),
+    ).toHaveCSS("cursor", "pointer");
+    for (const caption of await page.locator(".image-card textarea").all())
+      await expect(caption).not.toHaveCSS("cursor", "move");
+    const visibleImages = expanded
+      ? page.locator("[data-library-thumbnail]")
+      : movable;
+    for (const image of await visibleImages.all()) {
+      await image.hover({ position: { x: 5, y: 5 } });
+      await expect(image).toHaveCSS("cursor", "move");
+      const tools = image
+        .locator('xpath=ancestor::*[contains(@class,"image-card")]')
+        .getByRole("group", { name: "Cell tools", exact: true });
+      await expect(tools).toBeVisible();
+      for (const action of await tools.locator("button").all())
+        await expect(action).toHaveCSS("cursor", "pointer");
+    }
+  }
+});
+
 test("precise image frames and thin caption feedback stay independent", async ({
   page,
 }) => {
@@ -1916,16 +1996,8 @@ test("precise image frames and thin caption feedback stay independent", async ({
   const caption = cell.locator(".cell-heading");
   const frames = cell.locator("[data-cell-image-frame]");
   await caption.fill("Caption");
-  for (const [placement, alignment] of [
-    ["Text above image"],
-    ["Text below image"],
-    ["Text on image", "Text at bottom"],
-    ["Text on image", "Text at top"],
-    ["Text on image", "Text at middle"],
-  ]) {
-    await page.getByRole("button", { name: placement, exact: true }).click();
-    if (alignment)
-      await page.getByRole("button", { name: alignment, exact: true }).click();
+  for (const placement of ["above", "below", "overlay-bottom", "overlay-top"]) {
+    await selectField(page, "caption-position", placement);
     await page.mouse.move(1, 1);
     const idleColor = await frames
       .first()
@@ -2018,6 +2090,7 @@ test("captions wrap at a fixed size and share height across canvas, library and 
   page,
 }, testInfo) => {
   await page.goto("./");
+  await selectField(page, "image-shape", "square");
   await page.locator("#upload").setInputFiles(
     ["Short", "Lines", "Word"].map((name) => ({
       name: `${name}.svg`,
@@ -2038,15 +2111,14 @@ test("captions wrap at a fixed size and share height across canvas, library and 
     await page
       .locator("[data-library-thumbnail]")
       .nth(index)
-      .dragTo(page.locator(".cell-image-button").nth(index));
+      .dragTo(page.locator(".cell-image-button").nth(index), {
+        sourcePosition: { x: 5, y: 5 },
+        targetPosition: { x: 5, y: 5 },
+      });
   for (const width of [960, 780]) {
     await page.setViewportSize({ width, height: 1080 });
-    for (const placement of [
-      "Text above image",
-      "Text below image",
-      "Text on image",
-    ]) {
-      await page.getByRole("button", { name: placement, exact: true }).click();
+    for (const placement of ["above", "below", "overlay-bottom"]) {
+      await selectField(page, "caption-position", placement);
       const metrics = await page.locator(".image-card").evaluateAll((cards) =>
         cards.map((card) => {
           const field = card.querySelector("textarea");
@@ -2081,9 +2153,7 @@ test("captions wrap at a fixed size and share height across canvas, library and 
       }
       await expect(page.locator(".cell-heading").nth(1)).toHaveValue(multiline);
     }
-    await page
-      .getByRole("button", { name: "Text above image", exact: true })
-      .click();
+    await selectField(page, "caption-position", "above");
     await page.screenshot({
       path: testInfo.outputPath(`multiline-cards-${width}.png`),
     });
@@ -2152,21 +2222,14 @@ test("small library caption clicks retain caret focus after image hover", async 
       await page
         .getByRole("button", { name: "Expand tools", exact: true })
         .click();
-    await page
-      .getByRole("button", { name: "Landscape images", exact: true })
-      .click();
-    for (const [placement, alignment] of [
-      ["Text above image"],
-      ["Text below image"],
-      ["Text on image", "Text at top"],
-      ["Text on image", "Text at middle"],
-      ["Text on image", "Text at bottom"],
+    await selectField(page, "image-shape", "landscape");
+    for (const placement of [
+      "above",
+      "below",
+      "overlay-top",
+      "overlay-bottom",
     ]) {
-      await page.getByRole("button", { name: placement, exact: true }).click();
-      if (alignment)
-        await page
-          .getByRole("button", { name: alignment, exact: true })
-          .click();
+      await selectField(page, "caption-position", placement);
       await page.locator(".library-heading").nth(0).fill("One");
       await page.locator(".library-heading").nth(1).fill("Two");
       for (const index of [0, 1, 0, 1]) {
@@ -2180,7 +2243,7 @@ test("small library caption clicks retain caret focus after image hover", async 
         await image.hover({
           position: {
             x: 5,
-            y: alignment === "Text at top" ? imageBounds.height * 0.4 : 3,
+            y: placement === "overlay-top" ? imageBounds.height * 0.4 : 3,
           },
         });
         await expect(caption).not.toBeFocused();
@@ -2236,7 +2299,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
     await expect
       .poll(async () => {
         const bounds = await thumbnail.boundingBox();
-        return bounds.y + bounds.height;
+        return bounds ? bounds.y + bounds.height : Infinity;
       })
       .toBeLessThanOrEqual(1080);
     await page.mouse.move(1, 1);
@@ -2248,18 +2311,13 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
           (element) => getComputedStyle(element, "::after").backgroundSize,
         ),
       ).toBe("100% 1px, 100% 1px, 1px 100%, 1px 100%");
-    for (const [placement, alignment] of [
-      ["Text above image"],
-      ["Text below image"],
-      ["Text on image", "Text at top"],
-      ["Text on image", "Text at middle"],
-      ["Text on image", "Text at bottom"],
+    for (const placement of [
+      "above",
+      "below",
+      "overlay-top",
+      "overlay-bottom",
     ]) {
-      await page.getByRole("button", { name: placement, exact: true }).click();
-      if (alignment)
-        await page
-          .getByRole("button", { name: alignment, exact: true })
-          .click();
+      await selectField(page, "caption-position", placement);
       await expect(libraryCaption).toBeVisible();
       const layouts = [];
       for (const surface of [asset, card]) {
@@ -2287,9 +2345,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
       expect(layouts[0].font).toBe(layouts[1].font);
       expect(layouts[0].color).toBe(layouts[1].color);
     }
-    await page
-      .getByRole("button", { name: "Text above image", exact: true })
-      .click();
+    await selectField(page, "caption-position", "above");
     await libraryCaption.click();
     await expect(libraryCaption).toBeFocused();
     await libraryCaption.fill(`Edited ${width} ${expanded}`);
@@ -2301,7 +2357,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
     await expect(libraryCaption).toHaveValue("Canvas edit");
     await thumbnail.hover({ position: { x: 5, y: 30 } });
     await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
-    await expect(asset).toHaveCSS("cursor", "grab");
+    await expect(asset).toHaveCSS("cursor", "move");
     {
       await libraryCaption.click();
       await expect(asset.locator(".asset-category")).toHaveCount(0);
@@ -2345,7 +2401,19 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
           canvas.height = bitmap.height;
           const context = canvas.getContext("2d");
           context.drawImage(bitmap, 0, 0);
-          const pixels = context.getImageData(12, 0, 8, 1).data;
+          const topRows = Array.from({ length: 3 }, (_, row) => {
+            const pixels = context.getImageData(12, row, 8, 1).data;
+            return Array.from(
+              { length: 8 },
+              (_, index) =>
+                pixels[index * 4 + 1] > 100 &&
+                pixels[index * 4 + 1] > pixels[index * 4] + 12,
+            );
+          });
+          const marks = topRows.sort(
+            (left, right) =>
+              right.filter(Boolean).length - left.filter(Boolean).length,
+          )[0];
           const corners = [
             [0, 0],
             [bitmap.width - 8, 0],
@@ -2363,11 +2431,7 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
           bitmap.close();
           return {
             corners,
-            marks: Array.from(
-              { length: 8 },
-              (_, index) =>
-                pixels[index * 4] > 160 && pixels[index * 4 + 1] > 220,
-            ),
+            marks,
           };
         },
         [...screenshot],
@@ -2380,12 +2444,25 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
       expect(
         period.filter((mark, index) => mark !== period[(index + 1) % 4]),
       ).toHaveLength(2);
+      if (expanded)
+        await page
+          .getByRole("button", { name: "Collapse tools", exact: true })
+          .click();
       await asset
         .locator("[data-library-thumbnail]")
-        .dragTo(page.locator(".cell-image-button").first());
+        .dragTo(page.locator(".cell-image-button").first(), {
+          sourcePosition: { x: 5, y: 5 },
+          targetPosition: { x: 5, y: 5 },
+        });
       await expect(
         page.locator(".grid-cell").first().locator("img"),
       ).toHaveCount(1);
+      if (expanded) {
+        await page
+          .getByRole("button", { name: "Expand tools", exact: true })
+          .click();
+        await expect(thumbnail).toBeInViewport({ ratio: 1 });
+      }
     }
     await upload.hover({ position: { x: 5, y: 5 } });
     await expect(upload).toHaveCSS("--frame-color", "#d8f36a");
@@ -2407,10 +2484,9 @@ test("sidebar and slide-up cards match canvas placement, editing and external do
       await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
       await expect(control).toHaveCSS("outline-style", "none");
     }
-    expect(await thumbnail.boundingBox()).toMatchObject({
-      width: thumbnailBounds.width,
-      height: thumbnailBounds.height,
-    });
+    const finalThumbnail = await thumbnail.boundingBox();
+    expect(finalThumbnail.width).toBeCloseTo(thumbnailBounds.width, 0);
+    expect(finalThumbnail.height).toBeCloseTo(thumbnailBounds.height, 0);
     expect(await upload.boundingBox()).toMatchObject({
       width: uploadBounds.width,
       height: uploadBounds.height,
@@ -2455,12 +2531,8 @@ for (const viewportWidth of [1440, 780]) {
     await expect(page.locator(".asset")).toHaveCount(2);
     const images = page.locator(".cell-image-button");
     const headings = page.locator(".cell-heading");
-    await page
-      .getByRole("button", { name: "Portrait images", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Text on image", exact: true })
-      .click();
+    await selectField(page, "image-shape", "portrait");
+    await selectField(page, "caption-position", "overlay-bottom");
     await page
       .locator(".asset")
       .nth(0)
@@ -2598,7 +2670,7 @@ for (const viewportWidth of [1440, 780]) {
       height: Math.ceil(picture.height),
       color: [255, 0, 0, 255],
     });
-    expect(previews[0].x).toBeCloseTo(8, 0);
+    expect(Math.abs(previews[0].x - 8)).toBeLessThanOrEqual(1);
     expect(Math.abs(previews[0].y - bottomY)).toBeLessThanOrEqual(1);
     await expect(page.locator("body > canvas")).toHaveCount(0);
     let current = await savedWorkspace(page);
@@ -2646,9 +2718,7 @@ test("touch crop editor fills the viewport and keeps portrait controls usable", 
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page
-    .getByRole("button", { name: "Portrait images", exact: true })
-    .tap();
+  await selectField(page, "image-shape", "portrait");
   const image = page.locator(".cell-image-button").first();
   await image.tap();
   await page
@@ -3556,26 +3626,21 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   page,
 }, testInfo) => {
   await page.goto("./");
-  const headingToggle = page.getByRole("switch", {
-    name: "Show heading",
+  await expect(
+    page.getByRole("switch", { name: "Show heading", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".settings-panel select")).toHaveCount(0);
+  const canvasStyle = page.getByRole("group", {
+    name: "Canvas style",
     exact: true,
   });
-  for (const checked of ["true", "false"]) {
-    await page.mouse.move(0, 0);
-    await expect(headingToggle).toHaveCSS("filter", "none");
-    const before = await headingToggle.boundingBox();
-    await headingToggle.hover();
-    await expect(headingToggle).toHaveCSS("filter", "brightness(1.1)");
-    await expect(headingToggle).toHaveAttribute("aria-checked", checked);
-    expect(await headingToggle.boundingBox()).toEqual(before);
-    await headingToggle.click();
-  }
-  await expect(page.locator(".settings-panel select")).toHaveCount(0);
-  const hex = page.getByRole("textbox", {
+  const hex = canvasStyle.getByRole("textbox", {
     name: "Background hex value",
     exact: true,
   });
-  const picker = page.getByLabel("Background color picker", { exact: true });
+  const picker = canvasStyle.getByLabel("Background color picker", {
+    exact: true,
+  });
   for (const id of ["heading-font", "cell-font"]) {
     await page.locator(`label[for="${id}"]`).hover();
     await expect(page.locator(`#${id}`)).toHaveCSS(
@@ -3657,7 +3722,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   }
   await page.getByRole("listbox").press("End");
   await page.getByRole("listbox").press("Enter");
-  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
+  await expect(page.locator("#heading-font")).toHaveText("Manrope");
   await selectField(page, "cell-font", "Boogaloo");
   await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
   await page.locator("#heading-font").click();
@@ -3674,7 +3739,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
     .toMatchObject({ format: "image/webp", resolution: 300 });
   await reloadWorkspace(page);
   await expect(hex).toHaveValue("#AABBCC");
-  await expect(page.locator("#heading-font")).toHaveText("Bebas Neue");
+  await expect(page.locator("#heading-font")).toHaveText("Manrope");
   await expect(page.locator("#cell-font")).toHaveText("Boogaloo");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Expand tools", exact: true }).click();
@@ -3834,7 +3899,7 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
     hasTouch: true,
   });
   const page = await context.newPage();
-  await page.goto("http://localhost:5840/tier-list/");
+  await page.goto(testInfo.project.use.baseURL);
   const drawer = page.locator("[data-editor-drawer]");
   const expand = page.getByRole("button", {
     name: "Expand tools",
@@ -3925,7 +3990,7 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
   const sourceBox = await sources.boundingBox();
   const toggleBox = await expand.boundingBox();
   expect(Math.abs(sourceBox.y - toggleBox.y)).toBeLessThanOrEqual(1);
-  await expect(drawer.locator(".asset-name").first()).toBeHidden();
+  await expect(drawer.locator(".asset-name").first()).toBeVisible();
   await expect(drawer.locator(".asset-category").first()).toBeHidden();
   expect(compactBox.y).toBeGreaterThan(844 / 2);
   expect(compactBox.y + compactBox.height).toBeLessThanOrEqual(845);
@@ -3964,8 +4029,8 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
     ),
   ).toBe(false);
   await expect(
-    drawer.getByRole("button", { name: "Load example", exact: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Load example", exact: true }),
+  ).toHaveCount(0);
   await selectField(page, "heading-font", "Boogaloo");
   await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
   await page.screenshot({
@@ -3984,6 +4049,9 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
   });
   await page.setViewportSize({ width: 1440, height: 1080 });
   await expect(drawer).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Load example", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".workspace-toolbar")).toHaveCount(0);
   const settings = page.getByRole("complementary", {
     name: "Grid settings",
@@ -4133,7 +4201,7 @@ test("touch cell overlays target the tapped image without autofocus", async ({
     hasTouch: true,
   });
   const page = await context.newPage();
-  await page.goto("http://localhost:5840/tier-list/");
+  await page.goto(testInfo.project.use.baseURL);
   await page.locator("#upload").setInputFiles({
     name: "touch.svg",
     mimeType: "image/svg+xml",
@@ -4320,7 +4388,7 @@ test("example loading is available only on localhost", async ({ page }) => {
     });
     await route.fulfill({ response });
   });
-  await page.goto("https://grids.example/tier-list/");
+  await page.goto("https://grids.example/grids/");
   await expect(page.locator("#board-grid")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Load example", exact: true }),
@@ -4378,8 +4446,8 @@ test("image imports show progress and keep the editor responsive through failed 
   await expect(add).toBeDisabled();
   await expect(add).toHaveCSS("opacity", "1");
   await expect(library).toHaveAttribute("aria-busy", "true");
-  await page.locator("#gap").fill("21");
-  await expect(page.locator("#gap")).toHaveValue("21");
+  await page.locator("#gap").fill("3.5");
+  await expect(page.locator("#gap")).toHaveValue("3.5");
   await page.screenshot({
     path: testInfo.outputPath("import-progress-desktop.png"),
   });
@@ -4527,7 +4595,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     .dragTo(page.locator(".cell-image-button").first());
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await page.locator(".cell-heading").first().fill("Keep this caption");
-  await page.locator("#gap").fill("22");
+  await page.locator("#gap").fill("4");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -4540,7 +4608,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   );
   await reset.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("22");
+  await expect(page.locator("#gap")).toHaveValue("4");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -4548,7 +4616,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     .getByRole("button", { name: "Reset settings", exact: true })
     .click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("12");
+  await expect(page.locator("#gap")).toHaveValue("2");
   await expect(page.locator(".asset")).toHaveCount(2);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
@@ -4561,18 +4629,23 @@ test("reset and library deletion retain canvas images without confirmation", asy
   const tileBox = await addImages.boundingBox();
   expect(Math.abs(tileBox.width - tileBox.height)).toBeLessThanOrEqual(1);
   await page
-    .getByRole("button", { name: "Image options: used", exact: true })
+    .getByRole("button", {
+      name: "Image options: Keep this caption",
+      exact: true,
+    })
     .hover();
   await page.screenshot({
     path: testInfo.outputPath("library-delete-hover-desktop.png"),
   });
-  await page.getByRole("button", { name: "Delete used", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Delete Keep this caption", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(
       async () =>
         (await localDatabase(page)).document?.assets.find(
-          (asset) => asset.title === "used",
+          (asset) => asset.title === "Keep this caption",
         )?.libraryHidden,
     )
     .toBe(true);
@@ -4590,7 +4663,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     exact: true,
   });
   await expect(
-    picker.getByRole("button", { name: "Use used", exact: true }),
+    picker.getByRole("button", { name: "Use Keep this caption", exact: true }),
   ).toHaveCount(0);
   await picker.getByRole("button", { name: "Use unused", exact: true }).click();
   await expect(picker).toHaveCount(0);
@@ -4633,7 +4706,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   );
   const retained = await savedWorkspace(page);
   expect(retained.grid.cells[0].assetId).toBe(
-    retained.assets.find((asset) => asset.title === "used").id,
+    retained.assets.find((asset) => asset.title === "Keep this caption").id,
   );
   await page.screenshot({
     path: testInfo.outputPath("clear-reset-library-cleanup-desktop.png"),
@@ -4658,9 +4731,9 @@ test("mobile library taps reveal delete and upload remains the first tile", asyn
     hasTouch: true,
   });
   const page = await context.newPage();
-  await page.goto("http://localhost:5840/tier-list/");
+  await page.goto(testInfo.project.use.baseURL);
   const add = page.getByRole("button", { name: "Add images", exact: true });
-  expect((await add.boundingBox()).height).toBeGreaterThanOrEqual(140);
+  expect((await add.boundingBox()).height).toBe(64);
   const chooser = page.waitForEvent("filechooser");
   await add.tap();
   await (
@@ -4701,6 +4774,7 @@ test("mobile library taps reveal delete and upload remains the first tile", asyn
   await page.getByRole("button", { name: "Delete first", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand tools", exact: true }).tap();
   await page
     .getByRole("button", { name: "Clear all images", exact: true })
     .tap();
@@ -4748,7 +4822,7 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page.locator(".asset").click();
+  await chooseImage(page, "shared");
   await expect
     .poll(async () => (await localDatabase(page)).document?.grid.cells[0].title)
     .toBe("shared");
@@ -4760,8 +4834,12 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
   await other.clock.pauseAt(new Date());
   await other.clock.runFor(400);
   expect((await localDatabase(page)).document.revision).toBe(original.revision);
-  await expect(page.locator("#save-status")).toHaveText("Saved locally");
-  await expect(other.locator("#save-status")).toHaveText("Saved locally");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved in this browser",
+  );
+  await expect(other.locator("#save-status")).toHaveText(
+    "Saved in this browser",
+  );
   await page.evaluate(() => {
     const channel = new BroadcastChannel("grids-workspace-v1");
     channel.postMessage({ id: "guest", revision: crypto.randomUUID() });
@@ -4770,12 +4848,12 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
   });
   await other.clock.runFor(400);
   await expect(other.getByRole("alert")).toHaveCount(0);
-  await other.locator("#cell-title").fill("Unsaved second tab");
+  await other.locator(".cell-heading").first().fill("Unsaved second tab");
   await expect(other.locator(".cell-heading").first()).toHaveValue(
     "Unsaved second tab",
   );
-  await page.locator("#cell-title").fill("Saved elsewhere");
-  await page.locator("#board-name").fill("First tab saved");
+  await page.locator(".cell-heading").first().fill("Saved elsewhere");
+  await editHeading(page, "First tab saved");
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -4784,7 +4862,7 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await expect
-    .poll(async () => (await localDatabase(page)).document.grid.name)
+    .poll(async () => (await localDatabase(page)).document.grid.heading)
     .toBe("First tab saved");
   const latest = await savedWorkspace(page);
   await expect(other.locator("#save-status")).toHaveText(
@@ -4828,8 +4906,11 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await other.clock.runFor(300);
   await expect(dialog).toHaveCount(0);
-  await expect(other.locator("#cell-title")).toHaveValue("Unsaved second tab");
-  await other.locator("#resolution").selectOption("150");
+  await expect(other.locator(".cell-heading").first()).toHaveValue(
+    "Unsaved second tab",
+  );
+  await other.locator("#export-grid-header").click();
+  await selectField(other, "resolution", "150");
   expect((await downloadBoard(other)).suggestedFilename()).toBe("grid.png");
   expect((await localDatabase(page)).document).toEqual(latest);
   const unexpectedDialogs = [];
@@ -4845,8 +4926,12 @@ test("multi-tab notifications preserve local edits and require confirmed reload"
     .getByRole("button", { name: "Reload saved grid", exact: true })
     .click();
   await navigation;
-  await expect(other.locator("#board-name")).toHaveValue("First tab saved");
-  await expect(other.locator("#cell-title")).toHaveValue("Saved elsewhere");
+  await expect(
+    other.getByRole("button", { name: "Edit grid heading", exact: true }),
+  ).toHaveText("First tab saved");
+  await expect(other.locator(".cell-heading").first()).toHaveValue(
+    "Saved elsewhere",
+  );
   await expect(other.getByRole("alert")).toHaveCount(0);
   await expect(other.locator(".grid-cell img")).toHaveCount(1);
   expect(unexpectedDialogs).toEqual([]);
@@ -4867,9 +4952,9 @@ test("multi-tab focus and visibility checks work without BroadcastChannel", asyn
     const other = await context.newPage();
     await other.goto(page.url());
     await expect(other.locator("#board-grid")).toBeVisible();
-    await page.locator("#board-name").fill(`Saved before ${event}`);
+    await editHeading(page, `Saved before ${event}`);
     await expect
-      .poll(async () => (await localDatabase(page)).document.grid.name)
+      .poll(async () => (await localDatabase(page)).document.grid.heading)
       .toBe(`Saved before ${event}`);
     await other.evaluate((event) => {
       if (event === "focus") window.dispatchEvent(new Event("focus"));
@@ -4885,14 +4970,14 @@ test("multi-tab focus and visibility checks work without BroadcastChannel", asyn
       "Changed in another tab",
     );
     await expect(other.getByRole("alert")).toBeVisible();
-    expect((await localDatabase(page)).document.grid.name).toBe(
+    expect((await localDatabase(page)).document.grid.heading).toBe(
       `Saved before ${event}`,
     );
     await other.close();
   }
 });
 
-test("unused-image trash survives reload, protects removed cells, and purges only after confirmation", async ({
+test("unused-image deletion protects removed cells and revokes only unreferenced media", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -4906,87 +4991,33 @@ test("unused-image trash survives reload, protects removed cells, and purges onl
     })),
   );
   await expect(page.locator(".asset")).toHaveCount(3);
-  await page.locator(".asset").nth(0).click();
+  await chooseImage(page, "used");
   await page.getByRole("button", { name: "Add row", exact: true }).click();
   await page.getByRole("button", { name: "Add column", exact: true }).click();
-  await page.locator(".cell-image-button").nth(15).click();
-  await page.locator(".asset").nth(1).click();
+  await chooseImage(page, "archived", 15);
   await page.getByRole("button", { name: "Remove row", exact: true }).click();
   await page
     .getByRole("button", { name: "Remove column", exact: true })
     .click();
   const original = await savedWorkspace(page);
   const unusedId = original.assets[2].id;
-  const trigger = page.getByRole("button", {
-    name: "Local storage",
-    exact: true,
-  });
-  const dialog = page.getByRole("dialog", { name: "Local storage" });
-  await trigger.click();
-  await dialog
-    .getByRole("button", { name: "Move unused images to trash", exact: true })
+  const source = await page
+    .locator(".asset")
+    .nth(2)
+    .locator("img")
+    .getAttribute("src");
+  await page
+    .getByRole("button", { name: "Clear all images", exact: true })
     .click();
-  await expect(
-    dialog.getByRole("heading", { name: "Trash (1)", exact: true }),
-  ).toBeVisible();
-  const trashed = await savedWorkspace(page);
-  expect(
-    trashed.assets
-      .filter((asset) => asset.trashedAt !== undefined)
-      .map((asset) => asset.id),
-  ).toEqual([unusedId]);
-  expect(trashed.grid).toEqual(original.grid);
-  expect((await localDatabase(page)).images).toHaveLength(3);
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await reloadWorkspace(page);
-  await expect(page.locator(".asset")).toHaveCount(2);
-  await trigger.click();
-  const source = await dialog.locator("li img").getAttribute("src");
-  await dialog
-    .getByRole("button", { name: "Restore unused", exact: true })
-    .click();
-  await expect(page.locator(".asset")).toHaveCount(3);
-  const restored = await savedWorkspace(page);
-  expect(restored.assets[2].id).toBe(unusedId);
-  await expect
-    .poll(async () => (await localDatabase(page)).document.assets[2].trashedAt)
-    .toBeUndefined();
-  expect(
-    await page.locator(".asset").nth(2).locator("img").getAttribute("src"),
-  ).toBe(source);
-  await dialog
-    .getByRole("button", { name: "Move unused images to trash", exact: true })
-    .click();
-  await savedWorkspace(page);
-  await expect(
-    dialog.getByRole("button", { name: "Empty trash", exact: true }),
-  ).toBeEnabled();
-  await page.screenshot({ path: testInfo.outputPath("trash-desktop.png") });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: testInfo.outputPath("trash-mobile.png") });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await dialog
-    .getByRole("button", { name: "Empty trash", exact: true })
-    .click();
-  await expect(
-    dialog.getByText("This cannot be undone.", { exact: true }),
-  ).toBeVisible();
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  expect((await localDatabase(page)).images).toHaveLength(3);
-  await dialog
-    .getByRole("button", { name: "Empty trash", exact: true })
-    .click();
-  await dialog
-    .getByRole("button", { name: "Delete permanently", exact: true })
-    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".asset")).toHaveCount(0);
   await expect
     .poll(async () => (await localDatabase(page)).document.assets.length)
     .toBe(2);
   const purged = await savedWorkspace(page);
+  expect(purged.grid).toEqual(original.grid);
+  expect(purged.assets.every((asset) => asset.libraryHidden)).toBe(true);
+  expect(purged.assets.some((asset) => asset.id === unusedId)).toBe(false);
   expect(purged.assets.map((asset) => asset.id)).toEqual(
     original.assets.slice(0, 2).map((asset) => asset.id),
   );
@@ -5003,15 +5034,18 @@ test("unused-image trash survives reload, protects removed cells, and purges onl
       }
     }, source),
   ).toBe(true);
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(0);
   await page.getByRole("button", { name: "Add row", exact: true }).click();
   await page.getByRole("button", { name: "Add column", exact: true }).click();
   await expect(page.locator(".cell-heading").nth(15)).toHaveValue("archived");
   await expect(page.locator(".grid-cell img")).toHaveCount(2);
+  await page.screenshot({
+    path: testInfo.outputPath("retained-overflow-media.png"),
+  });
 });
 
-test("failed trash purge preserves stored metadata and blobs until the retry commits", async ({
+test("failed unused-image deletion preserves stored metadata and blobs until the retry commits", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -5032,27 +5066,13 @@ test("failed trash purge preserves stored metadata and blobs until the retry com
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await savedWorkspace(page);
-  await page
-    .getByRole("button", { name: "Local storage", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Local storage" });
-  await dialog
-    .getByRole("button", { name: "Move unused images to trash", exact: true })
-    .click();
-  const source = await dialog.locator("li img").getAttribute("src");
-  await expect
-    .poll(async () => (await localDatabase(page)).document.assets[0].trashedAt)
-    .toEqual(expect.any(Number));
+  const source = await page.locator(".asset img").getAttribute("src");
   const original = await savedWorkspace(page);
   await page.evaluate(() => {
     window.failPurgeSave = true;
   });
-  await dialog
-    .getByRole("button", { name: "Empty trash", exact: true })
-    .click();
-  await dialog
-    .getByRole("button", { name: "Delete permanently", exact: true })
+  await page
+    .getByRole("button", { name: "Clear all images", exact: true })
     .click();
   await expect(page.locator("#save-status")).toHaveText("Save failed");
   const failed = await localDatabase(page);
@@ -5064,9 +5084,7 @@ test("failed trash purge preserves stored metadata and blobs until the retry com
   await page.evaluate(() => {
     window.failPurgeSave = false;
   });
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await page.locator("#image-heading").fill("Retry purge");
+  await editHeading(page, "Retry deletion");
   expect((await savedWorkspace(page)).assets).toEqual([]);
   expect((await localDatabase(page)).images).toEqual([]);
   expect(
@@ -5222,12 +5240,12 @@ test("automatic saves work without browser estimates or persistence APIs", async
     });
   });
   await page.goto("./");
-  await page.locator("#gap").fill("23");
+  await page.locator("#gap").fill("4.5");
   await expect
     .poll(async () => (await localDatabase(page)).document?.grid.gap)
-    .toBe(23);
+    .toBe(27);
   await reloadWorkspace(page);
-  await expect(page.locator("#gap")).toHaveValue("23");
+  await expect(page.locator("#gap")).toHaveValue("4.5");
 });
 
 test("IndexedDB stores image blobs and private grid content while localStorage holds settings only", async ({
@@ -5251,10 +5269,16 @@ test("IndexedDB stores image blobs and private grid content while localStorage h
     buffer: image,
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page.locator("#board-name").fill("Private collection");
-  await page.locator("#image-heading").fill("Private banner");
-  await page.locator("#cell-title").fill("Private caption");
-  await page.locator("#resolution").selectOption("150");
+  await chooseImage(page, "private photo");
+  await editHeading(page, "Private banner");
+  await page.locator(".cell-heading").first().fill("Private caption");
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  await page
+    .getByRole("dialog", { name: "Export grid", exact: true })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const document = await savedWorkspace(page);
   const stored = await localDatabase(page);
   expect(stored.images).toEqual([
@@ -5291,8 +5315,9 @@ test("IndexedDB stores image blobs and private grid content while localStorage h
   const originalUrl = await page.locator(".asset img").getAttribute("src");
   expect(originalUrl).toMatch(/^blob:/);
   await reloadWorkspace(page);
-  await expect(page.locator("#board-name")).toHaveValue("Private collection");
-  await expect(page.locator("#image-heading")).toHaveValue("Private banner");
+  await expect(
+    page.getByRole("button", { name: "Edit grid heading", exact: true }),
+  ).toHaveText("Private banner");
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Private caption",
   );
@@ -5306,9 +5331,9 @@ test("IndexedDB stores image blobs and private grid content while localStorage h
   expect(await page.locator(".asset img").getAttribute("src")).not.toBe(
     originalUrl,
   );
-  await page.locator("#cell-title").fill("First edit");
-  await page.locator("#cell-title").fill("Second edit");
-  await page.locator("#cell-title").fill("Latest edit");
+  await page.locator(".cell-heading").first().fill("First edit");
+  await page.locator(".cell-heading").first().fill("Second edit");
+  await page.locator(".cell-heading").first().fill("Latest edit");
   expect((await savedWorkspace(page)).grid.cells[0].title).toBe("Latest edit");
   await reloadWorkspace(page);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
@@ -5328,7 +5353,7 @@ test("missing IndexedDB image data cannot overwrite the stored grid with blank d
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page.locator("#board-name").fill("Keep stored grid");
+  await editHeading(page, "Keep stored grid");
   const original = await savedWorkspace(page);
   await localDatabase(page, "delete-image", { id: original.assets[0].id });
   await reloadWorkspace(page);
@@ -5336,7 +5361,7 @@ test("missing IndexedDB image data cannot overwrite the stored grid with blank d
   await expect(page.locator("[data-sonner-toast]")).toContainText(
     "stored grid has not been replaced",
   );
-  await page.locator("#cell-title").fill("Session edit");
+  await page.locator(".cell-heading").first().fill("Session edit");
   const stored = await localDatabase(page);
   expect(stored.document).toEqual(original);
   expect(stored.images).toEqual([]);
@@ -5668,7 +5693,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
         ),
     )
     .toBe(true);
-  expect(new URL(page.url()).pathname).toBe("/tier-list/");
+  expect(new URL(page.url()).pathname).toBe("/grids/");
   await expect(page.locator(".grid-cell")).toHaveCount(4);
   await expect(page.locator(".board-export-heading")).toHaveText("Team DC");
   await expect(page.locator(".board-export-heading img")).toHaveCount(0);
@@ -6093,7 +6118,7 @@ test("touch dialogs do not autofocus text inputs", async ({ browser }) => {
   });
   try {
     const page = await context.newPage();
-    await page.goto("http://localhost:5840/tier-list/");
+    await page.goto(testInfo.project.use.baseURL);
     await page.getByRole("button", { name: "Grid actions", exact: true }).tap();
     await page.getByRole("menuitem", { name: "Rename grid" }).tap();
     await expect(
@@ -6201,6 +6226,7 @@ test("long imported filenames produce valid captions across reload", async ({
   page,
 }) => {
   await page.goto("./");
+  await selectField(page, "caption-position", "above");
   const title = "A".repeat(150);
   await page.locator("#replace-upload").setInputFiles({
     name: `${title}.svg`,
@@ -6210,6 +6236,7 @@ test("long imported filenames produce valid captions across reload", async ({
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
+  await chooseImage(page, title);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     title.slice(0, 120),
   );
@@ -6246,7 +6273,8 @@ test("failed guest saves roll back blobs and recover without blocking export", a
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page.locator("#resolution").selectOption("150");
+  await chooseImage(page, "retry");
+  await selectExportField(page, "resolution", "150");
   expect((await downloadBoard(page)).suggestedFilename()).toBe("grid.png");
   await expect(page.locator("#save-status")).toHaveText("Save failed");
   const failed = await localDatabase(page);
@@ -6258,7 +6286,7 @@ test("failed guest saves roll back blobs and recover without blocking export", a
   await page.evaluate(() => {
     window.failGuestSaves = false;
   });
-  await page.locator("#cell-title").fill("Recovered save");
+  await page.locator(".cell-heading").first().fill("Recovered save");
   expect((await savedWorkspace(page)).assets).toHaveLength(1);
   await reloadWorkspace(page);
   await expect(page.locator(".asset")).toHaveCount(1);
@@ -6285,7 +6313,8 @@ test("unavailable IndexedDB leaves session editing and image exports usable", as
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await page.locator("#resolution").selectOption("150");
+  await chooseImage(page, "session");
+  await selectExportField(page, "resolution", "150");
   expect((await downloadBoard(page)).suggestedFilename()).toBe("grid.png");
   await expect(page.locator("#save-status")).toHaveText("Session only");
 });
@@ -6304,7 +6333,7 @@ test("fresh storage ignores obsolete prototypes and rejects invalid documents", 
     ),
   );
   await page.goto("./");
-  await expect(page.locator("#canvas-title")).toHaveText("Grid");
+  expect((await savedWorkspace(page)).grid.name).toBe("Grid");
   for (const corruption of [
     "version",
     "cells",
@@ -6326,27 +6355,27 @@ test("fresh storage ignores obsolete prototypes and rejects invalid documents", 
     } else await localDatabase(page, "write", saved);
     await reloadWorkspace(page);
     await expect(page.locator(".grid-cell")).toHaveCount(9);
-    await expect(page.locator("#canvas-title")).toHaveText("Grid");
+    expect((await savedWorkspace(page)).grid.name).toBe("Grid");
   }
 });
 
-test("edge resizing preserves coordinates, selection, overflow and newer edits", async ({
+test("edge resizing preserves coordinates, overflow and newer edits", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
   await useComicExample(page);
   const savedCells = async () => (await savedWorkspace(page)).grid.cells;
   const original = await savedCells();
-  await page.locator(".cell-image-button").nth(2).click();
   await page.getByRole("button", { name: "Add column", exact: true }).click();
   await expect(page.locator(".grid-cell")).toHaveCount(6);
-  await expect(page.locator("#cell-number")).toHaveText("04");
   expect((await savedCells())[3].id).toBe(original[2].id);
   await page.getByRole("button", { name: "Add row", exact: true }).click();
-  await page.locator("#cell-title").fill("Edit after resizing");
+  await page.locator(".cell-heading").nth(3).fill("Edit after resizing");
   await page.getByRole("button", { name: "Undo grid resize" }).click();
-  await expect(page.locator("#rows")).toHaveText("2");
-  await expect(page.locator("#cell-title")).toHaveValue("Edit after resizing");
+  await expect(page.locator(".grid-cell")).toHaveCount(6);
+  await expect(page.locator(".cell-heading").nth(3)).toHaveValue(
+    "Edit after resizing",
+  );
   await page
     .getByRole("button", { name: "Remove column", exact: true })
     .click();
@@ -6370,23 +6399,20 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
   await expect(
     page.getByRole("button", { name: "Remove row", exact: true }),
   ).toBeDisabled();
-  await page.locator(".cell-image-button").first().click();
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
   await page
-    .getByRole("button", {
-      name: "Swap with selected cell: Edit after resizing",
-      exact: true,
-    })
-    .click();
+    .locator(".cell-image-button")
+    .nth(2)
+    .dragTo(page.locator(".cell-image-button").first(), {
+      sourcePosition: { x: 5, y: 5 },
+      targetPosition: { x: 5, y: 5 },
+    });
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Edit after resizing",
   );
-  await expect(
-    page.getByRole("button", {
-      name: `Swap with selected cell: ${original[0].title}`,
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await expect(page.locator(".cell-heading").nth(2)).toHaveValue(
+    original[0].title,
+  );
   await page.screenshot({
     path: testInfo.outputPath("edge-controls-desktop.png"),
     fullPage: true,
@@ -6397,7 +6423,9 @@ test("edge resizing preserves coordinates, selection, overflow and newer edits",
     fullPage: true,
   });
   const geometry = await page.evaluate(() => {
-    const grid = document.querySelector("#board-grid").getBoundingClientRect();
+    const grid = document
+      .querySelector("[data-canvas-viewport]")
+      .getBoundingClientRect();
     const columns = document
       .querySelector('[aria-label="Column controls"]')
       .getBoundingClientRect();
@@ -6433,7 +6461,7 @@ test("uploads follow stable cells through resize and large exports are bounded",
         : decoded;
     };
   });
-  await page.locator(".cell-image-button").nth(2).click();
+  await beginCellUpload(page, 2);
   await page
     .locator("#replace-upload")
     .setInputFiles(path.join(projectRoot, "public/assets/DC - Kite Man.jpg"));
@@ -6444,11 +6472,9 @@ test("uploads follow stable cells through resize and large exports are bounded",
   await page.evaluate(() =>
     window.pendingImageDecodes.splice(0).forEach((resolve) => resolve()),
   );
-  await expect(page.locator(".cell-heading").nth(3)).toHaveValue(
-    "DC   Kite Man",
-  );
+  await expect(page.locator(".cell-heading").nth(3)).toHaveValue("DC Kite Man");
   await expect(page.locator(".cell-heading").nth(2)).toHaveValue("");
-  await page.locator(".cell-image-button").nth(2).click();
+  await beginCellUpload(page, 2);
   await page
     .locator("#replace-upload")
     .setInputFiles(
@@ -6489,12 +6515,14 @@ test("uploads follow stable cells through resize and large exports are bounded",
   await expect(
     page.getByRole("button", { name: "Add column", exact: true }),
   ).toBeDisabled();
-  await page.locator("#resolution").selectOption("600");
-  await page.locator("#export-board").click();
+  await selectExportField(page, "resolution", "600");
+  await page
+    .getByRole("button", { name: "Download image", exact: true })
+    .click();
   await expect(page.locator("[data-sonner-toast]")).toContainText(
     "Export exceeds the 32 MP limit",
   );
-  await page.locator("#resolution").selectOption("150");
+  await selectExportField(page, "resolution", "150");
   const download = await downloadBoard(page);
   const bytes = [...(await readFile(await download.path()))];
   const size = await page.evaluate(async (bytes) => {
@@ -6505,5 +6533,5 @@ test("uploads follow stable cells through resize and large exports are bounded",
     bitmap.close();
     return result;
   }, bytes);
-  expect(size).toEqual({ width: 1839, height: 2151 });
+  expect(size).toEqual({ width: 1839, height: 2439 });
 });

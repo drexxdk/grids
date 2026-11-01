@@ -79,7 +79,7 @@ test("independent typography settings validate, roundtrip and reset without chan
   expect(model.cellGeometry(restored.grid, 150, 0)).toMatchObject({
     captionHeight: 0,
     imageTop: 0,
-    height: 150,
+    height: 200,
   });
   for (const patch of [
     { cellFontSize: 0 },
@@ -392,6 +392,11 @@ test("settings boundary extracts only allowlisted configuration and detached val
       headingVisible: true,
       headingFont: "Manrope",
       cellFont: "Manrope",
+      headingFontWeight: 400,
+      cellFontWeight: 400,
+      imageAspect: "portrait",
+      captionPlacement: "overlay",
+      captionAlignment: "bottom",
       gap: 12,
       background: "#17191b",
     },
@@ -593,7 +598,8 @@ test("document commands patch, place, swap and clear content without replacing c
   expect(edited.grid.cells[1]).toEqual({
     id: second.id,
     title: "",
-    fit: "contain",
+    fit: "cover",
+    crop: undefined,
     assetId: null,
   });
   expect(edited.grid.heading).toBe("Edited banner");

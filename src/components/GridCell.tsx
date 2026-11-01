@@ -134,7 +134,7 @@ export function GridCell({
   ]);
   return (
     <Popover
-      className={`image-card tw:relative tw:min-w-0 tw:bg-(--card-background)! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-grab tw:w-full!" : "grid-cell"}`}
+      className={`image-card tw:relative tw:min-w-0 tw:bg-(--card-background)! tw:rounded-[6px]! tw:border! tw:border-solid! tw:border-(--line)! tw:[--card-frame-color:transparent] tw:has-[[data-card-image]:hover]:[--card-frame-color:var(--accent)] tw:has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${library ? "asset tw:cursor-move tw:w-full!" : "grid-cell"}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -188,7 +188,7 @@ export function GridCell({
               {asset ? (
                 <PopoverButton
                   ref={trigger}
-                  className={`${library ? "library-image-button" : "cell-image-button"} tw:peer/image tw:overflow-hidden tw:outline-none! tw:cursor-[inherit]`}
+                  className={`${library ? "library-image-button" : "cell-image-button"} tw:peer/image tw:overflow-hidden tw:outline-none! tw:cursor-move!`}
                   data-library-thumbnail={library ? "" : undefined}
                   style={{ height: "100%", aspectRatio: geometry.aspectRatio }}
                   aria-label={
