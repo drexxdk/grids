@@ -115,6 +115,8 @@ export function GridCell({
   const caption = useRef<HTMLTextAreaElement>(null);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   const touchDragged = useRef(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const touchTapped = useRef(false);
   const bindTouchDrag = useDrag(
     ({ xy, initial, last, canceled, tap, event, args }) => {
       if (tap || !asset || !card.current || !onTouchDrag) return;
@@ -395,6 +397,12 @@ export function GridCell({
                     !library?.onSelect
                   }
                   onClickCapture={(event) => {
+                    if (event.detail > 0 && touchTapped.current) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      touchTapped.current = false;
+                      return;
+                    }
                     if (touchDragged.current) {
                       event.preventDefault();
                       event.stopPropagation();
@@ -416,8 +424,35 @@ export function GridCell({
                       !previewOnly &&
                       !library?.disabled &&
                       !library?.onSelect;
-                    if (event.pointerType === "touch")
+                    if (event.pointerType === "touch") {
                       touchDragged.current = false;
+                      touchTapped.current = false;
+                      touchStart.current = {
+                        x: event.clientX,
+                        y: event.clientY,
+                      };
+                    }
+                  }}
+                  onPointerMove={(event) => {
+                    if (
+                      event.pointerType === "touch" &&
+                      touchStart.current &&
+                      Math.hypot(
+                        event.clientX - touchStart.current.x,
+                        event.clientY - touchStart.current.y,
+                      ) >= 8
+                    )
+                      touchStart.current = null;
+                  }}
+                  onPointerCancel={() => {
+                    touchStart.current = null;
+                  }}
+                  onPointerUp={(event) => {
+                    if (event.pointerType !== "touch" || !touchStart.current)
+                      return;
+                    touchStart.current = null;
+                    touchTapped.current = true;
+                    event.currentTarget.click();
                   }}
                   onMouseDownCapture={(event) => event.stopPropagation()}
                   onDragStart={(event) => {

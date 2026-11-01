@@ -9994,9 +9994,18 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
   await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Library A");
   await expect(images).toHaveCount(2);
   const session = await context.newCDPSession(page);
-  const source = await images.nth(1).boundingBox();
-  const start = { x: source.x + 10, y: source.y + 10 };
   const touchCopy = async (targetIndex, cancel = false) => {
+    await images.nth(1).tap();
+    const handle = page
+      .locator("#asset-library .asset")
+      .nth(1)
+      .getByRole("button", { name: "Drag image", exact: true });
+    await expect(handle).toBeVisible();
+    const source = await handle.boundingBox();
+    const start = {
+      x: source.x + source.width / 2,
+      y: source.y + source.height / 2,
+    };
     const target = await cells
       .nth(targetIndex)
       .locator(".cell-image-button")
@@ -10275,7 +10284,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
   await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch B");
   await setEditorViewport(page, { width: 780, height: 540 });
-  await expect(imageButton(1)).toHaveCSS("touch-action", "auto");
+  await expect(imageButton(1)).toHaveCSS("touch-action", "manipulation");
   await expect(
     cells.getByRole("button", { name: "Drag image", exact: true }),
   ).toHaveCount(0);
