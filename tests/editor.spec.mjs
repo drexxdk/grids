@@ -2038,6 +2038,98 @@ test("imported captions preserve library capitalization in the canvas and export
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
 });
 
+test("caption hover and focus are distinct without changing field geometry", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await selectField(page, "caption-position", "above");
+  await page.locator("#upload").setInputFiles({
+    name: "Feedback.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  for (const position of ["above", "below", "overlay-top", "overlay-bottom"]) {
+    await selectField(page, "caption-position", position);
+    for (const selector of [".grid-cell", ".asset"]) {
+      const card = page.locator(selector).first();
+      const field = card.locator("textarea");
+      const feedback = card.locator("[data-caption-feedback]");
+      await page.mouse.move(0, 0);
+      const idleColor = await field.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      const before = await field.boundingBox();
+      await field.hover();
+      await expect(feedback).toHaveCSS("border-top-width", "1px");
+      await expect(feedback).toHaveCSS(
+        "border-top-color",
+        "rgba(255, 255, 255, 0.6)",
+      );
+      await expect(feedback).toHaveCSS("pointer-events", "none");
+      const frame = await feedback.boundingBox();
+      const inset = frame.x - before.x;
+      expect(inset).toBeGreaterThanOrEqual(3);
+      expect(frame.y - before.y).toBeCloseTo(inset, 1);
+      expect(before.width - frame.width).toBeCloseTo(2 * inset, 1);
+      expect(before.height - frame.height).toBeCloseTo(2 * inset, 1);
+      const cardRadius = await card.evaluate((element) =>
+        parseFloat(getComputedStyle(element).borderTopLeftRadius),
+      );
+      const outerCorner =
+        position.endsWith("top") || position === "above"
+          ? "borderTopLeftRadius"
+          : "borderBottomLeftRadius";
+      const innerCorner =
+        outerCorner === "borderTopLeftRadius"
+          ? "borderBottomLeftRadius"
+          : "borderTopLeftRadius";
+      expect(
+        await feedback.evaluate(
+          (element, corner) => parseFloat(getComputedStyle(element)[corner]),
+          outerCorner,
+        ),
+      ).toBeCloseTo(Math.max(0, cardRadius - 1 - inset), 1);
+      await expect(feedback).toHaveCSS(
+        innerCorner.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
+        "0px",
+      );
+      const hoverColor = await field.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      expect(hoverColor).not.toBe(idleColor);
+      await field.click();
+      await expect(field).toBeFocused();
+      await expect(feedback).toHaveCSS("border-top-width", "2px");
+      await expect(feedback).toHaveCSS(
+        "border-top-color",
+        "rgb(216, 243, 106)",
+      );
+      const focusColor = await field.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      expect(focusColor).not.toBe(hoverColor);
+      await expect(card.locator("[data-cell-image-frame]")).toHaveCSS(
+        "--frame-color",
+        "transparent",
+      );
+      const after = await field.boundingBox();
+      for (const dimension of ["x", "y", "width", "height"])
+        expect(after[dimension]).toBeCloseTo(before[dimension], 2);
+      if (position === "overlay-bottom")
+        await card.screenshot({
+          path: testInfo.outputPath(`caption-focus-${selector.slice(1)}.png`),
+        });
+      await field.press("Tab");
+    }
+  }
+});
+
 test("hovering another header clears the previous card outline without moving focus", async ({
   page,
 }) => {
@@ -4822,17 +4914,22 @@ test("touch cell overlays target the tapped image without autofocus", async ({
     hasTouch: true,
   });
   const page = await context.newPage();
-  await page.goto(testInfo.project.use.baseURL);
-  await page.locator("#upload").setInputFiles({
+  await page.goto("./");
+  const image = page.locator(".cell-image-button").nth(2);
+  await image.tap({ position: { x: 5, y: 5 } });
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input, textarea"),
+    ),
+  ).toBe(false);
+  const picker = page.getByRole("dialog", { name: "Choose image" });
+  await picker.locator("#picker-cell-upload").setInputFiles({
     name: "touch.svg",
     mimeType: "image/svg+xml",
     buffer: Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#40b4aa"/></svg>',
     ),
   });
-  await expect(page.locator(".asset")).toHaveCount(1);
-  const image = page.locator(".cell-image-button").nth(2);
-  await image.tap();
   const tools = page.getByRole("group", { name: "Cell tools", exact: true });
   await expect(tools).toHaveCount(0);
   expect(
@@ -4840,8 +4937,6 @@ test("touch cell overlays target the tapped image without autofocus", async ({
       document.activeElement?.matches("input, textarea"),
     ),
   ).toBe(false);
-  const picker = page.getByRole("dialog", { name: "Choose image" });
-  await picker.getByRole("button", { name: "Use touch", exact: true }).tap();
   await expect(picker).toHaveCount(0);
   await expect(page.locator(".grid-cell").nth(2).locator("img")).toHaveCount(1);
   await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
@@ -7176,4 +7271,787 @@ test("uploads follow stable cells through resize and large exports are bounded",
     return result;
   }, bytes);
   expect(size).toEqual({ width: 1839, height: 2439 });
+});
+
+test("page metadata assets resolve and desktop library keeps mouse dragging", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    Array.from({ length: 2 }, (_, index) => ({
+      name: `Image ${index}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await expect(page.locator("#asset-library")).toHaveCSS("display", "grid");
+  await expect(
+    page.getByRole("button", { name: "Move Image 0", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("[data-library-thumbnail]").first(),
+  ).toHaveAttribute("draggable", "true");
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Image 0");
+  await expect(page).toHaveTitle("Grids - Image Boards");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    /Create image grids/,
+  );
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://drexxdk.github.io/grids/",
+  );
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    "https://drexxdk.github.io/grids/assets/grids-icon.png",
+  );
+  for (const relation of ["icon", "apple-touch-icon"]) {
+    const url = await page
+      .locator(`link[rel="${relation}"]`)
+      .evaluate((element) => element.href);
+    expect(new URL(url).pathname).toMatch(
+      /^\/grids\/assets\/grids-icon\.(svg|png)$/,
+    );
+    const response = await page.request.get(url);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["content-type"]).toMatch(/image\/(svg\+xml|png)/);
+  }
+  await page.screenshot({ path: testInfo.outputPath("library-desktop.png") });
+});
+
+test("unified image picker matches aside cards and keeps responsive grids", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    Array.from({ length: 8 }, (_, index) => ({
+      name: `Grid ${index}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(page.locator(".asset")).toHaveCount(8);
+  await page
+    .locator(".cell-image-button")
+    .first()
+    .click({ position: { x: 5, y: 5 } });
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  const panel = picker.locator('[id^="headlessui-dialog-panel"]');
+  await expect(
+    picker.getByRole("tab", { name: "Imported", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    picker.getByRole("tab", { name: "Online", exact: true }),
+  ).toBeDisabled();
+  await expect(picker.getByRole("tab", { name: /Choose|Library/ })).toHaveCount(
+    0,
+  );
+  await expect(
+    picker.getByRole("button", { name: "Delete items", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    picker.getByRole("button", { name: "Cancel", exact: true }),
+  ).toHaveCount(0);
+  for (const thumbnail of await picker
+    .locator("[data-library-thumbnail]")
+    .all()) {
+    await expect(thumbnail).toHaveAttribute("draggable", "false");
+    await expect(thumbnail).toHaveCSS("cursor", "pointer");
+  }
+  for (const width of [320, 390, 780, 832, 1440]) {
+    await page.setViewportSize({ width, height: 1080 });
+    const availableWidth = await picker
+      .locator("[data-modal-scroll]")
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return (
+          element.clientWidth -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight)
+        );
+      });
+    await expect
+      .poll(async () => (await panel.boundingBox()).width)
+      .toBe(Math.min(800, availableWidth));
+    const grid = picker.getByRole("tabpanel").locator('[class~="tw:grid"]');
+    await expect(
+      grid.locator(":scope > [data-upload-tile]").first(),
+    ).toBeVisible();
+    await expect(grid.locator(":scope > [data-library-image]")).toHaveCount(8);
+    const layout = await picker
+      .getByRole("tabpanel")
+      .locator('[class~="tw:grid"]')
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          columns: style.gridTemplateColumns.split(" ").length,
+          gap: style.columnGap,
+          width: element.getBoundingClientRect().width,
+          cardWidths: Array.from(
+            element.children,
+            (child) => child.getBoundingClientRect().width,
+          ),
+        };
+      });
+    const expectedColumns = Math.max(
+      1,
+      Math.floor(
+        (layout.width + parseFloat(layout.gap)) /
+          (128 + parseFloat(layout.gap)),
+      ),
+    );
+    expect(layout.columns).toBe(expectedColumns);
+    for (const cardWidth of layout.cardWidths) {
+      expect(cardWidth).toBeGreaterThanOrEqual(Math.min(128, layout.width));
+      expect(cardWidth).toBeLessThanOrEqual(320);
+    }
+    if (width !== 780)
+      await page.screenshot({
+        path: testInfo.outputPath(`picker-width-${width}.png`),
+      });
+  }
+  const cardStyles = (element) => {
+    const card = element.querySelector(".image-card");
+    const caption = element.querySelector("textarea");
+    const cardStyle = getComputedStyle(card);
+    const captionStyle = getComputedStyle(caption);
+    return {
+      border: cardStyle.border,
+      radius: cardStyle.borderRadius,
+      background: cardStyle.backgroundColor,
+      font: captionStyle.fontFamily,
+      weight: captionStyle.fontWeight,
+      case: captionStyle.textTransform,
+    };
+  };
+  expect(
+    await picker.locator("[data-library-image]").first().evaluate(cardStyles),
+  ).toEqual(
+    await page
+      .locator("#asset-library [data-library-image]")
+      .first()
+      .evaluate(cardStyles),
+  );
+  await picker
+    .getByRole("button", { name: "Use Grid 7", exact: true })
+    .hover({ position: { x: 5, y: 5 } });
+  await picker
+    .getByRole("button", { name: "Delete Grid 7", exact: true })
+    .click();
+  await expect(picker.locator("[data-library-image]")).toHaveCount(7);
+  await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
+    0,
+  );
+  await picker
+    .getByRole("button", { name: "Use Grid 0", exact: true })
+    .click({ position: { x: 5, y: 5 } });
+  await expect(picker).toHaveCount(0);
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Grid 0");
+});
+
+test("mobile picker has clear all images without deletion mode and preserves canvas images", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("./");
+  const drawer = page.locator("[data-editor-drawer]");
+  await expect(drawer.getByRole("button")).toHaveCount(1);
+  await expect(
+    drawer.getByRole("button", { name: "Expand tools", exact: true }),
+  ).toBeVisible();
+  const openPicker = async () => {
+    await page
+      .locator(".cell-image-button")
+      .first()
+      .tap({ position: { x: 5, y: 5 } });
+    if (await page.locator(".grid-cell").first().locator("img").count())
+      await page
+        .getByRole("button", { name: "Replace image", exact: true })
+        .tap();
+    await expect(
+      page.getByRole("dialog", { name: "Choose image", exact: true }),
+    ).toBeVisible();
+  };
+  await openPicker();
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  const chooserReady = page.waitForEvent("filechooser");
+  await picker.getByRole("button", { name: "Add images", exact: true }).tap();
+  await (
+    await chooserReady
+  ).setFiles(
+    Array.from({ length: 3 }, (_, index) => ({
+      name: `Picker ${index}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  await expect(picker).toHaveCount(0);
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Picker 0");
+  await openPicker();
+  await expect(picker.getByRole("img")).toHaveCount(3);
+  await expect(
+    picker.getByRole("tab", { name: "Library", exact: true }),
+  ).toHaveCount(0);
+  for (const thumbnail of await picker
+    .locator("[data-library-thumbnail]")
+    .all()) {
+    await expect(thumbnail).toHaveAttribute("draggable", "false");
+    await expect(thumbnail).toHaveCSS("touch-action", "auto");
+  }
+  await expect(
+    picker.getByRole("button", { name: "Delete items", exact: true }),
+  ).toHaveCount(0);
+  await expect(picker.getByRole("checkbox")).toHaveCount(0);
+  await picker
+    .getByRole("button", { name: "Use Picker 2", exact: true })
+    .tap({ position: { x: 5, y: 5 } });
+  await expect(picker).toHaveCount(0);
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Picker 2");
+  await openPicker();
+  const remove = picker.getByRole("button", {
+    name: "Clear all images",
+    exact: true,
+  });
+  const target = await remove.boundingBox();
+  expect(target.width).toBeGreaterThanOrEqual(44);
+  expect(target.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({
+    path: testInfo.outputPath("picker-clear-all-mobile.png"),
+  });
+  await remove.tap();
+  await expect(
+    page.getByRole("dialog", { name: "Delete images", exact: true }),
+  ).toHaveCount(0);
+  await expect(picker.getByRole("img")).toHaveCount(0);
+  await expect(picker.getByText("No images yet.")).toBeVisible();
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Picker 2");
+  await picker.getByRole("button", { name: "Close dialog", exact: true }).tap();
+  await expect(picker).toHaveCount(0);
+  await reloadWorkspace(page);
+  await expect(
+    page.locator(".grid-cell").first().locator("img"),
+  ).toHaveAttribute("alt", "Picker 2");
+  await context.close();
+});
+
+test("library cards support mouse and touch copying on touch-capable desktops", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1080 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["Library A", "Library B"].map((name) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+      ),
+    })),
+  );
+  const images = page.locator("#asset-library [data-library-thumbnail]");
+  const cells = page.locator(".grid-cell");
+  await expect(images).toHaveCount(2);
+  expect(
+    await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+  ).toBe(true);
+  await expect(images.first()).toHaveAttribute("draggable", "true");
+  await images.first().dragTo(cells.nth(0).locator(".cell-image-button"));
+  await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Library A");
+  await expect(images).toHaveCount(2);
+  const session = await context.newCDPSession(page);
+  const source = await images.nth(1).boundingBox();
+  const start = { x: source.x + 10, y: source.y + 10 };
+  const touchCopy = async (targetIndex, cancel = false) => {
+    const target = await cells
+      .nth(targetIndex)
+      .locator(".cell-image-button")
+      .boundingBox();
+    const end = { x: target.x + 10, y: target.y + 10 };
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ ...start, id: 1 }],
+    });
+    for (let step = 1; step <= 8; step++)
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: start.x + ((end.x - start.x) * step) / 8,
+            y: start.y + ((end.y - start.y) * step) / 8,
+            id: 1,
+          },
+        ],
+      });
+    await expect(page.locator("[data-drag-floating]")).toBeVisible();
+    await expect(cells.nth(targetIndex)).toHaveClass(/drag-over/);
+    await session.send("Input.dispatchTouchEvent", {
+      type: cancel ? "touchCancel" : "touchEnd",
+      touchPoints: [],
+    });
+    await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
+  };
+  await touchCopy(1);
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Library B");
+  await expect(images).toHaveCount(2);
+  await touchCopy(2, true);
+  await expect(cells.nth(2).locator("img")).toHaveCount(0);
+  await images.nth(1).tap({ position: { x: 5, y: 5 } });
+  await expect(
+    page.getByRole("button", { name: "Delete Library B", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("touch-library-card.png"),
+  });
+  await session.detach();
+  await context.close();
+});
+
+test("upload tiles match image card geometry and hover frames in aside and picker", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "Frame.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const metrics = (element) => {
+    const style = getComputedStyle(element);
+    const bounds = element.getBoundingClientRect();
+    const frame = getComputedStyle(
+      element.querySelector("[data-cell-image-frame] rect"),
+    );
+    const frameBounds = element
+      .querySelector("[data-cell-image-frame]")
+      .getBoundingClientRect();
+    const svgBounds = element
+      .querySelector("[data-cell-image-frame] svg")
+      .getBoundingClientRect();
+    return {
+      width: bounds.width,
+      height: bounds.height,
+      radius: style.borderRadius,
+      border: style.border,
+      stroke: frame.strokeWidth,
+      dash: frame.strokeDasharray,
+      frameRadius: frame.rx,
+      frameWidth: frameBounds.width,
+      frameHeight: frameBounds.height,
+      svgWidth: svgBounds.width,
+      svgHeight: svgBounds.height,
+      mask: getComputedStyle(element.querySelector("[data-card-content]"))
+        .maskImage,
+    };
+  };
+  for (const shape of ["portrait", "square", "landscape"]) {
+    await selectField(page, "image-shape", shape);
+    for (const position of ["above", "overlay-bottom"]) {
+      await selectField(page, "caption-position", position);
+      await page
+        .locator(".cell-image-button")
+        .first()
+        .click({ position: { x: 5, y: 5 } });
+      const picker = page.getByRole("dialog", {
+        name: "Choose image",
+        exact: true,
+      });
+      const compare = async (upload, image) => {
+        await page.mouse.move(0, 0);
+        const uploaded = await upload.evaluate(metrics);
+        const pictured = await image.evaluate(metrics);
+        expect(uploaded.width).toBeCloseTo(pictured.width, 1);
+        expect(uploaded.height).toBeCloseTo(pictured.height, 1);
+        expect(uploaded.radius).toBe(pictured.radius);
+        expect(uploaded.border).toBe(pictured.border);
+        for (const measured of [uploaded, pictured]) {
+          expect(measured.svgWidth).toBeCloseTo(measured.frameWidth, 1);
+          expect(measured.svgHeight).toBeCloseTo(measured.frameHeight, 1);
+          expect(measured.svgWidth).toBeGreaterThan(measured.width * 0.9);
+          expect(measured.svgHeight).toBeGreaterThan(measured.height * 0.9);
+        }
+        await upload.hover({ position: { x: 5, y: 5 } });
+        const uploadHover = await upload.evaluate(metrics);
+        await image
+          .locator("[data-card-image] > button")
+          .hover({ position: { x: 5, y: 5 } });
+        const imageHover = await image.evaluate(metrics);
+        expect(uploadHover.width).toBeCloseTo(imageHover.width, 1);
+        expect(uploadHover.height).toBeCloseTo(imageHover.height, 1);
+        expect(parseFloat(uploadHover.stroke)).toBeCloseTo(
+          parseFloat(imageHover.stroke),
+          3,
+        );
+        expect(parseFloat(uploadHover.frameRadius)).toBeCloseTo(
+          parseFloat(imageHover.frameRadius),
+          3,
+        );
+        for (const key of ["border", "radius", "dash", "mask"])
+          expect(uploadHover[key]).toBe(imageHover[key]);
+        expect(uploadHover.mask).toMatch(/radial-gradient/);
+      };
+      await compare(
+        picker.locator("[data-upload-tile]"),
+        picker.locator(".asset").first(),
+      );
+      if (shape === "portrait" && position === "above")
+        await page.screenshot({
+          path: testInfo.outputPath("upload-card-picker.png"),
+        });
+      await picker
+        .getByRole("button", { name: "Close dialog", exact: true })
+        .click();
+      await expect(picker).toHaveCount(0);
+      await compare(
+        page.locator("#asset-library [data-upload-tile]"),
+        page.locator("#asset-library .asset").first(),
+      );
+    }
+  }
+});
+
+test("touch cards toggle tools and drag moves swaps and cancels without opening picker", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 780, height: 1080 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("./");
+  const cells = page.locator(".grid-cell");
+  const imageButton = (index) => cells.nth(index).locator(".cell-image-button");
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await picker.locator("#picker-cell-upload").setInputFiles(
+    ["Touch A", "Touch B"].map((name, index) => ({
+      name: `${name}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="${index ? "#f26365" : "#40b4aa"}"/></svg>`,
+      ),
+    })),
+  );
+  await expect(picker).toHaveCount(0);
+  await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Touch A");
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch B");
+  const tools = cells
+    .nth(0)
+    .getByRole("group", { name: "Cell tools", exact: true });
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await expect(tools).toBeVisible();
+  await expect(picker).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      document.activeElement?.matches("input, textarea"),
+    ),
+  ).toBe(false);
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await expect(tools).toHaveCount(0);
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await tools.getByRole("button", { name: "Replace image", exact: true }).tap();
+  await expect(picker).toBeVisible();
+  await picker
+    .getByRole("button", { name: "Use Touch A", exact: true })
+    .tap({ position: { x: 5, y: 5 } });
+  await expect(picker).toHaveCount(0);
+  const session = await context.newCDPSession(page);
+  const drag = async (sourceIndex, targetIndex, cancel = false) => {
+    const source = await imageButton(sourceIndex).boundingBox();
+    const target = await imageButton(targetIndex).boundingBox();
+    const start = { x: source.x + 10, y: source.y + 10 };
+    const end = { x: target.x + 10, y: target.y + 10 };
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ ...start, id: 1 }],
+    });
+    for (let step = 1; step <= 8; step++) {
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: start.x + ((end.x - start.x) * step) / 8,
+            y: start.y + ((end.y - start.y) * step) / 8,
+            id: 1,
+          },
+        ],
+      });
+    }
+    await expect(page.locator("[data-drag-floating]")).toBeVisible();
+    await expect(cells.nth(targetIndex)).toHaveClass(/drag-over/);
+    await expect(
+      cells.nth(sourceIndex).locator("[data-card-content]"),
+    ).toHaveCSS("opacity", "0.35");
+    await session.send("Input.dispatchTouchEvent", {
+      type: cancel ? "touchCancel" : "touchEnd",
+      touchPoints: [],
+    });
+    await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
+    await expect(page.locator(".grid-cell.drag-over")).toHaveCount(0);
+    await expect(picker).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: "Cell tools", exact: true }),
+    ).toHaveCount(0);
+  };
+  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await drag(0, 2);
+  await expect(cells.nth(0).locator("img")).toHaveCount(0);
+  await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch A");
+  await drag(2, 1);
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
+  await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch B");
+  await drag(1, 0, true);
+  await expect(cells.nth(0).locator("img")).toHaveCount(0);
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
+  await imageButton(1).tap({ position: { x: 5, y: 5 } });
+  await expect(
+    cells.nth(1).getByRole("group", { name: "Cell tools", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("touch-card-tools.png") });
+  await session.detach();
+  await reloadWorkspace(page);
+  await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
+  await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch B");
+  await context.close();
+});
+
+test("mobile shelf remains toggle-only with fixed settings controls", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("./");
+  const drawer = page.locator("[data-editor-drawer]");
+  for (const width of [320, 390, 780]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(drawer.getByRole("button")).toHaveCount(1);
+    await expect
+      .poll(async () => (await drawer.boundingBox()).height)
+      .toBeLessThanOrEqual(72);
+    const expand = drawer.getByRole("button", {
+      name: "Expand tools",
+      exact: true,
+    });
+    await expect(expand).toHaveCSS("border-bottom-left-radius", "0px");
+    await expect(expand).toHaveCSS("border-top-left-radius", "6px");
+    await expect(expand).toHaveCSS("border-bottom-width", "0px");
+    const beforeToggle = await expand.boundingBox();
+    expect(beforeToggle.width).toBe(160);
+    const shelfBorder = await drawer
+      .locator("[data-shelf-body]")
+      .evaluate((element) => getComputedStyle(element).borderTopColor);
+    await expand.hover();
+    await expect(expand).toHaveCSS("border-top-color", shelfBorder);
+    await expect(expand).toHaveCSS("border-left-color", shelfBorder);
+    await expect(expand).toHaveCSS("border-right-color", shelfBorder);
+    await expect(expand).toHaveCSS("color", "rgb(216, 243, 106)");
+    await expect
+      .poll(async () => {
+        const bounds = await expand.boundingBox();
+        return Math.abs(bounds.y + bounds.height - 844);
+      })
+      .toBeLessThan(1);
+    await expect
+      .poll(async () => {
+        const area = await page.locator(".canvas-area").boundingBox();
+        const toolbar = await page
+          .getByRole("toolbar", { name: "Grid appearance" })
+          .boundingBox();
+        const frame = await page.locator("[data-resize-frame]").boundingBox();
+        return Math.abs(
+          (toolbar.y + frame.y + frame.height) / 2 - area.y - area.height / 2,
+        );
+      })
+      .toBeLessThan(1);
+    await drawer
+      .getByRole("button", { name: "Expand tools", exact: true })
+      .tap();
+    await expect(
+      drawer.locator(".asset-panel, .asset-library, img"),
+    ).toHaveCount(0);
+    await expect(
+      drawer.getByRole("group", { name: "Card style", exact: true }),
+    ).toBeVisible();
+    const collapse = drawer.getByRole("button", {
+      name: "Collapse tools",
+      exact: true,
+    });
+    await expect(collapse).toHaveCSS("border-bottom-width", "0px");
+    await expect(collapse).toHaveCSS("border-top-left-radius", "6px");
+    await collapse.hover();
+    await expect(collapse).toHaveCSS("border-top-color", shelfBorder);
+    await expect(collapse).toHaveCSS("border-left-color", shelfBorder);
+    await expect(collapse).toHaveCSS("border-right-color", shelfBorder);
+    await expect
+      .poll(async () => {
+        const toggle = await collapse.boundingBox();
+        const body = await drawer.locator("[data-shelf-body]").boundingBox();
+        return Math.abs(toggle.y + toggle.height - body.y - 1);
+      })
+      .toBeLessThan(1);
+    const openToggle = await collapse.boundingBox();
+    expect(openToggle.x).toBeCloseTo(beforeToggle.x, 1);
+    expect(openToggle.width).toBe(beforeToggle.width);
+    expect(openToggle.height).toBe(beforeToggle.height);
+    const panel = drawer.locator("[data-shelf-body] > div");
+    await panel.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect
+      .poll(() => panel.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    const scrolledToggle = await collapse.boundingBox();
+    expect(scrolledToggle.y).toBeCloseTo(openToggle.y, 1);
+    if (width === 390)
+      await page.screenshot({
+        path: testInfo.outputPath("shelf-expanded-mobile.png"),
+      });
+    await collapse.tap();
+    await expect(drawer.getByRole("button")).toHaveCount(1);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("shelf-collapsed-mobile.png"),
+  });
+  await context.close();
+});
+
+test("inset hover and focus surfaces keep visibly rounded corners", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "Rounded.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="white"/></svg>',
+    ),
+  });
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").first());
+  await page
+    .getByRole("group", { name: "Card style", exact: true })
+    .getByRole("textbox", { name: "Background hex value", exact: true })
+    .fill("#ffffff");
+  for (const width of [1440, 1900]) {
+    await page.setViewportSize({ width, height: 1080 });
+    for (const selector of [".grid-cell", ".asset"]) {
+      const card = page.locator(selector).first();
+      const image = card.locator("[data-card-image] > button");
+      await image.hover({ position: { x: 5, y: 5 } });
+      for (const state of ["hover", "focus"]) {
+        if (state === "focus") {
+          await page.mouse.move(0, 0);
+          await image.focus();
+          await image.press("Tab");
+          await page.keyboard.press("Shift+Tab");
+        }
+        await expect(card.locator("[data-card-content]")).toHaveCSS(
+          "mask-image",
+          /radial-gradient/,
+        );
+        const metrics = await card.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const surface = element.querySelector("[data-card-content]");
+          const content = surface.getBoundingClientRect();
+          const style = getComputedStyle(surface);
+          const radius = parseFloat(style.maskSize) / 2;
+          const inset = parseFloat(style.maskPosition);
+          return {
+            radius,
+            expectedRadius:
+              parseFloat(getComputedStyle(element).borderTopLeftRadius) - 1,
+            x: content.x - bounds.x + inset,
+            y: content.y - bounds.y + inset,
+            right: content.right - bounds.x - inset,
+            bottom: content.bottom - bounds.y - inset,
+          };
+        });
+        expect(metrics.radius).toBeCloseTo(metrics.expectedRadius, 1);
+        expect(metrics.radius).toBeGreaterThanOrEqual(10);
+        const bytes = await card.screenshot();
+        const pixels = await page.evaluate(
+          async ({ base64, metrics }) => {
+            const response = await fetch(`data:image/png;base64,${base64}`);
+            const bitmap = await createImageBitmap(await response.blob());
+            const canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext("2d");
+            context.drawImage(bitmap, 0, 0);
+            bitmap.close();
+            const pixel = (x, y) => [
+              ...context.getImageData(Math.round(x), Math.round(y), 1, 1).data,
+            ];
+            return {
+              corners: [
+                pixel(metrics.x + 2, metrics.y + 2),
+                pixel(metrics.right - 3, metrics.y + 2),
+                pixel(metrics.x + 2, metrics.bottom - 3),
+                pixel(metrics.right - 3, metrics.bottom - 3),
+              ],
+              top: pixel((metrics.x + metrics.right) / 2, metrics.y + 2),
+            };
+          },
+          { base64: bytes.toString("base64"), metrics },
+        );
+        for (const pixel of pixels.corners)
+          expect(Math.max(...pixel.slice(0, 3))).toBeLessThan(100);
+        expect(Math.min(...pixels.top.slice(0, 3))).toBeGreaterThan(240);
+      }
+      if (width === 1440)
+        await card.screenshot({
+          path: testInfo.outputPath(`rounded-${selector.slice(1)}.png`),
+        });
+    }
+  }
 });

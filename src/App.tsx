@@ -16,7 +16,6 @@ import {
   ImagePlus,
   Trash2,
   RefreshCw,
-  LoaderCircle,
   RectangleVertical,
   RectangleHorizontal,
   Square,
@@ -25,7 +24,7 @@ import {
   PanelTopDashed,
   PanelBottomDashed,
 } from "lucide-react";
-import { Tab, TabGroup, TabList } from "@headlessui/react";
+import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import { Button, ColorField, SelectField } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer } from "./components/GridResizer";
@@ -36,6 +35,8 @@ import {
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
 import { LibraryImage } from "./components/LibraryImage";
+import { UploadTile } from "./components/UploadTile";
+import { ImageTabs } from "./components/ui/ImageTabs";
 import {
   fontOptions,
   fontWeightOptions,
@@ -64,6 +65,11 @@ import {
   sharedCaptionRows,
 } from "./export";
 import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
+
+const previewCardMinWidth = 128;
+const previewCardMaxWidth = 320;
+const pickerGridClassName =
+  "tw:grid tw:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] tw:gap-4 tw:[&>*]:max-w-(--picker-card-max-width)";
 
 function BoardHeading({
   board,
@@ -207,6 +213,9 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
+  const closeImagePicker = () => {
+    setImageTarget(null);
+  };
   const imageReturnFocus = useRef<HTMLButtonElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const addImagesButton = useRef<HTMLButtonElement>(null);
@@ -328,9 +337,9 @@ export default function App() {
         ? viewport.offsetWidth - viewport.clientWidth
         : 0;
       const cellWidth = Math.max(
-        128,
+        previewCardMinWidth,
         Math.min(
-          320,
+          previewCardMaxWidth,
           (availableWidth - scrollbarWidth) / widthRatio,
           availableHeight / heightRatio,
         ),
@@ -625,6 +634,50 @@ export default function App() {
       );
     }
   };
+  const touchDrag = (
+    source: CardDragSource,
+    visual: CardDragVisual,
+    finished: boolean,
+    cancelled: boolean,
+  ) => {
+    const targetId =
+      document
+        .elementFromPoint(visual.x, visual.y)
+        ?.closest(".grid-cell")
+        ?.getAttribute("data-cell-id") ?? null;
+    const validTarget = board.cells.some((cell) => cell.id === targetId);
+    if (finished || cancelled) {
+      setCardDrag(null);
+      if (!cancelled && validTarget && source.kind === "asset") {
+        placeAsset(source.assetId, targetId!);
+        if (imageTarget) closeImagePicker();
+      }
+      if (
+        !cancelled &&
+        validTarget &&
+        source.kind === "cell" &&
+        source.gridId === board.id &&
+        source.cellId !== targetId &&
+        board.cells.some((cell) => cell.id === source.cellId)
+      ) {
+        dispatchDocument({
+          type: "cell/swap",
+          gridId: board.id,
+          sourceCellId: source.cellId,
+          targetCellId: targetId!,
+        });
+      }
+      return;
+    }
+    setCardDrag({
+      source,
+      visual,
+      targetId:
+        validTarget && (source.kind === "asset" || source.cellId !== targetId)
+          ? targetId
+          : null,
+    });
+  };
   const drop = (event: DragEvent<HTMLDivElement>, index: number) => {
     event.preventDefault();
     setCardDrag(null);
@@ -815,69 +868,33 @@ export default function App() {
               >
                 <div className="tw:mb-1 tw:flex tw:items-center tw:justify-between tw:gap-2">
                   <TabGroup>
-                    <TabList
-                      className="tw:flex tw:overflow-hidden tw:rounded-[4px] tw:border tw:border-solid tw:border-(--line)"
-                      aria-label="Image source"
-                    >
-                      <Tab className="tw:min-h-[44px] tw:border-0 tw:border-r tw:border-solid tw:border-(--line) tw:bg-transparent tw:px-3 tw:text-(--muted) tw:data-selected:bg-(--line) tw:data-selected:text-(--accent) tw:focus-visible:outline-2 tw:focus-visible:outline-(--accent) tw:focus-visible:-outline-offset-2!">
-                        Imported
-                      </Tab>
-                      <Tab
-                        className="tw:min-h-[44px] tw:border-0 tw:bg-transparent tw:px-3 tw:text-(--muted) tw:disabled:cursor-default tw:disabled:opacity-50"
-                        disabled
-                        title="Online providers are not available yet"
-                      >
-                        Online
-                      </Tab>
-                    </TabList>
+                    <ImageTabs
+                      label="Image source"
+                      tabs={[
+                        { label: "Imported" },
+                        {
+                          label: "Online",
+                          disabled: true,
+                          title: "Online providers are not available yet",
+                        },
+                      ]}
+                    />
                   </TabGroup>
                   {drawerToggle}
                 </div>
                 <div id="asset-library" className="asset-library">
-                  <button
+                  <UploadTile
                     ref={addImagesButton}
-                    data-upload-tile
-                    type="button"
-                    aria-label="Add images"
-                    disabled={importProgress !== null}
-                    title="Add or drop images"
-                    className={`image-frame tw:@container tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-0 tw:rounded-[4px] tw:border-0 tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:[&_svg]:size-[18cqw]! tw:focus-visible:[--frame-color:var(--accent)] tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:[--frame-color:var(--accent)] ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                    progress={importProgress}
+                    gridStyle={board}
+                    captionRows={captionRows}
+                    className="tw:self-start tw:w-full tw:max-[900px]:w-[82px]"
                     onClick={() => document.getElementById("upload")?.click()}
-                  >
-                    <span className="tw:flex tw:flex-col tw:items-center tw:gap-[3cqw]">
-                      {importProgress ? (
-                        <>
-                          <LoaderCircle
-                            aria-hidden="true"
-                            className="tw:animate-spin tw:motion-reduce:animate-none"
-                          />
-                          <span
-                            role="status"
-                            aria-live="polite"
-                            className="tw:flex tw:flex-col tw:items-center tw:gap-[3cqw]"
-                          >
-                            <span className="tw:text-[8.5cqw]">
-                              Importing...
-                            </span>
-                            <span className="tw:text-[7cqw]">
-                              {importProgress.completed} /{" "}
-                              {importProgress.total}
-                            </span>
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <ImagePlus aria-hidden="true" />
-                          <span data-upload-label className="tw:text-[8.5cqw]">
-                            Add images
-                          </span>
-                          <span data-upload-label className="tw:text-[7cqw]">
-                            Drop here
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </button>
+                    onDropFiles={(files) => {
+                      setLibraryDragOver(false);
+                      void importFiles(files);
+                    }}
+                  />
                   {activeAssets.map((asset) => (
                     <LibraryImage
                       key={asset.id}
@@ -903,6 +920,7 @@ export default function App() {
                       onMoveStart={(source, visual) =>
                         setCardDrag({ source, visual, targetId: null })
                       }
+                      onTouchDrag={touchDrag}
                       onDelete={() => deleteImages([asset.id])}
                     />
                   ))}
@@ -956,11 +974,11 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              <div className="canvas-area tw:m-0! tw:min-h-0 tw:w-full tw:flex-1 tw:p-[12px]! tw:max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
+              <div className="canvas-area tw:m-0! tw:flex tw:min-h-0 tw:w-full tw:flex-1 tw:flex-col tw:justify-center tw:p-[12px]! tw:max-[900px]:pr-[calc(12px+var(--native-scrollbar-width,0px))]!">
                 <div
                   role="toolbar"
                   aria-label="Grid appearance"
-                  className="tw:mx-auto tw:mb-3 tw:grid tw:max-w-full tw:grid-cols-[44px_minmax(0,1fr)_44px] tw:items-start tw:gap-[8px]"
+                  className="tw:mx-auto tw:mb-3 tw:grid tw:max-w-full tw:shrink-0 tw:grid-cols-[44px_minmax(0,1fr)_44px] tw:items-start tw:gap-[8px]"
                   style={{ width: previewSize?.width }}
                 >
                   {canvasActions}
@@ -1065,6 +1083,7 @@ export default function App() {
                     {
                       width: previewSize?.width,
                       height: previewSize?.frameHeight,
+                      flexShrink: 0,
                       "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
                       "--preview-scrollbar-width": `${-(previewSize?.rowOffset ?? 0) * 2}px`,
                       "--grid-top-padding": "0px",
@@ -1138,6 +1157,7 @@ export default function App() {
                             onMoveStart={(source, visual) =>
                               setCardDrag({ source, visual, targetId: null })
                             }
+                            onTouchDrag={touchDrag}
                             onMoveOver={() =>
                               setCardDrag((current) =>
                                 current && current.targetId !== item.id
@@ -1629,47 +1649,98 @@ export default function App() {
       </Modal>
       <Modal
         open={imageTarget !== null}
-        onClose={() => setImageTarget(null)}
+        onClose={closeImagePicker}
         title="Choose image"
         returnFocus={imageReturnFocus}
+        size="wide"
       >
-        <div className="tw:grid tw:grid-cols-3 tw:gap-3">
-          {activeAssets.map((asset) => (
-            <button
-              key={asset.id}
-              className="tw:min-w-0 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left"
-              aria-label={`Use ${asset.title}`}
-              onClick={() => {
-                if (imageTarget) placeAsset(asset.id, imageTarget);
-                setImageTarget(null);
-              }}
-            >
-              <img
-                src={asset.src}
-                alt=""
-                className="tw:aspect-square tw:w-full tw:object-contain"
+        <TabGroup
+          style={
+            {
+              "--picker-card-min-width": `${previewCardMinWidth}px`,
+              "--picker-card-max-width": `${previewCardMaxWidth}px`,
+            } as CSSProperties
+          }
+        >
+          <div className="tw:mb-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+            <ImageTabs
+              label="Image source"
+              tabs={[
+                { label: "Imported" },
+                {
+                  label: "Online",
+                  disabled: true,
+                  title: "Online providers are not available yet",
+                },
+              ]}
+            />
+          </div>
+          <TabPanels>
+            <TabPanel>
+              <div className={pickerGridClassName}>
+                <UploadTile
+                  progress={importProgress}
+                  gridStyle={board}
+                  captionRows={captionRows}
+                  onClick={() =>
+                    document.getElementById("picker-cell-upload")?.click()
+                  }
+                  onDropFiles={(files) => {
+                    void importFiles(files, imageTarget);
+                    closeImagePicker();
+                  }}
+                />
+                {activeAssets.map((asset) => (
+                  <LibraryImage
+                    key={asset.id}
+                    className=""
+                    asset={asset}
+                    cell={board.cells.find((cell) => cell.assetId === asset.id)}
+                    gridStyle={board}
+                    captionRows={captionRows}
+                    disabled={false}
+                    onTitle={(title) =>
+                      dispatchDocument({
+                        type: "asset/title",
+                        assetId: asset.id,
+                        title,
+                      })
+                    }
+                    onDelete={() => deleteImages([asset.id])}
+                    onSelect={() => {
+                      if (imageTarget) placeAsset(asset.id, imageTarget);
+                      closeImagePicker();
+                    }}
+                  />
+                ))}
+              </div>
+              <input
+                id="picker-cell-upload"
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  if (!event.currentTarget.files?.length) return;
+                  void upload(event, imageTarget);
+                  closeImagePicker();
+                }}
               />
-              <span className="tw:block tw:break-words tw:text-xs">
-                {asset.title}
-              </span>
-            </button>
-          ))}
-        </div>
-        {activeAssets.length === 0 && <p>No images yet.</p>}
-        <div className="tw:mt-5 tw:flex tw:justify-end tw:gap-2">
-          <Button onClick={() => setImageTarget(null)}>Cancel</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              uploadTarget.current = imageTarget;
-              setImageTarget(null);
-              replaceUpload.current?.click();
-            }}
-          >
-            <ImagePlus aria-hidden="true" />
-            Upload image
-          </Button>
-        </div>
+              {activeAssets.length === 0 && <p>No images yet.</p>}
+              {activeAssets.length > 0 && (
+                <Button
+                  className="tw:mt-2 tw:min-h-[44px] tw:w-full"
+                  onClick={() =>
+                    deleteImages(activeAssets.map((asset) => asset.id))
+                  }
+                >
+                  <Trash2 aria-hidden="true" />
+                  Clear all images
+                </Button>
+              )}
+            </TabPanel>
+          </TabPanels>
+        </TabGroup>
       </Modal>
       <Modal
         open={reloadOpen}

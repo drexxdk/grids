@@ -10,8 +10,11 @@ export function LibraryImage({
   onTitle,
   captionRows,
   onMoveStart,
+  onTouchDrag,
   moving,
   dragAffected,
+  onSelect,
+  className = "tw:max-[900px]:w-[82px] tw:max-[900px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;
@@ -21,14 +24,19 @@ export function LibraryImage({
   onTitle: (title: string) => void;
   captionRows: number;
   onMoveStart?: (source: CardDragSource, visual: CardDragVisual) => void;
+  onTouchDrag?: (
+    source: CardDragSource,
+    visual: CardDragVisual,
+    finished: boolean,
+    cancelled: boolean,
+  ) => void;
   moving?: boolean;
   dragAffected?: boolean;
+  onSelect?: () => void;
+  className?: string;
 }) {
   return (
-    <div
-      data-library-image
-      className="tw:relative tw:min-w-0 tw:max-[900px]:w-[82px] tw:max-[900px]:shrink-0"
-    >
+    <div data-library-image className={`tw:relative tw:min-w-0 ${className}`}>
       <GridCell
         cell={
           cell ?? {
@@ -52,8 +60,9 @@ export function LibraryImage({
         onChoose={() => {}}
         onUpload={() => {}}
         onDrop={(event) => event.preventDefault()}
-        library={{ onDelete, disabled }}
+        library={{ onDelete, disabled, onSelect }}
         onMoveStart={onMoveStart}
+        onTouchDrag={onTouchDrag}
         moving={moving}
         dragAffected={dragAffected}
         dragSource={dragAffected}

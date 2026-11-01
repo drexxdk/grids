@@ -87,41 +87,43 @@ export function EditorLayout({
         initial={{ y: reduced ? 0 : 160 }}
         animate={{ y: 0 }}
         motionTransition={{ duration: reduced ? 0 : 0.18 }}
-        className="tw:fixed tw:left-0 tw:bottom-0 tw:z-40 tw:w-[var(--viewport-width,100vw)] tw:max-h-[80dvh] tw:overflow-x-hidden tw:overflow-y-auto tw:overscroll-contain tw:[scrollbar-gutter:stable] tw:border tw:border-b-0 tw:border-solid tw:border-(--line) tw:bg-(--panel) tw:shadow-xl"
+        className="tw:pointer-events-none tw:fixed tw:left-0 tw:bottom-0 tw:z-40 tw:w-[var(--viewport-width,100vw)] tw:border-0 tw:bg-transparent"
       >
         {({ open }) => (
           <>
-            <div
-              className={`tw:[&_.asset-panel]:border-0! tw:[&_.asset-panel]:p-[8px]! tw:[&_.section-heading]:hidden! tw:[&_.asset-library]:flex! tw:[&_.asset-library]:overflow-x-auto tw:[&_.asset-library]:overflow-y-hidden tw:[&_.asset-library]:py-[4px]! ${open ? "" : "tw:[&_.asset-panel]:pb-0! tw:[&_.asset-library]:mx-[-8px]! tw:[&_.asset-library]:px-[8px]! tw:[&_.asset-library]:pb-[max(4px,env(safe-area-inset-bottom))]! tw:[&_.asset-category]:hidden! tw:[&_[data-upload-label]]:hidden! tw:[&_[data-library-image]]:w-[64px]! tw:[&_[data-upload-tile]]:w-[64px]! tw:[&_[data-upload-tile]]:h-[64px]! tw:[&_[data-upload-tile]]:min-h-0!"}`}
-            >
-              {library(
-                <DisclosureButton
-                  as={Button}
-                  className="tw:min-h-[44px] tw:shrink-0 tw:rounded-[4px]! tw:focus-visible:-outline-offset-2"
-                  aria-label={open ? "Collapse tools" : "Expand tools"}
-                >
-                  {open ? (
-                    <ChevronDown aria-hidden="true" />
-                  ) : (
-                    <ChevronUp aria-hidden="true" />
-                  )}
-                  {open ? "Collapse tools" : "Expand tools"}
-                </DisclosureButton>,
-                open,
-              )}
+            <div className="tw:relative tw:z-10 tw:flex tw:justify-center">
+              <DisclosureButton
+                as={Button}
+                className="tw:pointer-events-auto tw:min-h-[44px] tw:w-[160px] tw:shrink-0 tw:translate-y-px tw:rounded-t-[6px]! tw:rounded-b-none! tw:border-b-0! tw:bg-(--panel)! tw:enabled:hover:border-(--line)! tw:enabled:hover:text-(--accent) tw:focus-visible:-outline-offset-2"
+                aria-label={open ? "Collapse tools" : "Expand tools"}
+              >
+                {open ? (
+                  <ChevronDown aria-hidden="true" />
+                ) : (
+                  <ChevronUp aria-hidden="true" />
+                )}
+                {open ? "Collapse tools" : "Expand tools"}
+              </DisclosureButton>
             </div>
-            <DisclosurePanel
-              static
-              as={MotionDiv}
-              inert={!open}
-              aria-hidden={!open}
-              initial={false}
-              animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-              motionTransition={{ duration: reduced ? 0 : 0.18 }}
-              className={`tw:overflow-hidden tw:[&_.settings-panel]:p-3! ${open ? "tw:pb-[env(safe-area-inset-bottom)]" : ""}`}
+            <div
+              data-shelf-body
+              className="tw:pointer-events-auto tw:border tw:border-b-0 tw:border-solid tw:border-(--line) tw:bg-(--panel)"
             >
-              {settings(null)}
-            </DisclosurePanel>
+              <DisclosurePanel
+                static
+                as={MotionDiv}
+                inert={!open}
+                aria-hidden={!open}
+                initial={false}
+                animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
+                motionTransition={{ duration: reduced ? 0 : 0.18 }}
+                className="tw:max-h-[calc(80dvh-44px)] tw:overflow-x-hidden tw:overflow-y-auto tw:overscroll-contain tw:[scrollbar-gutter:stable] tw:[&_.settings-panel]:p-3!"
+              >
+                <div className="tw:pb-[env(safe-area-inset-bottom)]">
+                  {settings(null)}
+                </div>
+              </DisclosurePanel>
+            </div>
           </>
         )}
       </Disclosure>

@@ -399,6 +399,9 @@ h2 {
 }
 .workspace {
   min-width: 0;
+}
+.workspace,
+.app-layout:has([data-editor-drawer]) {
   background: radial-gradient(#34383a 0.6px, transparent 0.6px);
   background-size: 12px 12px;
   background-color: #121415;
@@ -503,7 +506,9 @@ h1 {
   --card-radius: var(--board-item-radius);
   --card-frame-edge: 0.25cqw;
   --card-frame-stroke: 0.5cqw;
-  --card-frame-gap: 1cqw;
+  --card-frame-gap: clamp(6px, 3cqw, 12px);
+  --card-frame-dash: clamp(3px, 1.5cqw, 6px);
+  --card-frame-dash-gap: clamp(4px, 2cqw, 8px);
   --card-drop-stroke: 1cqw;
 }
 .grid-cell {
@@ -519,6 +524,7 @@ h1 {
   z-index: 1;
 }
 .image-card[data-image-hovered]:not([data-drag-source]),
+.image-card[data-upload-tile]:focus-visible,
 .image-card:not([data-drag-source]):has([data-card-image] button:focus-visible),
 .image-card[data-drag-affected]:not([data-drag-source]),
 .grid-cell.drag-over {
@@ -526,16 +532,14 @@ h1 {
   border-color: transparent !important;
 }
 .image-card[data-image-hovered]:not([data-drag-source]) > [data-card-content],
+.image-card[data-upload-tile]:focus-visible > [data-card-content],
 .image-card:not([data-drag-source]):has([data-card-image] button:focus-visible)
   > [data-card-content],
 .image-card[data-drag-affected]:not([data-drag-source]) > [data-card-content] {
   --card-paint-inset: calc(
     var(--card-frame-edge) + var(--card-frame-stroke) + var(--card-frame-gap)
   );
-  --card-surface-radius: max(
-    0.01px,
-    calc(var(--card-radius) - 1px - var(--card-paint-inset))
-  );
+  --card-surface-radius: calc(var(--card-radius) - 1px);
   --card-corner-mask: radial-gradient(
     circle closest-side,
     #000 calc(100% - 0.5px),

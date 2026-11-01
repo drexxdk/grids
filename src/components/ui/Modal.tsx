@@ -34,6 +34,7 @@ export function Modal({
   returnFocus,
   children,
   fullscreen = false,
+  size = "compact",
   onExited,
 }: {
   open: boolean;
@@ -43,6 +44,7 @@ export function Modal({
   returnFocus: RefObject<HTMLButtonElement | null>;
   children: ReactNode;
   fullscreen?: boolean;
+  size?: "compact" | "wide";
   onExited?: () => void;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -83,7 +85,7 @@ export function Modal({
                 className={
                   fullscreen
                     ? "tw:flex tw:h-dvh tw:w-full tw:flex-col tw:bg-(--panel)"
-                    : "tw:w-full tw:max-w-md tw:rounded-lg tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-5 tw:shadow-xl"
+                    : `tw:w-full ${size === "wide" ? "tw:max-w-[800px]" : "tw:max-w-md"} tw:rounded-lg tw:border tw:border-solid tw:border-[var(--line)] tw:bg-[var(--panel)] tw:p-5 tw:shadow-xl`
                 }
               >
                 <InitialTouchFocus target={closeButton} enabled={touch} />
