@@ -33,7 +33,7 @@ import {
   SelectField,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
-import { GridResizer } from "./components/GridResizer";
+import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
   GridCell,
   type CardDragSource,
@@ -310,8 +310,7 @@ export default function App() {
       const availableWidth =
         container.clientWidth -
         parseFloat(padding.paddingLeft) -
-        parseFloat(padding.paddingRight) -
-        104;
+        parseFloat(padding.paddingRight);
       const toolbar = frame.previousElementSibling;
       const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
       const toolbarHeight = toolbar
@@ -325,7 +324,6 @@ export default function App() {
           parseFloat(padding.paddingTop) -
           parseFloat(padding.paddingBottom) -
           toolbarHeight -
-          52 -
           1,
       );
       const {
@@ -374,11 +372,9 @@ export default function App() {
         ),
       );
       const next = {
-        width: viewportWidth + 104,
+        width: viewportWidth,
         frameHeight:
-          height +
-          cellWidth * (headingRatio + headingGapRatio + paddingRatio) +
-          52,
+          height + cellWidth * (headingRatio + headingGapRatio + paddingRatio),
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
         height,
@@ -811,6 +807,24 @@ export default function App() {
     <>
       <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
+          canvasControls={
+            <>
+              <GridResizeControls
+                rows={board.rows}
+                columns={board.columns}
+                onResize={resize}
+              />
+              <Button
+                ref={resetGridButton}
+                variant="icon"
+                aria-label={t("editor.reset.title")}
+                title={t("editor.reset.title")}
+                onClick={() => setResetGridOpen(true)}
+              >
+                <RotateCcw aria-hidden="true" className="size-5!" />
+              </Button>
+            </>
+          }
           status={
             <span
               id="save-status"
@@ -989,17 +1003,6 @@ export default function App() {
                     viewportHeight={previewSize?.height}
                     previewWidth={previewSize?.previewWidth}
                     onOverflowChange={setCanvasOverflow}
-                    cornerAction={
-                      <Button
-                        ref={resetGridButton}
-                        variant="icon"
-                        aria-label={t("editor.reset.title")}
-                        title={t("editor.reset.title")}
-                        onClick={() => setResetGridOpen(true)}
-                      >
-                        <RotateCcw aria-hidden="true" className="size-5!" />
-                      </Button>
-                    }
                     heading={
                       <BoardHeading
                         board={board}
@@ -1013,7 +1016,6 @@ export default function App() {
                         width: previewSize?.width,
                         height: previewSize?.frameHeight,
                         flexShrink: 0,
-                        "--row-control-offset": `${previewSize?.rowOffset ?? 0}px`,
                         "--preview-scrollbar-width": `${-(previewSize?.rowOffset ?? 0) * 2}px`,
                         "--grid-top-padding": "0px",
                         maxWidth: "100%",
@@ -1032,9 +1034,6 @@ export default function App() {
                           board.headingTextColor ?? palette.text,
                       } as CSSProperties
                     }
-                    rows={board.rows}
-                    columns={board.columns}
-                    onResize={resize}
                   >
                     <div
                       id="board-grid"

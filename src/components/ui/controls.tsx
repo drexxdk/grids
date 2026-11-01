@@ -223,7 +223,7 @@ export function SelectField({
             : undefined
         }
         className={clsx(
-          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left data-hover:border-(--accent)",
+          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left data-hover:border-(--accent) focus-visible:-outline-offset-3!",
           largeFontPreview && "py-0!",
           compact && "h-11 px-2! py-0!",
         )}

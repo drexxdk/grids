@@ -1,5 +1,4 @@
 import { t } from "../i18n";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import {
   useLayoutEffect,
   useRef,
@@ -16,11 +15,7 @@ export function GridResizer({
   viewportHeight,
   previewWidth,
   onOverflowChange,
-  cornerAction,
   heading,
-  rows,
-  columns,
-  onResize,
   children,
 }: {
   ref?: Ref<HTMLDivElement>;
@@ -28,24 +23,17 @@ export function GridResizer({
   viewportHeight?: number;
   previewWidth?: number;
   onOverflowChange?: (size: { width: number; height: number }) => void;
-  cornerAction?: ReactNode;
   heading?: ReactNode;
-  rows: number;
-  columns: number;
-  onResize: (dimension: "rows" | "columns", value: number) => void;
   children: ReactNode;
 }) {
-  const dimensions = { rows, columns };
   const contentRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const columnControlsRef = useRef<HTMLDivElement>(null);
   const overflowRef = useRef({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const content = contentRef.current;
     const viewport = viewportRef.current;
-    const controls = columnControlsRef.current;
     const area = content?.parentElement;
-    if (!content || !viewport || !controls || !area) return;
+    if (!content || !viewport || !area) return;
     const workspace = viewport.closest<HTMLElement>("[data-workspace-scroll]");
     const syncedViewport = {
       left: viewport.scrollLeft,
@@ -70,12 +58,6 @@ export function GridResizer({
       }
     };
     const update = () => {
-      const grid = viewport.getBoundingClientRect();
-      const frame = area.getBoundingClientRect();
-      controls.style.setProperty(
-        "--column-control-offset",
-        `${grid.top + viewport.clientHeight / 2 - frame.top - frame.height / 2}px`,
-      );
       const overflow = {
         width: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
         height: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
@@ -109,99 +91,126 @@ export function GridResizer({
       ref={ref}
       style={style}
       data-resize-frame
-      className="grid grid-cols-[44px_minmax(0,1fr)_44px] grid-rows-[minmax(0,1fr)_44px] gap-2"
+      className="flex min-h-0 min-w-0 items-center justify-center"
     >
-      <div className="col-start-2 row-start-1 flex min-h-0 min-w-0 items-center justify-center">
-        <div
-          ref={contentRef}
-          data-preview-content
-          style={{
-            width: previewWidth,
-            maxWidth: "100%",
-            paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
-          }}
-          className="relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container"
-        >
-          <span
-            aria-hidden="true"
-            data-image-canvas-background
-            className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
-          />
-          {heading && (
-            <div className="overflow-hidden px-(--canvas-inset,0px)">
-              {heading}
-            </div>
-          )}
-          <div
-            ref={viewportRef}
-            data-canvas-viewport
-            className="min-w-0 overflow-hidden"
-            style={{ height: viewportHeight }}
-          >
-            {children}
+      <div
+        ref={contentRef}
+        data-preview-content
+        style={{
+          width: previewWidth,
+          maxWidth: "100%",
+          paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
+        }}
+        className="relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container"
+      >
+        <span
+          aria-hidden="true"
+          data-image-canvas-background
+          className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
+        />
+        {heading && (
+          <div className="overflow-hidden px-(--canvas-inset,0px)">
+            {heading}
           </div>
+        )}
+        <div
+          ref={viewportRef}
+          data-canvas-viewport
+          className="min-w-0 overflow-hidden"
+          style={{ height: viewportHeight }}
+        >
+          {children}
         </div>
       </div>
-      {(["columns", "rows"] as const).map((dimension) => (
-        <div
-          key={dimension}
-          ref={dimension === "columns" ? columnControlsRef : undefined}
-          className={
-            dimension === "columns"
-              ? "pointer-events-none col-start-3 row-start-1 flex items-center justify-center translate-y-(--column-control-offset,0px)"
-              : "col-start-2 row-start-2 flex items-center justify-center translate-x-(--row-control-offset,0px)"
-          }
-        >
-          <ButtonGroup
-            className="pointer-events-auto"
-            label={
-              dimension === "columns"
-                ? t("editor.resize.columns")
-                : t("editor.resize.rows")
-            }
-            orientation={dimension === "columns" ? "vertical" : "horizontal"}
-          >
-            {(dimension === "columns" ? [1, -1] : [-1, 1]).map((change) => {
-              const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
-              const limited =
-                change > 0
-                  ? dimensions[dimension] >= gridLimit
-                  : dimensions[dimension] <= 1;
-              const limit =
-                change > 0
-                  ? `Maximum ${gridLimit} ${dimension}`
-                  : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
-              const Arrow =
-                dimension === "columns"
-                  ? change > 0
-                    ? ArrowRight
-                    : ArrowLeft
-                  : change > 0
-                    ? ArrowDown
-                    : ArrowUp;
-              return (
-                <Button
-                  key={change}
-                  variant="icon"
-                  aria-label={label}
-                  title={limited ? limit : label}
-                  disabled={limited}
-                  onClick={() =>
-                    onResize(dimension, dimensions[dimension] + change)
-                  }
-                >
-                  <Arrow aria-hidden="true" className="size-5.5!" />
-                </Button>
-              );
-            })}
-          </ButtonGroup>
-        </div>
-      ))}
-      {cornerAction && (
-        <div className="col-start-3 row-start-2 flex items-center justify-center">
-          {cornerAction}
-        </div>
-      )}
     </div>
+  );
+}
+
+export function GridResizeControls({
+  rows,
+  columns,
+  onResize,
+}: {
+  rows: number;
+  columns: number;
+  onResize: (dimension: "rows" | "columns", value: number) => void;
+}) {
+  const dimensions = { rows, columns };
+  return (
+    <>
+      {(["columns", "rows"] as const).map((dimension) => (
+        <ButtonGroup
+          key={dimension}
+          label={
+            dimension === "columns"
+              ? t("editor.resize.columns")
+              : t("editor.resize.rows")
+          }
+          orientation="horizontal"
+          className="[&>button[data-resize-action]]:bg-(--resize-color)/15! [&>button[data-resize-action]:enabled:hover]:bg-(--resize-color)/25!"
+        >
+          {[-1, 1].map((change) => {
+            const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
+            const limited =
+              change > 0
+                ? dimensions[dimension] >= gridLimit
+                : dimensions[dimension] <= 1;
+            const limit =
+              change > 0
+                ? `Maximum ${gridLimit} ${dimension}`
+                : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
+            return (
+              <Button
+                key={change}
+                variant="icon"
+                aria-label={label}
+                title={limited ? limit : label}
+                data-resize-action={change > 0 ? "add" : "remove"}
+                className="border-(--resize-color)/60! text-(--resize-color)! enabled:hover:border-(--resize-color)! focus-visible:outline-(--resize-color)!"
+                style={
+                  {
+                    "--resize-color": change > 0 ? "#80cab1" : "#ff7f87",
+                  } as CSSProperties
+                }
+                disabled={limited}
+                onClick={() =>
+                  onResize(dimension, dimensions[dimension] + change)
+                }
+              >
+                <span aria-hidden="true" className="size-6 shrink-0">
+                  <svg
+                    data-resize-symbol={dimension}
+                    viewBox="0 0 24 24"
+                    className="size-6! stroke-2!"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <title>{`${change > 0 ? "add" : "remove"}-${dimension === "rows" ? "row" : "column"}-line`}</title>
+                    <g
+                      transform={
+                        dimension === "columns"
+                          ? "rotate(-90 12 12)"
+                          : undefined
+                      }
+                    >
+                      <path
+                        d={
+                          change > 0
+                            ? "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-3 3v3m0 0v3m0-3h3m-3 0H9"
+                            : "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-6 3l3 3m0 0l3 3m-3-3l3-3m-3 3l-3 3"
+                        }
+                      />
+                    </g>
+                  </svg>
+                </span>
+              </Button>
+            );
+          })}
+        </ButtonGroup>
+      ))}
+    </>
   );
 }

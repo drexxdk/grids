@@ -29,9 +29,11 @@ function subscribeToViewport(onChange: () => void) {
 export function EditorLayout({
   children,
   actions,
+  canvasControls,
   status,
 }: {
   actions: ReactNode;
+  canvasControls: ReactNode;
   status?: ReactNode;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
@@ -59,54 +61,57 @@ export function EditorLayout({
     }
   }, [compact]);
   const [library, workspace, settings] = children;
+  const brand = (
+    <a className="brand shrink-0" href="./">
+      <span className="brand-mark">
+        <PanelsTopLeft />
+      </span>
+      Grids
+    </a>
+  );
   const canvasActions = (
-    <div className="flex w-full min-w-0 flex-col gap-2">
-      <div className="flex w-full items-center justify-between gap-2">
-        <a
-          className="brand shrink-0 max-[400px]:gap-2! max-[400px]:text-2xl!"
-          href="./"
+    <div className="relative flex w-full min-w-0 flex-col gap-2">
+      <div
+        data-canvas-controls
+        className={`flex min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden scrollbar-gutter-stable px-3 max-[700px]:pt-13 ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
+      >
+        {canvasControls}
+      </div>
+      <div
+        role="group"
+        aria-label={t("editor.panels")}
+        className="absolute top-0 right-[calc(12px+var(--native-scrollbar-width,0px))] flex items-center gap-2"
+      >
+        {actions}
+        <Button
+          ref={settingsButton}
+          variant="icon"
+          title={t(
+            (compact ? settingsOpen : sidebarOpen)
+              ? "editor.closeSidebar"
+              : "editor.showSidebar",
+          )}
+          aria-label={t(
+            (compact ? settingsOpen : sidebarOpen)
+              ? "editor.closeSidebar"
+              : "editor.showSidebar",
+          )}
+          aria-expanded={compact ? settingsOpen : sidebarOpen}
+          aria-haspopup={compact ? "dialog" : undefined}
+          aria-controls={compact ? undefined : panelsId}
+          onClick={() => {
+            if (compact) {
+              setSettingsPresent(true);
+              setSettingsOpen(!settingsOpen);
+            } else setSidebarOpen(!sidebarOpen);
+          }}
         >
-          <span className="brand-mark max-[400px]:size-8!">
-            <PanelsTopLeft />
-          </span>
-          Grids
-        </a>
-        <div
-          role="group"
-          aria-label={t("editor.panels")}
-          className="flex shrink-0 items-center gap-2"
-        >
-          {actions}
-          <Button
-            ref={settingsButton}
-            variant="icon"
-            title={t(
-              (compact ? settingsOpen : sidebarOpen)
-                ? "editor.closeSidebar"
-                : "editor.showSidebar",
-            )}
-            aria-label={t(
-              (compact ? settingsOpen : sidebarOpen)
-                ? "editor.closeSidebar"
-                : "editor.showSidebar",
-            )}
-            aria-expanded={compact ? settingsOpen : sidebarOpen}
-            aria-haspopup={compact ? "dialog" : undefined}
-            aria-controls={compact ? undefined : panelsId}
-            onClick={() => {
-              if (compact) {
-                setSettingsPresent(true);
-                setSettingsOpen(!settingsOpen);
-              } else setSidebarOpen(!sidebarOpen);
-            }}
-          >
-            {(compact ? settingsOpen : sidebarOpen) ? (
-              <X aria-hidden="true" className="size-5!" />
-            ) : (
-              <PanelRightOpen aria-hidden="true" className="size-5!" />
-            )}
-          </Button>
-        </div>
+          {(compact ? settingsOpen : sidebarOpen) ? (
+            <X aria-hidden="true" className="size-5!" />
+          ) : (
+            <PanelRightOpen aria-hidden="true" className="size-5!" />
+          )}
+        </Button>
       </div>
       {status}
     </div>
@@ -114,13 +119,11 @@ export function EditorLayout({
   const canvasHeader = (
     <header
       data-canvas-header
-      className="col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) px-3 py-3 pr-[calc(12px+var(--native-scrollbar-width,0px))]"
+      aria-hidden={compact && settingsPresent ? true : undefined}
+      inert={compact && settingsPresent ? true : undefined}
+      className="col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3!"
     >
-      {compact && settingsPresent ? (
-        <div className="h-11 w-full" aria-hidden="true" />
-      ) : (
-        canvasActions
-      )}
+      {canvasActions}
     </header>
   );
   return (
@@ -156,6 +159,9 @@ export function EditorLayout({
                     data-sidebar-sticky
                     className="sticky top-0 z-20 bg-(--panel)"
                   >
+                    <div className="flex min-h-19 items-center border-0 border-b border-solid border-(--line) px-4 py-3">
+                      {brand}
+                    </div>
                     <div
                       data-panel-controls
                       className="flex shrink-0 flex-col gap-2 p-4"
@@ -208,8 +214,23 @@ export function EditorLayout({
           title={t("editor.settings")}
           returnFocus={settingsButton}
           sidePanel
-          toolbar={canvasActions}
           onExited={() => setSettingsPresent(false)}
+          toolbar={
+            <div className="flex w-full items-center justify-between gap-2">
+              {brand}
+              <div role="group" aria-label={t("editor.panels")}>
+                <Button
+                  variant="icon"
+                  aria-label={t("editor.closeSidebar")}
+                  title={t("editor.closeSidebar")}
+                  aria-expanded={true}
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <X aria-hidden="true" className="size-5!" />
+                </Button>
+              </div>
+            </div>
+          }
         >
           <div
             data-editor-settings
