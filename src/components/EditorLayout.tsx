@@ -53,7 +53,7 @@ export function EditorLayout({
         {({ open }) => (
           <>
             <div
-              className={`tw:[&_.asset-panel]:border-0! tw:[&_.asset-panel]:p-[8px]! tw:[&_.asset-library]:flex! tw:[&_.asset-library]:overflow-x-auto tw:[&_.asset-library]:overflow-y-hidden tw:[&_.asset-library]:py-[4px]! ${open ? "" : "tw:[&_.asset-panel]:pb-0! tw:[&_.asset-library]:mx-[-8px]! tw:[&_.asset-library]:px-[8px]! tw:[&_.asset-library]:pb-[max(4px,env(safe-area-inset-bottom))]! tw:[&_.section-heading]:hidden! tw:[&_.asset-name]:hidden! tw:[&_.asset-category]:hidden! tw:[&_[data-upload-label]]:hidden! tw:[&_[data-library-image]]:w-[64px]! tw:[&_[data-upload-tile]]:w-[64px]! tw:[&_[data-upload-tile]]:h-[64px]! tw:[&_[data-upload-tile]]:min-h-0!"}`}
+              className={`tw:[&_.asset-panel]:border-0! tw:[&_.asset-panel]:p-[8px]! tw:[&_.asset-library]:flex! tw:[&_.asset-library]:overflow-x-auto tw:[&_.asset-library]:overflow-y-hidden tw:[&_.asset-library]:py-[4px]! ${open ? "" : "tw:[&_.asset-panel]:pb-0! tw:[&_.asset-library]:mx-[-8px]! tw:[&_.asset-library]:px-[8px]! tw:[&_.asset-library]:pb-[max(4px,env(safe-area-inset-bottom))]! tw:[&_.section-heading]:hidden! tw:[&_.asset-category]:hidden! tw:[&_[data-upload-label]]:hidden! tw:[&_[data-library-image]]:w-[64px]! tw:[&_[data-upload-tile]]:w-[64px]! tw:[&_[data-upload-tile]]:h-[64px]! tw:[&_[data-upload-tile]]:min-h-0!"}`}
             >
               {library(
                 <DisclosureButton

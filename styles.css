@@ -2,6 +2,46 @@
 @import "tailwindcss/theme.css" layer(theme) prefix(tw);
 @import "tailwindcss/utilities.css" layer(utilities) prefix(tw);
 
+@layer components {
+  .image-frame {
+    position: relative;
+    --frame-color: var(--line);
+  }
+  .image-frame::after {
+    content: "";
+    position: absolute;
+    inset: var(--frame-inset, 0px);
+    z-index: 30;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      repeating-linear-gradient(
+          to right,
+          var(--frame-color) 0 2px,
+          var(--frame-gap-color, transparent) 2px 4px
+        )
+        left top / 100% var(--frame-top-size, 1px) no-repeat,
+      repeating-linear-gradient(
+          to right,
+          var(--frame-color) 0 2px,
+          var(--frame-gap-color, transparent) 2px 4px
+        )
+        left bottom / 100% var(--frame-bottom-size, 1px) no-repeat,
+      repeating-linear-gradient(
+          to bottom,
+          var(--frame-color) 0 2px,
+          var(--frame-gap-color, transparent) 2px 4px
+        )
+        left top / 1px 100% no-repeat,
+      repeating-linear-gradient(
+          to bottom,
+          var(--frame-color) 0 2px,
+          var(--frame-gap-color, transparent) 2px 4px
+        )
+        right top / 1px 100% no-repeat;
+  }
+}
+
 @font-face {
   font-family: "Bebas Neue";
   src: url("/assets/bebas-neue.woff2") format("woff2");
@@ -48,7 +88,7 @@
   letter-spacing: 0.5px;
   min-height: 1.55em;
   padding: 0.25em 0.24em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 .board-export-heading {
   grid-column: 1/-1;
@@ -469,7 +509,8 @@ h1 {
   outline: 3px solid var(--mint);
   outline-offset: 0;
 }
-.cell-image-button {
+.cell-image-button,
+.library-image-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -481,7 +522,8 @@ h1 {
   background: transparent;
   overflow: hidden;
 }
-.cell-image-button img {
+.cell-image-button img,
+.library-image-button img {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -512,7 +554,8 @@ h1 {
   color: #dce1dd;
   pointer-events: none;
 }
-.cell-heading {
+.cell-heading,
+.library-heading {
   display: block;
   width: 100%;
   min-height: 1.95em;
@@ -532,7 +575,8 @@ h1 {
   field-sizing: content;
   overflow-wrap: anywhere;
 }
-.cell-heading:focus {
+.cell-heading:focus,
+.library-heading:focus {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }

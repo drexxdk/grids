@@ -87,7 +87,7 @@ export function cellGeometry(style: GridStyle, width: number) {
         ? 4 / 3
         : 1;
   const imageHeight = Math.round(width / aspectRatio);
-  const captionHeight = Math.round(width * 0.17);
+  const captionHeight = Math.round(width * 0.23);
   const placement = style.captionPlacement ?? "below";
   const captionTop =
     placement === "above"
@@ -107,6 +107,9 @@ export function cellGeometry(style: GridStyle, width: number) {
     imageTop: placement === "above" ? captionHeight : 0,
     height: imageHeight + (placement === "overlay" ? 0 : captionHeight),
   };
+}
+export function captionPadding(width: number) {
+  return { horizontal: width * 0.06, vertical: width * 0.05 };
 }
 export interface GridContent {
   id: string;
@@ -140,6 +143,7 @@ export type GridPatch = Partial<
 >;
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
 export type DocumentCommand =
+  | { type: "asset/title"; assetId: string; title: string }
   | { type: "workspace/restore"; workspace: Workspace }
   | { type: "assets/trash-unused"; assetIds: string[]; trashedAt: number }
   | { type: "assets/restore"; assetIds: string[] }
@@ -550,6 +554,34 @@ export function documentReducer(
     });
   };
   switch (command.type) {
+    case "asset/title": {
+      if (
+        !workspace.assets.some((asset) => asset.id === command.assetId) ||
+        typeof command.title !== "string" ||
+        command.title.length > 120
+      )
+        return workspace;
+      const rename = (cell: Cell): Cell =>
+        cell.assetId === command.assetId
+          ? { ...cell, title: command.title }
+          : cell;
+      return {
+        ...workspace,
+        assets: workspace.assets.map((asset) =>
+          asset.id === command.assetId
+            ? { ...asset, title: command.title }
+            : asset,
+        ),
+        grid: {
+          ...grid,
+          cells: grid.cells.map(rename),
+          overflow: grid.overflow.map((entry) => ({
+            ...entry,
+            cell: rename(entry.cell),
+          })),
+        },
+      };
+    }
     case "assets/trash-unused": {
       const ids = new Set(command.assetIds);
       const referenced = referencedAssetIds(workspace);

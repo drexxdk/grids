@@ -718,7 +718,7 @@ export default function App() {
                   aria-label="Add images"
                   disabled={importProgress !== null}
                   title="Add or drop images"
-                  className={`tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-[4px] tw:border tw:border-dotted tw:border-(--line) tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:focus-visible:[outline:2px_solid_var(--accent)]! tw:focus-visible:[outline-offset:-2px]! tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:border-(--accent) tw:enabled:hover:border-solid! tw:focus-visible:border-solid! ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
+                  className={`image-frame tw:flex tw:shrink-0 tw:flex-col tw:items-center tw:justify-center tw:gap-1 tw:rounded-[4px] tw:border-0 tw:bg-transparent tw:text-(--muted) tw:outline-none! tw:focus-visible:[--frame-color:var(--accent)] tw:disabled:cursor-default! tw:disabled:opacity-100! tw:disabled:text-(--text)! tw:enabled:hover:[--frame-color:var(--accent)] ${activeAssets.length ? "tw:aspect-square tw:self-start tw:w-full tw:max-[900px]:w-[82px]" : "tw:col-span-full tw:min-h-[140px] tw:w-full!"}`}
                   onClick={() => document.getElementById("upload")?.click()}
                 >
                   {importProgress ? (
@@ -754,6 +754,15 @@ export default function App() {
                   <LibraryImage
                     key={asset.id}
                     asset={asset}
+                    cell={board.cells.find((cell) => cell.assetId === asset.id)}
+                    gridStyle={board}
+                    onTitle={(title) =>
+                      dispatchDocument({
+                        type: "asset/title",
+                        assetId: asset.id,
+                        title,
+                      })
+                    }
                     disabled={loadingExample}
                     onDelete={() => deleteImages([asset.id])}
                   />
@@ -998,12 +1007,20 @@ export default function App() {
                             })
                           }
                           onPatch={(patch) =>
-                            dispatchDocument({
-                              type: "cell/patch",
-                              gridId: board.id,
-                              cellId: item.id,
-                              patch,
-                            })
+                            dispatchDocument(
+                              asset && patch.title !== undefined
+                                ? {
+                                    type: "asset/title",
+                                    assetId: asset.id,
+                                    title: patch.title,
+                                  }
+                                : {
+                                    type: "cell/patch",
+                                    gridId: board.id,
+                                    cellId: item.id,
+                                    patch,
+                                  },
+                            )
                           }
                           onClear={() =>
                             dispatchDocument({

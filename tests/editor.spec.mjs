@@ -406,7 +406,7 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
   await selectField(page, "resolution", "150");
   const download = await downloadBoard(page);
   const exported = await readFile(await download.path());
-  expect(await sample(exported, 78 / 462, 78 / 540)).toEqual([0, 0, 255, 255]);
+  expect(await sample(exported, 78 / 462, 78 / 567)).toEqual([0, 0, 255, 255]);
   await page
     .locator(".asset")
     .dragTo(page.locator(".cell-image-button").nth(1));
@@ -441,6 +441,402 @@ test("fullscreen visual cropping preserves originals and matches preview and exp
       ),
     ),
   ).not.toContain('"crop"');
+});
+
+test("imported captions preserve library capitalization in the canvas and export", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "My Mixed Case Hero.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
+  await expect(page.locator(".asset")).toHaveCount(1);
+  const title = await page.locator(".asset-name").first().inputValue();
+  await page
+    .locator(".asset")
+    .first()
+    .locator("[data-library-thumbnail]")
+    .dragTo(page.locator(".cell-image-button").first());
+  await expect(page.locator(".cell-heading").first()).toHaveValue(title);
+  await expect(page.locator(".cell-heading").first()).toHaveCSS(
+    "text-transform",
+    "none",
+  );
+  await page.evaluate(() => {
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    window.exportedCaptionText = [];
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      ...parameters
+    ) {
+      window.exportedCaptionText.push(text);
+      return original.call(this, text, ...parameters);
+    };
+  });
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "resolution", "150");
+  await downloadBoard(page);
+  const rendered = await page.evaluate(() => window.exportedCaptionText);
+  expect(rendered).toContain(title);
+  expect(rendered).not.toContain(title.toUpperCase());
+  await page.setViewportSize({ width: 960, height: 1080 });
+  await page
+    .getByRole("button", { name: "Text above image", exact: true })
+    .click();
+  await page.locator(".cell-heading").first().fill("DC   Friendly Fire");
+  await expect
+    .poll(() =>
+      page
+        .locator(".cell-heading")
+        .first()
+        .evaluate((field) => field.scrollHeight <= field.clientHeight),
+    )
+    .toBe(true);
+  await page
+    .locator(".grid-cell")
+    .first()
+    .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
+});
+
+test("precise image frames and thin caption feedback stay independent", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const cell = page.locator(".grid-cell").first();
+  const image = cell.locator(".cell-image-button");
+  const caption = cell.locator(".cell-heading");
+  const frames = cell.locator("[data-cell-image-frame]");
+  await caption.fill("Caption");
+  for (const [placement, alignment] of [
+    ["Text above image"],
+    ["Text below image"],
+    ["Text on image", "Text at bottom"],
+    ["Text on image", "Text at top"],
+    ["Text on image", "Text at middle"],
+  ]) {
+    await page.getByRole("button", { name: placement, exact: true }).click();
+    if (alignment)
+      await page.getByRole("button", { name: alignment, exact: true }).click();
+    await page.mouse.move(1, 1);
+    const idleColor = await frames
+      .first()
+      .evaluate((element) =>
+        getComputedStyle(element).getPropertyValue("--frame-color"),
+      );
+    const before = await cell.boundingBox();
+    const imageBounds = await image.boundingBox();
+    const captionBounds = await caption.boundingBox();
+    await image.hover({
+      position: {
+        x: 8,
+        y:
+          captionBounds.y <= imageBounds.y
+            ? captionBounds.y + captionBounds.height - imageBounds.y + 5
+            : 5,
+      },
+    });
+    for (const frame of await frames.all()) {
+      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+      await expect(frame.locator("rect")).toHaveAttribute("stroke-width", "1");
+      await expect(frame.locator("rect")).toHaveAttribute(
+        "stroke-dasharray",
+        "2 2",
+      );
+      await expect(frame.locator("rect")).toHaveAttribute("rx", "7.5");
+      await expect(frame).toHaveCSS("pointer-events", "none");
+      const bounds = await frame.boundingBox();
+      expect(bounds.x).toBeCloseTo(before.x - 2, 1);
+      expect(bounds.y).toBeCloseTo(before.y - 2, 1);
+      expect(bounds.width).toBeCloseTo(before.width + 4, 1);
+      expect(bounds.height).toBeCloseTo(before.height + 4, 1);
+    }
+    await expect(caption).toHaveCSS("outline-style", "none");
+    const idleBackground = await caption.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    await caption.hover();
+    await expect(caption).toHaveCSS("outline-style", "none");
+    await expect
+      .poll(() =>
+        caption.evaluate(
+          (element) => getComputedStyle(element).backgroundColor,
+        ),
+      )
+      .not.toBe(idleBackground);
+    await expect(cell).toHaveCSS("border-top-color", "rgb(48, 51, 53)");
+    const spacing = await caption.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        width: element.clientWidth,
+        left: parseFloat(style.paddingLeft),
+        right: parseFloat(style.paddingRight),
+        top: parseFloat(style.paddingTop),
+        bottom: parseFloat(style.paddingBottom),
+      };
+    });
+    expect(spacing.left).toBeCloseTo(spacing.width * 0.06, 1);
+    expect(spacing.right).toBeCloseTo(spacing.width * 0.06, 1);
+    expect(spacing.top).toBeGreaterThanOrEqual(spacing.width * 0.05 - 1);
+    expect(spacing.bottom).toBeGreaterThanOrEqual(spacing.width * 0.05 - 1);
+    for (const frame of await frames.all())
+      await expect(frame).toHaveCSS("--frame-color", idleColor);
+    await image.focus();
+    await image.press("Tab");
+    await caption.press("Shift+Tab");
+    await expect(image).toBeFocused();
+    for (const frame of await frames.all()) {
+      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+    }
+    await image.press("Tab");
+    await expect(caption).toBeFocused();
+    await expect(caption).toHaveCSS("outline-style", "none");
+    await expect
+      .poll(() =>
+        caption.evaluate(
+          (element) => getComputedStyle(element).backgroundColor,
+        ),
+      )
+      .not.toBe(idleBackground);
+    for (const frame of await frames.all())
+      await expect(frame).toHaveCSS("--frame-color", idleColor);
+    expect(await cell.boundingBox()).toEqual(before);
+    await caption.fill("Still editable");
+    await expect(caption).toHaveValue("Still editable");
+  }
+});
+
+test("sidebar and slide-up cards match canvas placement, editing and external dotted frames", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "frame.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>',
+    ),
+  });
+  const asset = page.locator(".asset").first();
+  const thumbnail = asset.locator("[data-library-thumbnail]");
+  const libraryCaption = asset.locator(".library-heading");
+  const externalFrame = asset.locator("[data-cell-image-frame]");
+  const card = page.locator(".grid-cell").first();
+  const canvasCaption = card.locator(".cell-heading");
+  const upload = page.locator("[data-upload-tile]");
+  await thumbnail.dragTo(card.locator(".cell-image-button"));
+  await thumbnail.dragTo(
+    page.locator(".grid-cell").nth(1).locator(".cell-image-button"),
+  );
+  for (const [width, expanded] of [
+    [1440, false],
+    [780, false],
+    [780, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1080 });
+    if (expanded)
+      await page
+        .getByRole("button", { name: "Expand tools", exact: true })
+        .click();
+    await expect(thumbnail).toBeVisible();
+    await expect
+      .poll(async () => {
+        const bounds = await thumbnail.boundingBox();
+        return bounds.y + bounds.height;
+      })
+      .toBeLessThanOrEqual(1080);
+    await page.mouse.move(1, 1);
+    const thumbnailBounds = await thumbnail.boundingBox();
+    const uploadBounds = await upload.boundingBox();
+    for (const frame of [upload])
+      expect(
+        await frame.evaluate(
+          (element) => getComputedStyle(element, "::after").backgroundSize,
+        ),
+      ).toBe("100% 1px, 100% 1px, 1px 100%, 1px 100%");
+    for (const [placement, alignment] of [
+      ["Text above image"],
+      ["Text below image"],
+      ["Text on image", "Text at top"],
+      ["Text on image", "Text at middle"],
+      ["Text on image", "Text at bottom"],
+    ]) {
+      await page.getByRole("button", { name: placement, exact: true }).click();
+      if (alignment)
+        await page
+          .getByRole("button", { name: alignment, exact: true })
+          .click();
+      await expect(libraryCaption).toBeVisible();
+      const layouts = [];
+      for (const surface of [asset, card]) {
+        layouts.push(
+          await surface.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            const image = element
+              .querySelector("[data-card-image]")
+              .getBoundingClientRect();
+            const heading = element.querySelector("textarea");
+            const title = heading.getBoundingClientRect();
+            return {
+              imageTop: (image.y - bounds.y) / bounds.height,
+              captionTop: (title.y - bounds.y) / bounds.height,
+              imageRatio: image.width / image.height,
+              font: getComputedStyle(heading).fontFamily,
+              color: getComputedStyle(heading).backgroundColor,
+            };
+          }),
+        );
+      }
+      expect(layouts[0].imageTop).toBeCloseTo(layouts[1].imageTop, 1);
+      expect(layouts[0].captionTop).toBeCloseTo(layouts[1].captionTop, 1);
+      expect(layouts[0].imageRatio).toBeCloseTo(layouts[1].imageRatio, 1);
+      expect(layouts[0].font).toBe(layouts[1].font);
+      expect(layouts[0].color).toBe(layouts[1].color);
+    }
+    await page
+      .getByRole("button", { name: "Text above image", exact: true })
+      .click();
+    await libraryCaption.click();
+    await expect(libraryCaption).toBeFocused();
+    await libraryCaption.fill(`Edited ${width} ${expanded}`);
+    await expect(canvasCaption).toHaveValue(`Edited ${width} ${expanded}`);
+    await expect(page.locator(".cell-heading").nth(1)).toHaveValue(
+      `Edited ${width} ${expanded}`,
+    );
+    await canvasCaption.fill("Canvas edit");
+    await expect(libraryCaption).toHaveValue("Canvas edit");
+    await thumbnail.hover({ position: { x: 5, y: 30 } });
+    await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
+    await expect(asset).toHaveCSS("cursor", "grab");
+    {
+      await libraryCaption.click();
+      await expect(asset.locator(".asset-category")).toHaveCount(0);
+      await expect(asset.locator(".asset-name")).toHaveCSS(
+        "padding-left",
+        await asset
+          .locator(".asset-name")
+          .evaluate(
+            (element) =>
+              `${parseFloat(getComputedStyle(element).paddingRight)}px`,
+          ),
+      );
+      for (const surface of [asset, card]) {
+        await expect(surface).toHaveCSS("border-top-width", "1px");
+        await expect(surface).toHaveCSS("border-top-style", "solid");
+        await expect(surface).toHaveCSS("border-top-color", "rgb(48, 51, 53)");
+        await expect(surface).toHaveCSS("border-radius", "6px");
+        await expect(surface).toHaveCSS("overflow", "visible");
+      }
+      const imageBounds = await thumbnail.boundingBox();
+      const titleBounds = await asset.locator(".asset-name").boundingBox();
+      expect(titleBounds.y + titleBounds.height).toBeCloseTo(imageBounds.y, 0);
+      await expect(externalFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(libraryCaption).toHaveCSS("outline-style", "none");
+      await thumbnail.hover({ position: { x: 5, y: 30 } });
+      await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
+      const outer = await asset.boundingBox();
+      const frameBounds = await externalFrame.boundingBox();
+      expect(frameBounds.x).toBeCloseTo(outer.x - 2, 1);
+      expect(frameBounds.y).toBeCloseTo(outer.y - 2, 1);
+      expect(frameBounds.width).toBeCloseTo(outer.width + 4, 1);
+      expect(frameBounds.height).toBeCloseTo(outer.height + 4, 1);
+      const screenshot = await externalFrame.screenshot();
+      const pixels = await page.evaluate(
+        async (bytes) => {
+          const bitmap = await createImageBitmap(
+            new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const context = canvas.getContext("2d");
+          context.drawImage(bitmap, 0, 0);
+          const pixels = context.getImageData(12, 0, 8, 1).data;
+          const corners = [
+            [0, 0],
+            [bitmap.width - 8, 0],
+            [0, bitmap.height - 8],
+            [bitmap.width - 8, bitmap.height - 8],
+          ].map(([left, top]) => {
+            const corner = context.getImageData(left, top, 8, 8).data;
+            return Array.from(
+              { length: 64 },
+              (_, index) =>
+                corner[index * 4 + 1] > 100 &&
+                corner[index * 4 + 1] > corner[index * 4] + 12,
+            ).filter(Boolean).length;
+          });
+          bitmap.close();
+          return {
+            corners,
+            marks: Array.from(
+              { length: 8 },
+              (_, index) =>
+                pixels[index * 4] > 160 && pixels[index * 4 + 1] > 220,
+            ),
+          };
+        },
+        [...screenshot],
+      );
+      for (const corner of pixels.corners) expect(corner).toBeGreaterThan(0);
+      const marks = pixels.marks;
+      const period = marks.slice(0, 4);
+      expect(period.filter(Boolean)).toHaveLength(2);
+      expect(marks.slice(4)).toEqual(period);
+      expect(
+        period.filter((mark, index) => mark !== period[(index + 1) % 4]),
+      ).toHaveLength(2);
+      await asset
+        .locator("[data-library-thumbnail]")
+        .dragTo(page.locator(".cell-image-button").first());
+      await expect(
+        page.locator(".grid-cell").first().locator("img"),
+      ).toHaveCount(1);
+    }
+    await upload.hover({ position: { x: 5, y: 5 } });
+    await expect(upload).toHaveCSS("--frame-color", "#d8f36a");
+    await page.mouse.move(1, 1);
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    for (const [control, frame] of [
+      [thumbnail, externalFrame],
+      [upload, upload],
+    ]) {
+      await control.focus();
+      await control.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      await expect(control).toBeFocused();
+      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+      await expect(control).toHaveCSS("outline-style", "none");
+    }
+    expect(await thumbnail.boundingBox()).toMatchObject({
+      width: thumbnailBounds.width,
+      height: thumbnailBounds.height,
+    });
+    expect(await upload.boundingBox()).toMatchObject({
+      width: uploadBounds.width,
+      height: uploadBounds.height,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `dotted-frames-${width}-${expanded ? "expanded" : "collapsed"}.png`,
+      ),
+    });
+  }
+  await reloadWorkspace(page);
+  await expect(page.locator(".library-heading").first()).toHaveValue(
+    "Canvas edit",
+  );
+  await expect(page.locator(".cell-heading").first()).toHaveValue(
+    "Canvas edit",
+  );
 });
 
 for (const viewportWidth of [1440, 780]) {
@@ -502,6 +898,61 @@ for (const viewportWidth of [1440, 780]) {
     expect(before.grid.cells[0].crop).toBeDefined();
     await expect(images.nth(0)).toHaveCSS("overflow", "hidden");
     const picture = await images.nth(0).boundingBox();
+    const frame = page
+      .locator(".grid-cell")
+      .first()
+      .locator("[data-cell-image-frame]")
+      .first();
+    const frameBounds = await frame.boundingBox();
+    const headingBounds = await page
+      .locator(".cell-heading")
+      .first()
+      .boundingBox();
+    const bottomY = Math.floor(headingBounds.y - picture.y - 5);
+    await images.nth(0).hover({ position: { x: 8, y: bottomY } });
+    expect(
+      await images.nth(0).evaluate((button, y) => {
+        const bounds = button.getBoundingClientRect();
+        return document.elementFromPoint(bounds.x + 8, bounds.y + y) === button;
+      }, bottomY),
+    ).toBe(true);
+    await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+    const cardBounds = await page.locator(".grid-cell").first().boundingBox();
+    expect(frameBounds.x).toBeCloseTo(cardBounds.x - 2, 1);
+    expect(frameBounds.width).toBeCloseTo(cardBounds.width + 4, 1);
+    const screenshot = await page.screenshot({
+      clip: {
+        x: frameBounds.x - 1,
+        y: frameBounds.y - 1,
+        width: Math.ceil(frameBounds.width) + 2,
+        height: Math.ceil(frameBounds.height) + 2,
+      },
+    });
+    const rightBorderVisible = await page.evaluate(
+      async ({ bytes, height }) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        const pixels = context.getImageData(
+          canvas.width - 4,
+          Math.floor(height / 2),
+          3,
+          8,
+        ).data;
+        bitmap.close();
+        return Array.from(
+          { length: pixels.length / 4 },
+          (_, index) => pixels[index * 4] > 100 && pixels[index * 4 + 1] > 50,
+        ).some(Boolean);
+      },
+      { bytes: [...screenshot], height: frameBounds.height },
+    );
+    expect(rightBorderVisible).toBe(true);
     const source = await images.nth(0).locator("img").boundingBox();
     expect(source.width).toBeGreaterThan(picture.width * 3);
     expect(
@@ -520,15 +971,29 @@ for (const viewportWidth of [1440, 780]) {
       const original = DataTransfer.prototype.setDragImage;
       window.canvasDragPreviews = [];
       DataTransfer.prototype.setDragImage = function (element, x, y) {
-        window.canvasDragPreviews.push({ tag: element.tagName, width: element.width, height: element.height, x, y, color: [...element.getContext("2d").getImageData(Math.floor(element.width / 2), Math.floor(element.height / 2), 1, 1).data] });
+        window.canvasDragPreviews.push({
+          tag: element.tagName,
+          width: element.width,
+          height: element.height,
+          x,
+          y,
+          color: [
+            ...element
+              .getContext("2d")
+              .getImageData(
+                Math.floor(element.width / 2),
+                Math.floor(element.height / 2),
+                1,
+                1,
+              ).data,
+          ],
+        });
         return original.call(this, element, x, y);
       };
     });
-    await images
-      .nth(0)
-      .dragTo(images.nth(2), {
-        sourcePosition: { x: 8, y: Math.round(picture.height / 2) },
-      });
+    await images.nth(0).dragTo(images.nth(2), {
+      sourcePosition: { x: 8, y: bottomY },
+    });
     await expect(page.locator(".grid-cell").nth(0).locator("img")).toHaveCount(
       0,
     );
@@ -536,9 +1001,14 @@ for (const viewportWidth of [1440, 780]) {
     await expect(headings.nth(2)).toHaveValue("First item");
     const previews = await page.evaluate(() => window.canvasDragPreviews);
     expect(previews).toHaveLength(1);
-    expect(previews[0]).toMatchObject({ tag: "CANVAS", width: Math.ceil(picture.width), height: Math.ceil(picture.height), color: [255, 0, 0, 255] });
+    expect(previews[0]).toMatchObject({
+      tag: "CANVAS",
+      width: Math.ceil(picture.width),
+      height: Math.ceil(picture.height),
+      color: [255, 0, 0, 255],
+    });
     expect(previews[0].x).toBeCloseTo(8, 0);
-    expect(Math.abs(previews[0].y - Math.round(picture.height / 2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(previews[0].y - bottomY)).toBeLessThanOrEqual(1);
     await expect(page.locator("body > canvas")).toHaveCount(0);
     let current = await savedWorkspace(page);
     expect(current.grid.cells[2]).toEqual({
@@ -711,7 +1181,7 @@ test("appearance toolbar preserves content and matches exported ratios and capti
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const toolbar = page.getByRole("toolbar", { name: "Grid appearance" });
   async function pixels(imageHeight, placement, alignment = "bottom") {
-    const captionHeight = 26;
+    const captionHeight = 35;
     const captionTop =
       placement === "above"
         ? 0
@@ -1241,14 +1711,13 @@ test("mobile image drawer expands tools and restores desktop sidebars", async ({
     const upload = page.locator("[data-upload-tile]");
     const uploadBox = await upload.boundingBox();
     const imageBox = await page
-      .locator("#asset-library [data-library-thumbnail]")
+      .locator("#asset-library .asset")
       .first()
       .boundingBox();
     expect(uploadBox.width).toBeCloseTo(imageBox.width, 1);
-    expect(uploadBox.height).toBeCloseTo(imageBox.height, 1);
+    expect(uploadBox.height).toBeCloseTo(imageBox.width, 1);
     await page.mouse.move(0, 0);
-    await expect(upload).toHaveCSS("border-top-style", "dotted");
-    await expect(upload).toHaveCSS("border-top-color", "rgb(48, 51, 53)");
+    await expect(upload).toHaveCSS("--frame-color", "#303335");
   };
   await assertUploadTileSize();
   expect(compactBox.height).toBeLessThanOrEqual(152);
@@ -1400,6 +1869,13 @@ test("cell toolbar overlays the image and never selects a cell", async ({
     const button = tools.getByRole("button", { name, exact: true });
     const before = await button.boundingBox();
     await button.hover();
+    for (const frame of await page
+      .locator(".grid-cell")
+      .first()
+      .locator("[data-cell-image-frame]")
+      .all()) {
+      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+    }
     await expect(button).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
     expect(await button.boundingBox()).toEqual(before);
   }
@@ -1576,8 +2052,8 @@ test("image source tabs fit narrow panels without category filters", async ({
     .locator("#asset-library [data-library-thumbnail]")
     .first();
   await thumbnail.hover({ position: { x: 5, y: 50 } });
-  await expect(thumbnail).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
   const imageButton = page.locator("#asset-library .asset").first();
+  await expect(imageButton).toHaveCSS("--frame-color", "#d8f36a");
   await imageButton.click({ position: { x: 5, y: 50 } });
   await expect(imageButton).toBeFocused();
   await expect(imageButton).toHaveCSS("outline-style", "none");
@@ -1586,26 +2062,31 @@ test("image source tabs fit narrow panels without category filters", async ({
   const keyboardFocus = page.locator("#asset-library .asset").nth(1);
   await expect(keyboardFocus).toBeFocused();
   await expect(keyboardFocus).toHaveCSS("outline-style", "none");
-  const keyboardThumbnail = keyboardFocus.locator("[data-library-thumbnail]");
-  await expect(keyboardThumbnail).toHaveCSS("outline-style", "solid");
-  await expect(keyboardThumbnail).toHaveCSS("outline-width", "2px");
-  await expect(keyboardThumbnail).toHaveCSS("outline-offset", "-2px");
+  await expect(keyboardFocus).toHaveCSS("--frame-color", "#d8f36a");
   const focusStyle = (element) => {
-    const style = getComputedStyle(element);
+    const style = getComputedStyle(element, "::after");
     return {
-      outline: style.outline,
-      offset: style.outlineOffset,
+      pattern: style.backgroundImage,
+      size: style.backgroundSize,
       radius: style.borderRadius,
     };
   };
-  const imageFocusStyle = await keyboardThumbnail.evaluate(focusStyle);
+  const imageFocusStyle = await keyboardFocus.evaluate(focusStyle);
   const uploadFocus = page.locator("[data-upload-tile]");
+  await page.mouse.move(1, 1);
   await imageButton.press("Escape");
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
   await imageButton.press("Shift+Tab");
   await expect(uploadFocus).toBeFocused();
-  await expect(uploadFocus).toHaveCSS("outline-style", "solid");
-  expect(await uploadFocus.evaluate(focusStyle)).toEqual(imageFocusStyle);
-  await expect(uploadFocus).toHaveCSS("border-top-style", "solid");
+  await expect(uploadFocus).toHaveCSS("--frame-color", "#d8f36a");
+  await expect
+    .poll(() => uploadFocus.evaluate(focusStyle))
+    .toEqual(imageFocusStyle);
   for (const width of [390, 714, 820]) {
     await page.setViewportSize({ width, height: 844 });
     const drawer = page.locator("[data-editor-drawer]");
@@ -1623,18 +2104,20 @@ test("image source tabs fit narrow panels without category filters", async ({
   await expect(desktopImage.locator(".asset-name")).toBeVisible();
   await desktopImage.locator(".asset-name").hover();
   await expect(desktopImage).toHaveCSS("outline-style", "none");
-  await expect(desktopImage.locator("[data-library-thumbnail]")).toHaveCSS(
-    "border-top-color",
-    "rgb(48, 51, 53)",
-  );
+  await expect(desktopImage).toHaveCSS("--frame-color", "#d8f36a");
+  await page.mouse.move(1, 1);
   await desktopImage.press("Escape");
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
   await desktopImage.press("Tab");
   const desktopFocus = page.locator("#asset-library .asset").nth(1);
   await expect(desktopFocus).toBeFocused();
   await expect(desktopFocus).toHaveCSS("outline-style", "none");
-  expect(
-    await desktopFocus.locator("[data-library-thumbnail]").evaluate(focusStyle),
-  ).toEqual(imageFocusStyle);
+  expect(await desktopFocus.evaluate(focusStyle)).toEqual(imageFocusStyle);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -3022,7 +3505,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
   );
   await expect(page.locator(".cell-heading").first()).toHaveCSS(
     "text-transform",
-    "uppercase",
+    "none",
   );
   await expect(page.locator(".cell-heading").first()).toHaveCSS(
     "letter-spacing",

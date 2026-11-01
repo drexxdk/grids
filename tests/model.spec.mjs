@@ -50,6 +50,50 @@ function localWorkspace() {
   return workspace;
 }
 
+test("image caption edits synchronize library, placements and overflow without changing crops", () => {
+  const workspace = localWorkspace();
+  const asset = workspace.assets[0];
+  const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
+  workspace.grid.cells[15].crop = crop;
+  const overflow = model.resizeBoard(workspace.grid, 3, 3);
+  workspace.grid = overflow;
+  workspace.grid.cells[0] = {
+    ...workspace.grid.cells[0],
+    assetId: asset.id,
+    title: "Old title",
+  };
+  const updated = model.documentReducer(workspace, {
+    type: "asset/title",
+    assetId: asset.id,
+    title: "Mixed Case caption",
+  });
+  expect(updated.assets[0].title).toBe("Mixed Case caption");
+  expect(updated.assets[0].src).toBe(asset.src);
+  expect(updated.grid.cells[0].title).toBe("Mixed Case caption");
+  expect(
+    updated.grid.overflow.find((entry) => entry.cell.assetId === asset.id).cell,
+  ).toMatchObject({ title: "Mixed Case caption", crop });
+  expect(updated.grid.cells[1]).toBe(workspace.grid.cells[1]);
+  expect(model.workspaceSchema.safeParse(updated).success).toBe(true);
+  expect(JSON.stringify(model.getEditorSettings(updated))).not.toContain(
+    "Mixed Case caption",
+  );
+  expect(
+    model.documentReducer(workspace, {
+      type: "asset/title",
+      assetId: crypto.randomUUID(),
+      title: "Missing",
+    }),
+  ).toBe(workspace);
+  expect(
+    model.documentReducer(workspace, {
+      type: "asset/title",
+      assetId: asset.id,
+      title: "x".repeat(121),
+    }),
+  ).toBe(workspace);
+});
+
 test("visual crops preserve originals and share full-box source rectangles", () => {
   const workspace = localWorkspace();
   const cell = workspace.grid.cells[15];
@@ -144,8 +188,8 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   expect(model.workspaceSchema.safeParse(workspace).success).toBe(true);
   expect(model.cellGeometry(workspace.grid, 600)).toMatchObject({
     imageHeight: 800,
-    captionHeight: 102,
-    captionTop: 349,
+    captionHeight: 138,
+    captionTop: 331,
     height: 800,
   });
   expect(
@@ -159,16 +203,17 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
     ),
   ).toMatchObject({
     imageHeight: 450,
-    imageTop: 102,
+    imageTop: 138,
     captionTop: 0,
-    height: 552,
+    height: 588,
   });
   expect(
     model.cellGeometry(
       { ...workspace.grid, imageAspect: "square", captionPlacement: "below" },
       600,
     ),
-  ).toMatchObject({ imageHeight: 600, captionTop: 600, height: 702 });
+  ).toMatchObject({ imageHeight: 600, captionTop: 600, height: 738 });
+  expect(model.captionPadding(600)).toEqual({ horizontal: 36, vertical: 30 });
   expect(
     model.editorSettingsSchema.safeParse({
       ...settings,

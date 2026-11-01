@@ -1,5 +1,6 @@
 import {
   cellGeometry,
+  captionPadding,
   sourceRectangle,
   publishers,
   type Asset,
@@ -36,16 +37,16 @@ function wrapTitle(
   maxWidth: number,
 ) {
   const lines = [];
-  for (const paragraph of title.toUpperCase().split("\n")) {
+  for (const paragraph of title.split("\n")) {
     let line = "";
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (line && context.measureText(candidate).width > maxWidth) {
-        lines.push(line);
-        line = word;
+    for (const word of paragraph.match(/\s*\S+|\s+$/g) ?? []) {
+      const candidate = line + word;
+      if (line && context.measureText(candidate.trimEnd()).width > maxWidth) {
+        lines.push(line.trimEnd());
+        line = word.trimStart();
       } else line = candidate;
     }
-    lines.push(line);
+    lines.push(line.trimEnd());
   }
   return lines;
 }
@@ -81,6 +82,7 @@ function drawTitle(
   width: number,
   height: number,
   color: string,
+  padding = { horizontal: width * 0.04, vertical: height * 0.09 },
 ) {
   context.letterSpacing = "0.5px";
   const { fontSize, lines } = fitTitle(
@@ -88,8 +90,8 @@ function drawTitle(
     title,
     font,
     maximumSize,
-    width * 0.92,
-    height * 0.82,
+    width - padding.horizontal * 2,
+    height - padding.vertical * 2,
   );
   context.fillStyle = color;
   context.textAlign = "center";
@@ -147,7 +149,7 @@ export async function createExport(
     }
     drawTitle(
       context,
-      item.heading,
+      item.heading.toUpperCase(),
       item.headingFont,
       size * 0.18,
       gap,
@@ -219,6 +221,7 @@ export async function createExport(
       size,
       titleHeight,
       "#f4f4ef",
+      captionPadding(size),
     );
   });
   const blob = await new Promise<Blob | null>((resolve) =>
