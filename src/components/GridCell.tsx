@@ -1,6 +1,16 @@
 import { t } from "../i18n";
+import { captionMaxLength } from "../config";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { Crop, Download, ImagePlus, Move, Trash2 } from "lucide-react";
+import { cva } from "class-variance-authority";
+import {
+  Check,
+  Crop,
+  Download,
+  ExternalLink,
+  ImagePlus,
+  Move,
+  Trash2,
+} from "lucide-react";
 import type { ProviderImage } from "../providers";
 import { useDrag } from "@use-gesture/react";
 import {
@@ -27,6 +37,31 @@ import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 import { CardFrame } from "./CardFrame";
+
+const cardToolButtonStyles = cva(
+  "pointer-events-auto absolute p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!",
+  {
+    variants: {
+      position: {
+        topLeft: "left-(--card-tool-inset) top-(--card-tool-top-inset)",
+        topRight: "right-(--card-tool-inset) top-(--card-tool-top-inset)",
+        bottomLeft:
+          "left-(--card-tool-inset) bottom-(--card-tool-bottom-inset)",
+        bottomRight:
+          "right-(--card-tool-inset) bottom-(--card-tool-bottom-inset)",
+      },
+      size: {
+        proportional: "size-[min(25cqw,var(--cell-tool-space))]!",
+        fixed: "size-11!",
+      },
+      dragHandle: {
+        true: "touch-none",
+        false: "backdrop-blur-sm enabled:hover:bg-black/75!",
+      },
+    },
+    defaultVariants: { size: "proportional", dragHandle: false },
+  },
+);
 
 const coarsePointerQuery = "(pointer: coarse)";
 function subscribeToPointer(onChange: () => void) {
@@ -118,6 +153,16 @@ export function GridCell({
   previewOnly?: boolean;
 }) {
   const coarsePointer = useCoarsePointer();
+  const selectsLibraryImage = Boolean(
+    coarsePointer && library?.onSelect && asset?.provenance,
+  );
+  const primaryActionLabel = selectsLibraryImage
+    ? t("cell.actions.useImage", { value1: asset?.title })
+    : library?.onImport
+      ? t("library.search.import", { value1: asset?.title })
+      : library
+        ? t("cell.actions.deleteImage", { value1: asset?.title })
+        : t("cell.actions.clear");
   const trigger = useRef<HTMLButtonElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
@@ -309,7 +354,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)] ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${library ? "data-image-hovered:border-(--accent)! has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -409,7 +454,7 @@ export function GridCell({
                   }}
                   aria-label={
                     library
-                      ? library.onSelect
+                      ? library.onSelect && !(coarsePointer && asset.provenance)
                         ? t("cell.actions.useImage", { value1: asset.title })
                         : t("cell.actions.imageOptions", { value1: cell.title })
                       : t("cell.actions.options", {
@@ -436,7 +481,11 @@ export function GridCell({
                       touchDragged.current = false;
                       return;
                     }
-                    if (library?.onSelect && !previewOnly) {
+                    if (
+                      library?.onSelect &&
+                      !previewOnly &&
+                      !(coarsePointer && asset.provenance)
+                    ) {
                       event.preventDefault();
                       event.stopPropagation();
                       setHoverTools(false);
@@ -649,7 +698,10 @@ export function GridCell({
                       variant="icon"
                       aria-label={t("cell.actions.dragImage")}
                       title={t("cell.actions.dragImage")}
-                      className="pointer-events-auto absolute left-(--card-tool-inset) top-(--card-tool-top-inset) size-[min(25cqw,var(--cell-tool-space))]! touch-none p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!"
+                      className={cardToolButtonStyles({
+                        position: "topLeft",
+                        dragHandle: true,
+                      })}
                     >
                       <Move aria-hidden="true" />
                     </Button>
@@ -658,7 +710,9 @@ export function GridCell({
                     <div className="contents">
                       <Button
                         variant="icon"
-                        className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
+                        className={cardToolButtonStyles({
+                          position: "bottomLeft",
+                        })}
                         aria-label={
                           asset
                             ? t("cell.actions.replaceImage")
@@ -679,7 +733,9 @@ export function GridCell({
                       </Button>
                       <Button
                         variant="icon"
-                        className="pointer-events-auto absolute right-(--card-tool-inset) bottom-(--card-tool-bottom-inset) size-[min(25cqw,var(--cell-tool-space))]! p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!"
+                        className={cardToolButtonStyles({
+                          position: "bottomRight",
+                        })}
                         aria-label={t("crop.title")}
                         title={t("crop.title")}
                         onClick={() => {
@@ -692,38 +748,40 @@ export function GridCell({
                       </Button>
                     </div>
                   )}
+                  {library && asset.provenance && (
+                    <a
+                      href={asset.provenance.sourcePage}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t("library.search.source")}
+                      title={`${t("library.search.source")}: ${[asset.provenance.creator, asset.provenance.license].filter(Boolean).join(" - ")}`}
+                      className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) flex size-11 items-center justify-center rounded-[2cqw] border border-solid border-white/30 bg-black/60 text-white backdrop-blur-sm hover:border-(--accent) hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-(--accent) [&_svg]:size-[40%]!"
+                    >
+                      <ExternalLink aria-hidden="true" />
+                    </a>
+                  )}
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
-                      className={`pointer-events-auto absolute right-(--card-tool-inset) top-(--card-tool-top-inset) ${library ? "size-11!" : "size-[min(25cqw,var(--cell-tool-space))]!"} p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!`}
-                      aria-label={
-                        library?.onImport
-                          ? t("library.search.import", { value1: asset?.title })
-                          : library
-                            ? t("cell.actions.deleteImage", {
-                                value1: asset?.title,
-                              })
-                            : t("cell.actions.clear")
-                      }
+                      className={cardToolButtonStyles({
+                        position: "topRight",
+                        size: library ? "fixed" : "proportional",
+                      })}
+                      aria-label={primaryActionLabel}
                       disabled={library?.disabled}
-                      title={
-                        library?.onImport
-                          ? t("library.search.import", { value1: asset?.title })
-                          : library
-                            ? t("cell.actions.deleteImage", {
-                                value1: asset?.title,
-                              })
-                            : t("cell.actions.clear")
-                      }
+                      title={primaryActionLabel}
                       onClick={() => {
                         setHoverTools(false);
                         close();
-                        if (library?.onImport) library.onImport();
+                        if (selectsLibraryImage) library?.onSelect?.();
+                        else if (library?.onImport) library.onImport();
                         else if (library) library.onDelete();
                         else onClear();
                       }}
                     >
-                      {library?.onImport ? (
+                      {selectsLibraryImage ? (
+                        <Check aria-hidden="true" />
+                      ) : library?.onImport ? (
                         <Download aria-hidden="true" />
                       ) : (
                         <Trash2 aria-hidden="true" />
@@ -759,7 +817,7 @@ export function GridCell({
                 } as React.CSSProperties
               }
               rows={1}
-              maxLength={120}
+              maxLength={captionMaxLength}
               value={cell.title}
               placeholder={t("editor.headingPlaceholder")}
               aria-label={
@@ -814,7 +872,7 @@ export function GridCell({
               }
             />
           </div>
-          <CardFrame />
+          {!library && <CardFrame />}
           {asset && cropTarget === asset.id && (
             <CropEditor
               asset={asset}

@@ -359,6 +359,14 @@ async function chooseImage(page, name, index = 0) {
     name: "Choose image",
     exact: true,
   });
+  if (
+    !(await dialog
+      .getByRole("button", { name: `Use ${name}`, exact: true })
+      .isVisible())
+  )
+    await dialog
+      .getByRole("button", { name: `Image options: ${name}`, exact: true })
+      .click({ position: { x: 5, y: 5 } });
   await dialog
     .getByRole("button", { name: `Use ${name}`, exact: true })
     .click();
@@ -488,29 +496,39 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
       const catalog = query.startsWith("historycontinuation")
         ? [
             ...first.slice(0, 2),
-            ...Array.from({ length: 11 }, (_, index) =>
+            ...Array.from({ length: 9 }, (_, index) =>
               result(index + 10, `Open ${index + 10}`),
             ),
           ]
-        : query.startsWith("scoped")
+        : query.startsWith("shortcursor")
           ? [
-              result(30, "Unrelated", { Categories: { value: "" } }),
-              result(31, "Neutral title", {
-                Categories: { value: "Architecture" },
-              }),
-              result(32, "Forest", { Categories: { value: "Nature" } }),
+              result(1, "Earth"),
+              result(2, "Moon"),
+              ...Array.from({ length: 70 }, (_, index) =>
+                result(index + 10, `Copyrighted ${index + 10}`, {
+                  Copyrighted: { value: "True" },
+                }),
+              ),
             ]
-          : query.startsWith("paged")
+          : query.startsWith("scoped")
             ? [
-                ...first,
-                ...Array.from({ length: 11 }, (_, index) =>
-                  result(index + 10, `Open ${index + 10}`),
-                ),
-                result(2, "Moon"),
+                result(30, "Unrelated", { Categories: { value: "" } }),
+                result(31, "Neutral title", {
+                  Categories: { value: "Architecture" },
+                }),
+                result(32, "Forest", { Categories: { value: "Nature" } }),
               ]
-            : query.startsWith("moon")
-              ? [result(2, "Moon")]
-              : first;
+            : query.startsWith("paged")
+              ? [
+                  ...first,
+                  ...Array.from({ length: 11 }, (_, index) =>
+                    result(index + 10, `Open ${index + 10}`),
+                  ),
+                  result(2, "Moon"),
+                ]
+              : query.startsWith("moon")
+                ? [result(2, "Moon")]
+                : first;
       const next = offset + limit;
       return route.fulfill({
         json: {
@@ -759,11 +777,12 @@ for (const [mode, density, viewport] of [
       await page.screenshot({
         path: testInfo.outputPath(`preview-sizing-${mode}.png`),
       });
-      if (mode === "mobile")
+      if (mode === "mobile") {
+        await showImageActions(online, true);
         await online
           .getByRole("button", { name: "Use Earth", exact: true })
           .tap({ position: { x: 5, y: 5 } });
-      else {
+      } else {
         await online
           .getByRole("button", { name: "Image options: Earth", exact: true })
           .hover({ position: { x: 5, y: 5 } });
@@ -843,6 +862,122 @@ test("Met preview variants upgrade only when necessary and release temporary ori
   expect((await localDatabase(page)).images).toHaveLength(0);
 });
 
+async function showImageActions(container, touch = false) {
+  const image = container.locator("[data-library-thumbnail]").first();
+  if (touch) {
+    if ((await image.getAttribute("aria-expanded")) !== "true")
+      await image.tap({ position: { x: 5, y: 5 } });
+  } else await image.hover({ position: { x: 5, y: 5 } });
+}
+
+async function expectSolidLibraryCard(card) {
+  await expect(card.locator("[data-cell-image-frame]")).toHaveCount(0);
+  await expect(card).toHaveCSS("border-top-style", "solid");
+  await expect(card).toHaveCSS("border-top-width", "1px");
+  await expect(card.locator("[data-card-content]")).toHaveCSS(
+    "mask-image",
+    "none",
+  );
+  const bounds = await card.boundingBox();
+  const content = await card.locator("[data-card-content]").boundingBox();
+  expect(content.x - bounds.x).toBeCloseTo(1, 0);
+  expect(content.y - bounds.y).toBeCloseTo(1, 0);
+  expect(bounds.width - content.width).toBeCloseTo(2, 0);
+  expect(bounds.height - content.height).toBeCloseTo(2, 0);
+}
+
+for (const [mode, sourceTest] of [
+  ["desktop", test],
+  ["mobile", touchTest],
+]) {
+  sourceTest(
+    `source rights ${mode} opens from inside the card without selecting it`,
+    async ({ page }, testInfo) => {
+      await mockCommons(page);
+      await page
+        .context()
+        .route("https://commons.wikimedia.org/wiki/**", (route) =>
+          route.fulfill({
+            contentType: "text/html",
+            body: "<title>Source fixture</title>",
+          }),
+        );
+      await page.goto("./");
+      if (mode === "desktop")
+        await selectField(page, "sidebar-image-source", "commons");
+      else {
+        await page
+          .locator(".cell-image-button")
+          .first()
+          .tap({ position: { x: 5, y: 5 } });
+        await selectField(page, "picker-image-source", "commons");
+      }
+      const online = page.getByRole("region", { name: "Online", exact: true });
+      const card = online.locator("[data-library-image]");
+      await expect(online.locator(".library-heading")).toHaveValue("Earth");
+      const source = online.getByRole("link", {
+        name: "Source and rights",
+        exact: true,
+      });
+      await expect(source).toHaveCount(0);
+      await showImageActions(online, mode === "mobile");
+      await expect(source).toBeVisible();
+      await expectSolidLibraryCard(card.locator(":scope > .image-card"));
+      if (mode === "desktop")
+        await expect(card.locator(":scope > .image-card")).toHaveCSS(
+          "border-top-color",
+          await paletteColor(page, "accent"),
+        );
+      const cardBounds = await card.boundingBox();
+      const sourceBounds = await source.boundingBox();
+      expect(sourceBounds.x).toBeGreaterThan(cardBounds.x);
+      expect(sourceBounds.y).toBeGreaterThan(cardBounds.y);
+      expect(sourceBounds.x + sourceBounds.width).toBeLessThan(
+        cardBounds.x + cardBounds.width,
+      );
+      expect(sourceBounds.y + sourceBounds.height).toBeLessThan(
+        cardBounds.y + cardBounds.height,
+      );
+      expect(
+        Math.abs(
+          cardBounds.height -
+            (await card.locator(":scope > .image-card").boundingBox()).height,
+        ),
+      ).toBeLessThan(1);
+      await page.screenshot({
+        path: testInfo.outputPath(`source-${mode}-inside-card.png`),
+        fullPage: true,
+      });
+      const opened = page.context().waitForEvent("page");
+      await source.click();
+      const sourcePage = await opened;
+      await sourcePage.waitForLoadState();
+      expect(sourcePage.url()).toBe(
+        "https://commons.wikimedia.org/wiki/File:Earth.jpg",
+      );
+      await sourcePage.close();
+      await expect(page.locator(".grid-cell img")).toHaveCount(0);
+      expect((await localDatabase(page)).images).toHaveLength(0);
+      if (mode === "mobile") {
+        await expect(
+          page.getByRole("dialog", { name: "Choose image", exact: true }),
+        ).toBeVisible();
+        await showImageActions(online, true);
+        await online
+          .getByRole("button", { name: "Use Earth", exact: true })
+          .tap();
+        await expect(
+          page.getByRole("dialog", { name: "Choose image", exact: true }),
+        ).toHaveCount(0);
+        await expect(page.locator(".grid-cell img")).toHaveCount(1);
+      } else {
+        await page.mouse.move(0, 0);
+        await expect(source).toHaveCount(0);
+      }
+    },
+  );
+}
+
 for (const [mode, providerTest] of [
   ["desktop", test],
   ["mobile", touchTest],
@@ -919,15 +1054,17 @@ for (const [mode, providerTest] of [
       await expect(
         online.getByRole("button", { name: "Next results", exact: true }),
       ).toBeDisabled();
+      await showImageActions(online, mode === "mobile");
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveAttribute("title", "Fixture curator - CC0");
+      ).toHaveAttribute("title", "Source and rights: Fixture curator - CC0");
       const importImage = async () => {
-        if (mode === "mobile")
+        if (mode === "mobile") {
+          await showImageActions(online, true);
           await online
             .getByRole("button", { name: "Use Iris", exact: true })
             .tap({ position: { x: 5, y: 5 } });
-        else {
+        } else {
           await remote.hover({ position: { x: 5, y: 5 } });
           await online
             .getByRole("button", { name: "Import Iris", exact: true })
@@ -952,6 +1089,7 @@ for (const [mode, providerTest] of [
         await expect(page.locator(".grid-cell img")).toHaveCount(2);
         await selectField(page, "sidebar-image-source", "imported");
         await expect(page.locator("#asset-library .asset")).toHaveCount(1);
+        await showImageActions(page.locator("#asset-library"));
         await expect(
           page
             .locator("#asset-library")
@@ -1182,9 +1320,13 @@ for (const [mode, providerTest] of [
         ),
       ).toBe(true);
       await expect(online.locator("[data-library-image]")).toHaveCount(1);
+      await showImageActions(online, mode === "mobile");
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveAttribute("title", "Fixture creator - Public domain");
+      ).toHaveAttribute(
+        "title",
+        "Source and rights: Fixture creator - Public domain",
+      );
       await expect(online.locator("[data-library-image] img")).toHaveJSProperty(
         "naturalWidth",
         1200,
@@ -1194,6 +1336,7 @@ for (const [mode, providerTest] of [
       ).toBeDisabled();
       const importResult = async () => {
         if (mode === "mobile") {
+          await showImageActions(online, true);
           await online
             .getByRole("button", { name: "Use Earth", exact: true })
             .tap({ position: { x: 5, y: 5 } });
@@ -1224,6 +1367,7 @@ for (const [mode, providerTest] of [
           page.locator("#asset-library [data-library-image]"),
         ).toHaveCount(1);
         await expect(page.locator(".grid-cell img")).toHaveCount(0);
+        await showImageActions(page.locator("#asset-library"));
         await expect(
           page
             .locator("#asset-library")
@@ -1578,22 +1722,25 @@ for (const provider of ["commons", "met"]) {
         const firstTopic = provider === "commons" ? "Space" : "Paintings";
         const secondTopic = provider === "commons" ? "Nature" : "Ceramics";
         await searchCommons(page, "paged");
-        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(online.locator(".library-heading")).toHaveCount(10);
         await expect(
           online.getByRole("button", { name: firstTopic, exact: true }),
         ).toBeDisabled();
         await online
           .getByRole("button", { name: "Next results", exact: true })
           .click();
-        await expect(online.locator(".library-heading")).toHaveValue(
-          provider === "commons" ? "Moon" : "Vase",
-        );
+        await expect(online.locator(".library-heading")).toHaveCount(3);
+        await expect(
+          online
+            .locator(".library-heading")
+            .nth(provider === "commons" ? 0 : 2),
+        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
         const beforeTopic = mock.requests.length;
         await online
           .getByRole("button", { name: secondTopic, exact: true })
           .click();
         await expect(input).toHaveValue("paged");
-        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(online.locator(".library-heading")).toHaveCount(10);
         await expect(
           online.getByRole("button", { name: "Previous results", exact: true }),
         ).toBeDisabled();
@@ -1618,10 +1765,10 @@ for (const provider of ["commons", "met"]) {
           online.getByRole("button", { name: secondTopic, exact: true }),
         ).toBeDisabled();
         await searchCommons(page, "paged");
-        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(online.locator(".library-heading")).toHaveCount(10);
         await online.getByRole("button", { name: "All", exact: true }).click();
         await expect(input).toHaveValue("paged");
-        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(online.locator(".library-heading")).toHaveCount(10);
         const unrestricted = mock.requests.at(-1);
         if (provider === "commons")
           expect(unrestricted.query).not.toContain("intitle:");
@@ -1635,15 +1782,17 @@ for (const provider of ["commons", "met"]) {
         await online
           .getByRole("button", { name: "Next results", exact: true })
           .click();
-        await expect(online.locator(".library-heading")).toHaveValue(
-          provider === "commons" ? "Moon" : "Vase",
-        );
+        await expect(
+          online
+            .locator(".library-heading")
+            .nth(provider === "commons" ? 0 : 2),
+        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
         if (mode === "desktop") {
           const url = new URL(page.url());
           expect(url.searchParams.get("topic")).toBe("all");
           expect(url.searchParams.get("q")).toBe("paged");
           expect(url.searchParams.get("offset")).toBe(
-            provider === "commons" ? "15" : "18",
+            provider === "commons" ? "13" : "16",
           );
         }
         await page.reload();
@@ -1652,9 +1801,11 @@ for (const provider of ["commons", "met"]) {
         await expect(
           online.getByRole("button", { name: "All", exact: true }),
         ).toBeDisabled();
-        await expect(online.locator(".library-heading")).toHaveValue(
-          provider === "commons" ? "Moon" : "Vase",
-        );
+        await expect(
+          online
+            .locator(".library-heading")
+            .nth(provider === "commons" ? 0 : 2),
+        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
         await input.scrollIntoViewIfNeeded();
         await page.screenshot({
           path: testInfo.outputPath(`${provider}-${mode}-combined-search.png`),
@@ -1678,7 +1829,7 @@ for (const provider of ["commons", "met"]) {
     await online
       .getByRole("button", { name: "Previous results", exact: true })
       .click();
-    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await expect(online.locator(".library-heading")).toHaveCount(10);
     await expect(
       online.getByRole("button", { name: "Previous results", exact: true }),
     ).toBeDisabled();
@@ -1695,13 +1846,13 @@ for (const provider of ["commons", "met"]) {
         .tap({ position: { x: 5, y: 5 } });
       await selectField(page, "picker-image-source", provider);
       const online = await searchCommons(page, "paged");
-      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading")).toHaveCount(10);
       await online
         .getByRole("button", { name: "Next results", exact: true })
         .click();
-      await expect(online.locator(".library-heading")).toHaveValue(
-        provider === "commons" ? "Moon" : "Vase",
-      );
+      await expect(
+        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
+      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
       expect(new URL(page.url()).searchParams.get("source")).toBe("imported");
       await page.reload();
       await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1715,9 +1866,9 @@ for (const provider of ["commons", "met"]) {
       await expect(
         online.getByRole("searchbox", { name: "Search images", exact: true }),
       ).toHaveValue("paged");
-      await expect(online.locator(".library-heading")).toHaveValue(
-        provider === "commons" ? "Moon" : "Vase",
-      );
+      await expect(
+        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
+      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
       expect(
         await page.evaluate(() =>
           document.activeElement?.matches("input,textarea"),
@@ -1726,7 +1877,7 @@ for (const provider of ["commons", "met"]) {
       await online
         .getByRole("button", { name: "Previous results", exact: true })
         .click();
-      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading")).toHaveCount(10);
     },
   );
 
@@ -1738,19 +1889,19 @@ for (const provider of ["commons", "met"]) {
     await page.goto("./?extra=keep#anchor");
     await selectField(page, "sidebar-image-source", provider);
     const online = await searchCommons(page, "paged");
-    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await expect(online.locator(".library-heading")).toHaveCount(10);
     await online
       .getByRole("button", { name: "Next results", exact: true })
       .click();
-    const last = provider === "commons" ? "Moon" : "Vase";
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    const last = provider === "commons" ? "Open 20" : "Vase";
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     expect(new URL(page.url()).searchParams.get("offset")).toBe(
-      provider === "commons" ? "15" : "18",
+      provider === "commons" ? "13" : "16",
     );
     await page.goBack();
-    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await expect(online.locator(".library-heading")).toHaveCount(10);
     await page.goForward();
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     await openSidebarPanel(page, "Settings");
     await page.reload();
     await expect(
@@ -1763,20 +1914,20 @@ for (const provider of ["commons", "met"]) {
     await expect(
       online.getByRole("searchbox", { name: "Search images", exact: true }),
     ).toHaveValue("paged");
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     await online
       .getByRole("button", { name: "Previous results", exact: true })
       .click();
-    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await expect(online.locator(".library-heading")).toHaveCount(10);
     await online
       .getByRole("button", { name: "Next results", exact: true })
       .click();
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     await sidebarToggle(page, true).click();
     await page.reload();
     await expect(sidebarToggle(page, false)).toBeVisible();
     await openSidebarPanel(page, "Images");
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     const url = new URL(page.url());
     expect(url.searchParams.get("extra")).toBe("keep");
     expect(url.hash).toBe("#anchor");
@@ -1786,7 +1937,7 @@ for (const provider of ["commons", "met"]) {
       provider === "commons" ? "met" : "commons",
     );
     await selectField(page, "sidebar-image-source", provider);
-    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await expect(online.locator(".library-heading").last()).toHaveValue(last);
     const topic = provider === "commons" ? "Nature" : "Sculpture";
     await online.getByRole("button", { name: topic, exact: true }).click();
     await expect(online).toHaveAttribute("aria-busy", "false");
@@ -1816,18 +1967,18 @@ for (const provider of ["commons", "met"]) {
         provider === "commons" ? "Earth" : "Iris",
       );
       await searchCommons(page, "paged");
-      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading")).toHaveCount(10);
       await online
         .getByRole("button", { name: "Next results", exact: true })
         .click();
-      await expect(online.locator(".library-heading")).toHaveValue(
-        provider === "commons" ? "Moon" : "Vase",
-      );
+      await expect(
+        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
+      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
       const visited = mock.requests.length;
       await online
         .getByRole("button", { name: "Previous results", exact: true })
         .click();
-      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading")).toHaveCount(10);
       expect(mock.requests).toHaveLength(visited);
       await online.locator(".library-heading").first().fill("Local caption");
       await searchCommons(page, "different");
@@ -1839,7 +1990,7 @@ for (const provider of ["commons", "met"]) {
       expect(mock.requests).toHaveLength(different);
       await selectField(page, "sidebar-image-source", "imported");
       await selectField(page, "sidebar-image-source", provider);
-      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading")).toHaveCount(10);
       await expect(online.locator(".library-heading").first()).toHaveValue(
         provider === "commons" ? "Earth" : "Iris",
       );
@@ -1865,14 +2016,15 @@ for (const provider of ["commons", "met"]) {
       await pickerOnline
         .getByRole("searchbox", { name: "Search images", exact: true })
         .fill("paged");
-      await expect(pickerOnline.locator(".library-heading")).toHaveCount(12);
+      await expect(pickerOnline.locator(".library-heading")).toHaveCount(10);
       expect(mock.requests).toHaveLength(different);
+      const pickerPaged = mock.requests.length;
       await page.clock.setFixedTime(new Date(Date.now() + 3600000 + 5000));
       await pickerOnline
         .getByRole("searchbox", { name: "Search images", exact: true })
         .fill("different");
       await expect(pickerOnline).toHaveAttribute("aria-busy", "false");
-      expect(mock.requests).toHaveLength(different + 1);
+      expect(mock.requests).toHaveLength(pickerPaged + 1);
       if (provider === "met")
         expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(2);
     },
@@ -1890,7 +2042,7 @@ for (const provider of ["commons", "met"]) {
     const headings = online.locator(".library-heading");
     const titles = [
       provider === "commons" ? "Earth" : "Iris",
-      ...Array.from({ length: 11 }, (_, index) => `Open ${index + 10}`),
+      ...Array.from({ length: 9 }, (_, index) => `Open ${index + 10}`),
     ];
     await expect
       .poll(() =>
@@ -1904,8 +2056,8 @@ for (const provider of ["commons", "met"]) {
         .filter((request) => request.query.startsWith("paged"))
         .map(({ offset, limit }) => ({ offset, limit })),
     ).toEqual([
-      { offset: 0, limit: 12 },
-      { offset: 12, limit: provider === "commons" ? 3 : 6 },
+      { offset: 0, limit: 10 },
+      { offset: 10, limit: provider === "commons" ? 3 : 6 },
     ]);
     await online
       .getByRole("button", { name: "Next results", exact: true })
@@ -1916,8 +2068,12 @@ for (const provider of ["commons", "met"]) {
           elements.map((element) => element.value),
         ),
       )
-      .toEqual([provider === "commons" ? "Moon" : "Vase"]);
-    expect(mock.requests.at(-1).offset).toBe(provider === "commons" ? 15 : 18);
+      .toEqual(
+        provider === "commons"
+          ? ["Moon", "Open 19", "Open 20"]
+          : ["Open 19", "Open 20", "Vase"],
+      );
+    expect(mock.requests.at(-1).offset).toBe(provider === "commons" ? 13 : 16);
     await expect(
       online.getByRole("button", { name: "Next results", exact: true }),
     ).toBeDisabled();
@@ -1937,6 +2093,239 @@ for (const provider of ["commons", "met"]) {
   });
 }
 
+test("Commons disables Next on a short filtered page even with a continuation cursor", async ({
+  page,
+}) => {
+  const mock = await mockCommons(page);
+  await page.goto("./?panel=images&source=commons&topic=all&q=shortcursor");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  await expect(online.locator(".library-heading")).toHaveCount(2);
+  await expect(online).toHaveAttribute("aria-busy", "false");
+  expect(mock.requests).toHaveLength(5);
+  expect(mock.requests.at(-1).offset + mock.requests.at(-1).limit).toBeLessThan(
+    72,
+  );
+  await expect(
+    online.getByRole("button", { name: "Next results", exact: true }),
+  ).toBeDisabled();
+  await expect(online.getByRole("alert")).toHaveCount(0);
+});
+
+async function expectPlaceholderGridSpacing(online) {
+  const layout = await online
+    .locator("[data-online-card-area]")
+    .evaluate((area) => {
+      const grid = area.firstElementChild;
+      const placeholders = [
+        ...grid.querySelectorAll("[data-image-placeholder]"),
+      ];
+      const lastCard = placeholders
+        .at(-1)
+        .firstElementChild.getBoundingClientRect();
+      return {
+        rowGap: parseFloat(getComputedStyle(grid).rowGap),
+        columnGap: parseFloat(getComputedStyle(grid).columnGap),
+        bottomSpace: grid.getBoundingClientRect().bottom - lastCard.bottom,
+        footerCount: placeholders.filter(
+          (placeholder) => placeholder.children.length !== 1,
+        ).length,
+      };
+    });
+  expect(layout.rowGap).toBe(10);
+  expect(layout.columnGap).toBe(10);
+  expect(Math.abs(layout.bottomSpace)).toBeLessThan(1);
+  expect(layout.footerCount).toBe(0);
+}
+
+async function expectCenteredOnlineMessage(online, role) {
+  const message = await online.getByRole(role).boundingBox();
+  const area = await online.locator("[data-online-card-area]").boundingBox();
+  expect(
+    Math.abs(message.x + message.width / 2 - area.x - area.width / 2),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(message.y + message.height / 2 - area.y - area.height / 2),
+  ).toBeLessThan(1);
+}
+
+test("online sidebar keeps placeholders and centers empty and error states over evenly spaced cards", async ({
+  page,
+}, testInfo) => {
+  const mock = await mockCommons(page);
+  await page.goto("./?panel=images&source=commons&topic=all");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  const placeholders = online.locator("[data-image-placeholder]");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
+  await expect(placeholders).toHaveCount(9);
+  await searchCommons(page, "slow", false);
+  await expect
+    .poll(() => mock.requests.some(({ query }) => query.startsWith("slow")))
+    .toBe(true);
+  await expect(placeholders).toHaveCount(10);
+  await expect(online.locator(".lucide-loader-circle")).toHaveCount(10);
+  await expectPlaceholderGridSpacing(online);
+  page.emit("commons-release");
+  await expect(online.locator(".library-heading")).toHaveValue("Stale");
+  await expect(placeholders).toHaveCount(9);
+  await expect(online.locator(".lucide-loader-circle")).toHaveCount(0);
+  await searchCommons(page, "empty");
+  await expect(placeholders).toHaveCount(10);
+  await expectCenteredOnlineMessage(online, "status");
+  await expectPlaceholderGridSpacing(online);
+  await searchCommons(page, "invalid");
+  await expect(online.getByRole("alert")).toBeVisible();
+  await expect(placeholders).toHaveCount(10);
+  await expect(online.locator(".lucide-loader-circle")).toHaveCount(0);
+  await expectCenteredOnlineMessage(online, "alert");
+  await expectPlaceholderGridSpacing(online);
+  await page.screenshot({
+    path: testInfo.outputPath("sidebar-error-overlay.png"),
+    fullPage: true,
+  });
+});
+
+for (const [mode, pickerTest] of [
+  ["desktop", nativeTouchTest],
+  ["mobile", touchTest],
+]) {
+  pickerTest(
+    `image picker ${mode} keeps ten slots while loading and after sparse results`,
+    async ({ page }, testInfo) => {
+      const mock = await mockCommons(page);
+      await page.goto("./");
+      await page
+        .locator(".cell-image-button")
+        .first()
+        .tap({ position: { x: 5, y: 5 } });
+      const picker = page.getByRole("dialog", {
+        name: "Choose image",
+        exact: true,
+      });
+      const imported = picker.getByRole("region", {
+        name: "Imported",
+        exact: true,
+      });
+      await expect(imported.locator("[data-upload-tile]")).toHaveCount(1);
+      await expect(imported.locator("[data-image-placeholder]")).toHaveCount(9);
+      await selectField(page, "picker-image-source", "commons");
+      const online = picker.getByRole("region", {
+        name: "Online",
+        exact: true,
+      });
+      const slots = online.locator(
+        "[data-library-image], [data-image-placeholder]",
+      );
+      const placeholders = online.locator("[data-image-placeholder]");
+      await expect(online.locator(".library-heading")).toHaveValue("Earth");
+      await expect(placeholders).toHaveCount(9);
+      await expect(slots).toHaveCount(10);
+      const filterLayout = await picker
+        .locator("#picker-image-source")
+        .evaluate((source) => {
+          const section = source.closest("section");
+          const searchBounds = section
+            .querySelector('input[type="search"]')
+            .getBoundingClientRect();
+          const sourceBounds = source.getBoundingClientRect();
+          const control = source.parentElement;
+          const labelBounds = control
+            .querySelector(".field-label")
+            .getBoundingClientRect();
+          const controlBounds = control.getBoundingClientRect();
+          const rowStyles = getComputedStyle(control.parentElement);
+          const sideBySide = section.getBoundingClientRect().width >= 520;
+          return {
+            rowGap: rowStyles.rowGap,
+            columnGap: rowStyles.columnGap,
+            labelTopInset: labelBounds.top - controlBounds.top,
+            labelGap: sourceBounds.top - labelBounds.bottom,
+            aligned: sideBySide
+              ? Math.abs(sourceBounds.bottom - searchBounds.bottom) < 1 &&
+                Math.abs(controlBounds.left - searchBounds.right - 12) < 1
+              : Math.abs(sourceBounds.width - searchBounds.width) < 1 &&
+                Math.abs(controlBounds.top - searchBounds.bottom - 12) < 1,
+          };
+        });
+      expect(filterLayout.rowGap).toBe("12px");
+      expect(filterLayout.columnGap).toBe("12px");
+      expect(Math.abs(filterLayout.labelTopInset)).toBeLessThan(1);
+      expect(filterLayout.labelGap).toBeCloseTo(8, 0);
+      expect(filterLayout.aligned).toBe(true);
+      const grid = slots.first().locator("..");
+      const settledBounds = await grid.boundingBox();
+      await online.getByRole("searchbox").fill("slow");
+      await expect
+        .poll(() => mock.requests.some(({ query }) => query.startsWith("slow")))
+        .toBe(true);
+      await expect(placeholders).toHaveCount(10);
+      await expect(
+        online.locator('[data-loading="true"] .lucide-loader-circle'),
+      ).toHaveCount(10);
+      const loadingBounds = await grid.boundingBox();
+      expect(Math.abs(loadingBounds.y - settledBounds.y)).toBeLessThan(1);
+      await expectPlaceholderGridSpacing(online);
+      await page.screenshot({
+        path: testInfo.outputPath(`picker-${mode}-loading.png`),
+        fullPage: true,
+      });
+      page.emit("commons-release");
+      await expect(online).toHaveAttribute("aria-busy", "false");
+      await expect(online.locator(".library-heading")).toHaveValue("Stale");
+      await expect(placeholders).toHaveCount(9);
+      await expect(online.locator(".lucide-loader-circle")).toHaveCount(0);
+      for (const placeholder of await placeholders.all()) {
+        await expect(placeholder).toHaveAttribute("aria-hidden", "true");
+        expect(
+          await placeholder
+            .locator(":scope > div")
+            .evaluate((element) => Number(getComputedStyle(element).opacity)),
+        ).toBe(0.25);
+        expect(
+          await placeholder
+            .locator(":scope > div")
+            .evaluate((element) =>
+              parseFloat(getComputedStyle(element).borderTopLeftRadius),
+            ),
+        ).toBeGreaterThan(0);
+        await expect(
+          placeholder.locator("button, a, input, textarea"),
+        ).toHaveCount(0);
+      }
+      await online.getByRole("searchbox").fill("paged");
+      await expect(online.locator(".library-heading")).toHaveCount(10);
+      await expect(placeholders).toHaveCount(0);
+      await online
+        .getByRole("button", { name: "Next results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveCount(3);
+      await expect(placeholders).toHaveCount(7);
+      await expect(
+        online.getByRole("button", { name: "Next results", exact: true }),
+      ).toBeDisabled();
+      await online
+        .getByRole("button", { name: "Previous results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveCount(10);
+      await online.getByRole("searchbox").fill("empty");
+      await expect(online).toHaveAttribute("aria-busy", "false");
+      await expect(placeholders).toHaveCount(10);
+      await expect(online.locator(".lucide-loader-circle")).toHaveCount(0);
+      await expectPlaceholderGridSpacing(online);
+      await expectCenteredOnlineMessage(online, "status");
+      await page.screenshot({
+        path: testInfo.outputPath(`picker-${mode}-empty.png`),
+        fullPage: true,
+      });
+      await online.getByRole("searchbox").fill("invalid");
+      await expect(online.getByRole("alert")).toBeVisible();
+      await expect(placeholders).toHaveCount(10);
+      await expect(online.locator(".lucide-loader-circle")).toHaveCount(0);
+      await expectCenteredOnlineMessage(online, "alert");
+      await expectPlaceholderGridSpacing(online);
+    },
+  );
+}
+
 test("Commons keeps collected images when the final batch has only image-history continuation", async ({
   page,
 }) => {
@@ -1946,21 +2335,21 @@ test("Commons keeps collected images when the final batch has only image-history
   );
   const online = page.getByRole("region", { name: "Online", exact: true });
   const headings = online.locator(".library-heading");
-  await expect(headings).toHaveCount(12);
+  await expect(headings).toHaveCount(10);
   await expect(headings.first()).toHaveValue("Earth");
-  await expect(headings.last()).toHaveValue("Open 20");
+  await expect(headings.last()).toHaveValue("Open 18");
   await expect(online.getByRole("alert")).toHaveCount(0);
   await expect(
     online.getByRole("button", { name: "Next results", exact: true }),
   ).toBeDisabled();
   expect(mock.requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual(
     [
-      { offset: 0, limit: 12 },
-      { offset: 12, limit: 1 },
+      { offset: 0, limit: 10 },
+      { offset: 10, limit: 1 },
     ],
   );
   await page.reload();
-  await expect(headings).toHaveCount(12);
+  await expect(headings).toHaveCount(10);
   await expect(online.getByRole("alert")).toHaveCount(0);
   expect(mock.requests).toHaveLength(4);
   await searchCommons(page, "invalidcursor");
@@ -6568,7 +6957,7 @@ test("small library caption clicks retain caret focus after image hover", async 
   }
 });
 
-test("sidebar cards match canvas placement, editing and proportional dotted frames", async ({
+test("sidebar cards keep solid unmasked borders while canvas and upload targets retain dotted frames", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -6671,7 +7060,11 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
     await expect(libraryCaption).toHaveValue(`Library ${width}`);
     const idleUpload = await upload.boundingBox();
     await thumbnail.hover({ position: { x: 5, y: 30 } });
-    await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
+    await expectSolidLibraryCard(asset);
+    await expect(asset).toHaveCSS(
+      "border-top-color",
+      await paletteColor(page, "accent"),
+    );
     await expect(asset).toHaveCSS("cursor", "move");
     {
       await libraryCaption.click();
@@ -6699,10 +7092,14 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
       const imageBounds = await thumbnail.boundingBox();
       const titleBounds = await asset.locator(".asset-name").boundingBox();
       expect(titleBounds.y + titleBounds.height).toBeCloseTo(imageBounds.y, 0);
-      await expect(externalFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(externalFrame).toHaveCount(0);
       await expect(libraryCaption).toHaveCSS("outline-style", "none");
       await thumbnail.hover({ position: { x: 5, y: 30 } });
-      await expect(externalFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await expectSolidLibraryCard(asset);
+      await expect(asset).toHaveCSS(
+        "border-top-color",
+        await paletteColor(page, "accent"),
+      );
       const deleteBounds = await asset
         .getByRole("button", { name: /^Delete / })
         .boundingBox();
@@ -6728,14 +7125,8 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
             (deleteBounds.y - corner.y) ** 2,
         ).toBeLessThanOrEqual(12 ** 2);
       }
-      const outer = await asset.boundingBox();
-      const frameBounds = await externalFrame.boundingBox();
-      const edge = (outer.width - 2) * 0.0025;
-      expect(frameBounds.x).toBeCloseTo(outer.x + 1 + edge, 1);
-      expect(frameBounds.y).toBeCloseTo(outer.y + 1 + edge, 1);
-      expect(frameBounds.width).toBeCloseTo(outer.width - 2 - edge * 2, 1);
-      expect(frameBounds.height).toBeCloseTo(outer.height - 2 - edge * 2, 1);
-      const screenshot = await externalFrame.screenshot();
+      await upload.hover({ position: { x: 12, y: 12 } });
+      const screenshot = await uploadFrame.screenshot();
       const pixels = await page.evaluate(
         async (bytes) => {
           const bitmap = await createImageBitmap(
@@ -6870,15 +7261,18 @@ test("sidebar cards match canvas placement, editing and proportional dotted fram
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
-    for (const [control, frame] of [
-      [thumbnail, externalFrame],
-      [upload, uploadFrame],
-    ]) {
+    for (const control of [thumbnail, upload]) {
       await control.focus();
       await control.press("Tab");
       await page.keyboard.press("Shift+Tab");
       await expect(control).toBeFocused();
-      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+      if (control === thumbnail) {
+        await expectSolidLibraryCard(asset);
+        await expect(asset).toHaveCSS(
+          "border-top-color",
+          await paletteColor(page, "accent"),
+        );
+      } else await expect(uploadFrame).toHaveCSS("--frame-color", "#d8f36a");
       await expect(control).toHaveCSS("outline-style", "none");
     }
     const finalThumbnail = await thumbnail.boundingBox();

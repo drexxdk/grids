@@ -1,5 +1,10 @@
 import { t } from "./i18n";
 import {
+  captionMaxLength,
+  providerImageMaxPixels,
+  imagePageSize,
+} from "./config";
+import {
   useEffect,
   useLayoutEffect,
   useReducer,
@@ -40,7 +45,10 @@ import {
   type CardDragVisual,
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
-import { LibraryImage } from "./components/LibraryImage";
+import {
+  LibraryImage,
+  LibraryImagePlaceholder,
+} from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
 import { ImageSourceSelect } from "./components/ui/ImageTabs";
 import { OnlineImages } from "./components/OnlineImages";
@@ -83,7 +91,7 @@ import {
 import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
 
 const pickerGridClassName =
-  "grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] gap-4 *:max-w-(--picker-card-max-width)";
+  "grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] gap-2.5 *:max-w-(--picker-card-max-width)";
 
 function BoardHeading({
   board,
@@ -163,7 +171,7 @@ function BoardHeading({
           ref={input}
           className={fieldClass}
           aria-label={t("editor.headingLabel")}
-          maxLength={120}
+          maxLength={captionMaxLength}
           value={board.heading}
           placeholder={t("editor.headingPlaceholder")}
           onChange={(event) => onChange(event.target.value)}
@@ -689,7 +697,7 @@ export default function App() {
       asset = store.createAsset(blob, image.title);
       asset.provenance = provenance;
       const decoded = await loadImage(asset.src);
-      if (decoded.naturalWidth * decoded.naturalHeight > 40000000)
+      if (decoded.naturalWidth * decoded.naturalHeight > providerImageMaxPixels)
         throw new Error("Image dimensions are too large");
       signal.throwIfAborted();
       if (localStore.current !== store) throw new Error("Storage changed");
@@ -879,6 +887,13 @@ export default function App() {
       </main>
     );
   }
+  const pickerSourceControl = (
+    <ImageSourceSelect
+      id="picker-image-source"
+      value={pickerSource}
+      onChange={setPickerSource}
+    />
+  );
   return (
     <>
       <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
@@ -988,7 +1003,7 @@ export default function App() {
                 className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
                 <div className="mb-4 flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1 [&_.field-label]:mt-0!">
+                  <div className="min-w-0 flex-1">
                     <ImageSourceSelect
                       id="sidebar-image-source"
                       value={librarySource}
@@ -1784,15 +1799,7 @@ export default function App() {
             } as CSSProperties
           }
         >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="w-60 max-w-full">
-              <ImageSourceSelect
-                id="picker-image-source"
-                value={pickerSource}
-                onChange={setPickerSource}
-              />
-            </div>
-          </div>
+          {!pickerProvider && <div className="mb-4">{pickerSourceControl}</div>}
           {pickerProvider && (
             <OnlineImages
               key={pickerProvider.id}
@@ -1800,6 +1807,7 @@ export default function App() {
               gridStyle={board}
               captionRows={captionRows}
               selectionOnly
+              searchActions={pickerSourceControl}
               gridClassName={pickerGridClassName}
               onImport={async (image, signal) => {
                 await importProviderImage(image, signal, imageTarget);
@@ -1848,6 +1856,18 @@ export default function App() {
                   }}
                 />
               ))}
+              {Array.from(
+                {
+                  length: Math.max(0, imagePageSize - activeAssets.length - 1),
+                },
+                (_, index) => (
+                  <LibraryImagePlaceholder
+                    key={`placeholder:${index}`}
+                    gridStyle={board}
+                    captionRows={captionRows}
+                  />
+                ),
+              )}
             </div>
             <input
               id="picker-cell-upload"

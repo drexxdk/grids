@@ -1,11 +1,26 @@
 import { z } from "zod";
 import { providerFreshTime, providerQuery } from "./cache";
 import {
+  providerPageSize,
+  providerQueryMaxLength,
+  providerImageMaxBytes,
+  providerImageMaxPixels,
+  captionMaxLength,
+} from "../config";
+import {
   provenanceSchema,
   providerHosts,
   previewCardMaxWidth,
   type Asset,
 } from "../model";
+
+const providerSearchTimeoutMs = 15_000;
+const providerDownloadTimeoutMs = 30_000;
+const providerMaxSearchBatches = 5;
+const metSearchResultLimit = 10_000;
+const metRequestIntervalMs = 100;
+const providerRetryDelayMs = 60_000;
+const providerMinimumRetryDelayMs = 1_000;
 
 export interface ProviderImage {
   provider: NonNullable<Asset["provenance"]>["provider"];
@@ -98,6 +113,7 @@ export interface ImageProvider {
     signal: AbortSignal,
     offset?: number,
     topic?: string | null,
+    pageSize?: number,
   ) => Promise<{
     images: ProviderImage[];
     next?: number;
@@ -108,12 +124,18 @@ export interface ImageProvider {
 export function cacheImageProvider(provider: ImageProvider): ImageProvider {
   return {
     ...provider,
-    search(query, signal, offset = 0, topic = null) {
-      const filter = query.trim().slice(0, 160);
+    search(
+      query,
+      signal,
+      offset = 0,
+      topic = null,
+      pageSize = providerPageSize,
+    ) {
+      const filter = query.trim().slice(0, providerQueryMaxLength);
       return providerQuery(
-        ["provider-page", provider.id, filter, offset, topic],
+        ["provider-page", provider.id, filter, offset, topic, pageSize],
         (requestSignal) =>
-          provider.search(filter, requestSignal, offset, topic),
+          provider.search(filter, requestSignal, offset, topic, pageSize),
         signal,
         (data) => (data?.incomplete ? 0 : providerFreshTime),
       );
@@ -124,7 +146,11 @@ export function cacheImageProvider(provider: ImageProvider): ImageProvider {
 export class ProviderError extends Error {
   constructor(
     public readonly kind:
-      "quota" | "busy" | "timeout" | "unavailable" | "invalid",
+      | "quota"
+      | "busy"
+      | "timeout"
+      | "unavailable"
+      | "invalid",
     public readonly retryAfter = 0,
   ) {
     super(kind);
@@ -144,8 +170,20 @@ export function fillImagePages(
 ): ImageProvider {
   return {
     ...provider,
-    async search(query, signal, offset = 0, topic = null) {
-      const deadline = AbortSignal.timeout(15000);
+    async search(
+      query,
+      signal,
+      offset = 0,
+      topic = null,
+      pageSize = providerPageSize,
+    ) {
+      if (
+        !Number.isInteger(pageSize) ||
+        pageSize < 1 ||
+        pageSize > providerPageSize
+      )
+        throw new ProviderError("invalid");
+      const deadline = AbortSignal.timeout(providerSearchTimeoutMs);
       const requestSignal = AbortSignal.any([signal, deadline]);
       const images: ProviderImage[] = [];
       const seen = new Set<string>();
@@ -153,12 +191,14 @@ export function fillImagePages(
       let next: number | undefined = offset;
       for (
         let batch = 0;
-        batch < 5 && next !== undefined && images.length < 12;
+        batch < providerMaxSearchBatches &&
+        next !== undefined &&
+        images.length < pageSize;
         batch++
       ) {
         signal.throwIfAborted();
         const cursor: number = next;
-        const remaining = 12 - images.length;
+        const remaining = pageSize - images.length;
         try {
           const result = await provider.search(
             query,
@@ -191,7 +231,7 @@ export function fillImagePages(
           throw error;
         }
       }
-      if (next !== undefined && images.length < 12) incomplete = true;
+      if (next !== undefined && images.length < pageSize) incomplete = true;
       return { images, next, ...(incomplete ? { incomplete: true } : {}) };
     },
   };
@@ -281,11 +321,17 @@ export const commons = cacheImageProvider(
       crop: true,
       export: true,
     },
-    async search(query, signal, offset = 0, limit = 12, topic = null) {
+    async search(
+      query,
+      signal,
+      offset = 0,
+      limit = providerPageSize,
+      topic = null,
+    ) {
       if (Date.now() < blockedUntil)
         throw new ProviderError("quota", blockedUntil - Date.now());
       const text =
-        query.slice(0, 160) ||
+        query.slice(0, providerQueryMaxLength) ||
         commons.browse.find((item) => item.id === topic)?.query ||
         "";
       const url = new URL("https://commons.wikimedia.org/w/api.php");
@@ -312,13 +358,19 @@ export const commons = cacheImageProvider(
         referrerPolicy: "no-referrer",
       });
       if (response.status === 429) {
-        const retry = response.headers.get("Retry-After") ?? "60";
+        const retry =
+          response.headers.get("Retry-After") ??
+          String(providerRetryDelayMs / 1000);
         const seconds = Number(retry);
         const wait = Number.isFinite(seconds)
           ? seconds * 1000
           : Date.parse(retry) - Date.now();
         blockedUntil =
-          Date.now() + Math.max(1000, Number.isFinite(wait) ? wait : 60000);
+          Date.now() +
+          Math.max(
+            providerMinimumRetryDelayMs,
+            Number.isFinite(wait) ? wait : providerRetryDelayMs,
+          );
         throw new ProviderError("quota", blockedUntil - Date.now());
       }
       if (!response.ok) throw new ProviderError("unavailable");
@@ -360,8 +412,8 @@ export const commons = cacheImageProvider(
           continue;
         if (
           !["image/jpeg", "image/png", "image/webp"].includes(info.mime) ||
-          info.size > 20000000 ||
-          info.width * info.height > 40000000
+          info.size > providerImageMaxBytes ||
+          info.width * info.height > providerImageMaxPixels
         )
           continue;
         if (
@@ -416,7 +468,7 @@ async function metJson(url: URL, signal: AbortSignal): Promise<unknown> {
   signal.throwIfAborted();
   const cooldown = metCooldown - Date.now();
   if (cooldown > 0) throw new ProviderError("quota", cooldown);
-  const wait = 100 - (Date.now() - metRequestTime);
+  const wait = metRequestIntervalMs - (Date.now() - metRequestTime);
   if (wait > 0)
     await new Promise<void>((resolve, reject) => {
       const abort = () => {
@@ -439,12 +491,17 @@ async function metJson(url: URL, signal: AbortSignal): Promise<unknown> {
     referrerPolicy: "no-referrer",
   });
   if (response.status === 429) {
-    const retry = response.headers.get("Retry-After") ?? "60";
+    const retry =
+      response.headers.get("Retry-After") ??
+      String(providerRetryDelayMs / 1000);
     const seconds = Number(retry);
     const delay = Number.isFinite(seconds)
       ? seconds * 1000
       : Date.parse(retry) - Date.now();
-    const duration = Math.max(1000, Number.isFinite(delay) ? delay : 60000);
+    const duration = Math.max(
+      providerMinimumRetryDelayMs,
+      Number.isFinite(delay) ? delay : providerRetryDelayMs,
+    );
     metCooldown = Date.now() + duration;
     throw new ProviderError("quota", duration);
   }
@@ -458,7 +515,10 @@ async function metJson(url: URL, signal: AbortSignal): Promise<unknown> {
 
 const metSearchSchema = z.object({
   total: z.number().int().nonnegative(),
-  objectIDs: z.array(z.number().int().positive()).max(12).nullable(),
+  objectIDs: z
+    .array(z.number().int().positive())
+    .max(providerPageSize)
+    .nullable(),
 });
 const metObjectSchema = z.object({
   objectID: z.number().int().positive(),
@@ -490,15 +550,21 @@ export const met = cacheImageProvider(
       "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
     browse: museumTopics,
     capabilities: commons.capabilities,
-    async search(query, signal, offset = 0, limit = 12, topic = null) {
-      limit = Math.min(limit, 10000 - offset);
+    async search(
+      query,
+      signal,
+      offset = 0,
+      limit = providerPageSize,
+      topic = null,
+    ) {
+      limit = Math.min(limit, metSearchResultLimit - offset);
       if (limit <= 0) return { images: [] };
       const url = new URL(
         "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
       );
       url.search = new URLSearchParams({
         q:
-          query.slice(0, 160) ||
+          query.slice(0, providerQueryMaxLength) ||
           museumTopics.find((item) => item.id === topic)?.query ||
           "*",
         hasImages: "true",
@@ -542,7 +608,7 @@ export const met = cacheImageProvider(
         images.push({
           provider: "met",
           id: String(id),
-          title: item.title.slice(0, 120),
+          title: item.title.slice(0, captionMaxLength),
           sourcePage: item.objectURL,
           creator: plainText(item.artistDisplayName),
           license: "CC0",
@@ -556,7 +622,7 @@ export const met = cacheImageProvider(
       return {
         images,
         next:
-          count > 0 && next < Math.min(parsed.data.total, 10000)
+          count > 0 && next < Math.min(parsed.data.total, metSearchResultLimit)
             ? next
             : undefined,
       };
@@ -581,7 +647,10 @@ export async function downloadProviderImage(
   });
   if (!provenance.success) throw new ProviderError("invalid");
   const response = await fetch(image.original.url, {
-    signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+    signal: AbortSignal.any([
+      signal,
+      AbortSignal.timeout(providerDownloadTimeoutMs),
+    ]),
     credentials: "omit",
     referrerPolicy: "no-referrer",
     redirect: "error",
@@ -603,7 +672,7 @@ export async function downloadProviderImage(
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 20000000) throw new ProviderError("invalid");
+      if (size > providerImageMaxBytes) throw new ProviderError("invalid");
       chunks.push(value);
     }
   } finally {

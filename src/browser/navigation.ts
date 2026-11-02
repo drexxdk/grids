@@ -1,6 +1,9 @@
 import { useSyncExternalStore, type SetStateAction } from "react";
 import { z } from "zod";
 import { imageProviders, type ImageProvider } from "../providers";
+import { providerQueryMaxLength } from "../config";
+
+const navigationHistoryLimit = 100;
 
 const sourceSchema = z
   .string()
@@ -11,16 +14,16 @@ const sourceSchema = z
   );
 const offsetSchema = z.number().int().min(0).max(10000000);
 const browsingSchema = z.object({
-  query: z.string().max(160),
+  query: z.string().max(providerQueryMaxLength),
   selectedTopic: z.string().max(40).nullable(),
   request: z
     .object({
-      query: z.string().max(160),
+      query: z.string().max(providerQueryMaxLength),
       offset: offsetSchema,
       topic: z.string().max(40).nullable().optional(),
     })
     .nullable(),
-  history: z.array(offsetSchema).max(100),
+  history: z.array(offsetSchema).max(navigationHistoryLimit),
 });
 const stateSchema = z.object({
   selectedPanel: z.number().int().min(0).max(1).default(0),
@@ -88,7 +91,10 @@ export function readNavigation(
   const topic = provider.browse.find(
     (item) => item.id === url.searchParams.get("topic"),
   );
-  const text = url.searchParams.get("q")?.trim().slice(0, 160);
+  const text = url.searchParams
+    .get("q")
+    ?.trim()
+    .slice(0, providerQueryMaxLength);
   const offsetText = url.searchParams.get("offset") ?? "0";
   const parsedOffset = /^\d+$/.test(offsetText)
     ? offsetSchema.safeParse(Number(offsetText))
@@ -252,7 +258,10 @@ export function useBrowsingState(provider: ImageProvider, picker: boolean) {
         ...previous,
         browsing: {
           ...previous.browsing,
-          [key]: { ...next, history: next.history.slice(-100) },
+          [key]: {
+            ...next,
+            history: next.history.slice(-navigationHistoryLimit),
+          },
         },
       },
       picker ? "silent" : mode,

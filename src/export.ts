@@ -9,6 +9,7 @@ import {
   type Board,
   type ImageFormat,
 } from "./model";
+import { captionMaxLength } from "./config";
 
 export function dimensions(item: Board, size: number, captionRows = 1) {
   const spacing = gridSpacing(item, size);
@@ -141,7 +142,7 @@ export function sharedCaptionRows(
     ...item.cells.map((cell) => cell.title),
     ...assets
       .filter((asset) => !asset.libraryHidden && asset.trashedAt === undefined)
-      .map((asset) => asset.title.slice(0, 120)),
+      .map((asset) => asset.title.slice(0, captionMaxLength)),
   ];
   return Math.max(
     1,

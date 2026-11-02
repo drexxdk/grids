@@ -1,8 +1,40 @@
-import type { Asset, Cell, GridStyle } from "../model";
+import { cellGeometry, type Asset, type Cell, type GridStyle } from "../model";
+import { captionMaxLength } from "../config";
 import type { Ref } from "react";
-import { ExternalLink } from "lucide-react";
-import { t } from "../i18n";
+import { LoaderCircle } from "lucide-react";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
+
+export function LibraryImagePlaceholder({
+  gridStyle,
+  captionRows,
+  loading = false,
+}: {
+  gridStyle: GridStyle;
+  captionRows: number;
+  loading?: boolean;
+}) {
+  const geometry = cellGeometry(gridStyle, 600, captionRows);
+  return (
+    <div
+      data-image-placeholder
+      data-loading={loading}
+      aria-hidden="true"
+      className="min-w-0 w-full"
+    >
+      <div
+        className={`image-card @container flex w-full items-center justify-center rounded-(--card-radius) border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
+        style={{
+          aspectRatio: `600 / ${geometry.height}`,
+          backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
+        }}
+      >
+        {loading && (
+          <LoaderCircle className="size-[18cqw]! animate-spin text-(--muted) motion-reduce:animate-none" />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function LibraryImage({
   asset,
@@ -65,11 +97,11 @@ export function LibraryImage({
       <GridCell
         cell={
           cell
-            ? { ...cell, title: asset.title.slice(0, 120) }
+            ? { ...cell, title: asset.title.slice(0, captionMaxLength) }
             : {
                 id: asset.id,
                 assetId: asset.id,
-                title: asset.title.slice(0, 120),
+                title: asset.title.slice(0, captionMaxLength),
                 fit: "cover",
               }
         }
@@ -94,18 +126,6 @@ export function LibraryImage({
         dragAffected={dragAffected}
         dragSource={dragAffected}
       />
-      {asset.provenance && (
-        <a
-          href={asset.provenance.sourcePage}
-          target="_blank"
-          rel="noreferrer"
-          title={`${asset.provenance.creator} - ${asset.provenance.license}`}
-          className="mt-1 flex items-center justify-center gap-1 px-2 py-1 text-center text-xs text-(--accent) wrap-break-word"
-        >
-          <ExternalLink aria-hidden="true" className="size-3! shrink-0" />
-          {t("library.search.source")}
-        </a>
-      )}
     </div>
   );
 }

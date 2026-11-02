@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from "react";
 import {
   ArrowLeft,
@@ -28,9 +29,14 @@ import {
   type ProviderImage,
 } from "../providers";
 import { Button } from "./ui/controls";
-import { LibraryImage } from "./LibraryImage";
+import { LibraryImage, LibraryImagePlaceholder } from "./LibraryImage";
 import type { CardDragSource } from "./GridCell";
 import { useBrowsingState } from "../browser/navigation";
+import {
+  imagePageSize,
+  providerQueryMaxLength,
+  providerImageMaxPixels,
+} from "../config";
 
 const topicIcons = {
   space: Orbit,
@@ -109,7 +115,10 @@ function OnlineImage({
         decoded.src = url;
         await decoded.decode();
         controller.signal.throwIfAborted();
-        if (decoded.naturalWidth * decoded.naturalHeight > 40000000)
+        if (
+          decoded.naturalWidth * decoded.naturalHeight >
+          providerImageMaxPixels
+        )
           throw new Error("Image dimensions are too large");
         setOriginalPreview({ source: originalUrl, url });
       })
@@ -153,6 +162,7 @@ export function OnlineImages({
   onImport,
   selectionOnly = false,
   gridClassName = "grid grid-cols-2 gap-2.5",
+  searchActions,
   dragSource,
   ...cardProps
 }: {
@@ -160,6 +170,7 @@ export function OnlineImages({
   onImport: (image: ProviderImage, signal: AbortSignal) => Promise<void>;
   selectionOnly?: boolean;
   gridClassName?: string;
+  searchActions?: ReactNode;
   dragSource?: CardDragSource;
 } & Pick<
   ComponentProps<typeof LibraryImage>,
@@ -167,10 +178,11 @@ export function OnlineImages({
 >) {
   const [browsing, setBrowsing] = useBrowsingState(provider, selectionOnly);
   const { query, selectedTopic, request, history } = browsing;
+  const pageSize = imagePageSize;
   const [filtering, setFiltering] = useState(false);
   const [images, setImages] = useState<ProviderImage[]>([]);
   const [next, setNext] = useState<number>();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(request));
   const [error, setError] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
   const importController = useRef<AbortController | null>(null);
@@ -197,7 +209,7 @@ export function OnlineImages({
       const filter = query.trim();
       const nextRequest = { query: filter, topic: selectedTopic, offset: 0 };
       setFiltering(false);
-      setLoading(nextRequest !== null);
+      setLoading(true);
       setBrowsing((previous) => ({
         ...previous,
         history: [],
@@ -218,7 +230,13 @@ export function OnlineImages({
     setImages([]);
     setNext(undefined);
     provider
-      .search(request.query, controller.signal, request.offset, request.topic)
+      .search(
+        request.query,
+        controller.signal,
+        request.offset,
+        request.topic,
+        pageSize,
+      )
       .then((result) => {
         if (controller.signal.aborted) return;
         setImages(result.images);
@@ -238,33 +256,45 @@ export function OnlineImages({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [provider, request]);
+  }, [provider, request, pageSize]);
+
+  const busy = loading || filtering;
+  const canGoNext = !busy && next !== undefined && images.length >= pageSize;
+  const visibleImages = busy ? [] : images;
+  const message =
+    !busy &&
+    (error || (request && !images.length ? t("library.search.empty") : ""));
 
   return (
     <section
       aria-label={t("library.source.online")}
-      aria-busy={loading || filtering}
-      className="min-w-0"
+      aria-busy={busy}
+      className="@container min-w-0"
     >
-      <div className="relative mb-2">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-3 size-4! -translate-y-1/2 text-(--muted)"
-        />
-        <input
-          type="search"
-          aria-label={t("library.search.query")}
-          placeholder={t("library.search.query")}
-          value={query}
-          maxLength={160}
-          onChange={(event) => {
-            const query = event.target.value;
-            setBrowsing((previous) => ({ ...previous, query }), "silent");
-            setFiltering(true);
-            setError("");
-          }}
-          className="min-h-11 w-full min-w-0 pl-10! focus:outline-none! focus:border-(--accent)"
-        />
+      <div
+        className={`mb-2 grid items-end gap-3 ${searchActions ? "grid-cols-1 @min-[520px]:grid-cols-[minmax(0,1fr)_15rem]" : "grid-cols-1"}`}
+      >
+        <div className="relative min-w-0">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 size-4! -translate-y-1/2 text-(--muted)"
+          />
+          <input
+            type="search"
+            aria-label={t("library.search.query")}
+            placeholder={t("library.search.query")}
+            value={query}
+            maxLength={providerQueryMaxLength}
+            onChange={(event) => {
+              const query = event.target.value;
+              setBrowsing((previous) => ({ ...previous, query }), "silent");
+              setFiltering(true);
+              setError("");
+            }}
+            className="min-h-11 w-full min-w-0 pl-10! focus:outline-none! focus:border-(--accent)"
+          />
+        </div>
+        {searchActions}
       </div>
       <div
         role="group"
@@ -298,74 +328,90 @@ export function OnlineImages({
           );
         })}
       </div>
-      {error && (
-        <p role="alert" className="text-sm">
-          {error}
-        </p>
+      {busy && (
+        <div role="status" className="sr-only" aria-live="polite">
+          {t("library.search.loading")}
+        </div>
       )}
-      <div role="status" className="text-sm" aria-live="polite">
-        {loading
-          ? t("library.search.loading")
-          : request && !error && !images.length
-            ? t("library.search.empty")
-            : ""}
+      <div className="relative" data-online-card-area>
+        <div className={gridClassName}>
+          {visibleImages.map((image) => (
+            <OnlineImage
+              key={image.id}
+              image={image}
+              {...cardProps}
+              asset={{
+                id: `provider:${image.provider}:${image.id}`,
+                category: "",
+                title: image.title,
+                src: image.thumbnail,
+                provenance: {
+                  provider: image.provider,
+                  entityId: image.id,
+                  sourcePage: image.sourcePage,
+                  originalUrl: image.original.url,
+                  creator: image.creator,
+                  license: image.license,
+                  licenseUrl: image.licenseUrl,
+                },
+              }}
+              className="w-full"
+              disabled={importing !== null}
+              onTitle={(title) =>
+                setImages((current) =>
+                  current.map((item) =>
+                    item.id === image.id ? { ...item, title } : item,
+                  ),
+                )
+              }
+              onDelete={() => {}}
+              onImport={() => {
+                void importImage(image);
+              }}
+              onSelect={
+                selectionOnly
+                  ? () => {
+                      void importImage(image);
+                    }
+                  : undefined
+              }
+              source={{ kind: "provider", image }}
+              dragAffected={
+                dragSource?.kind === "provider" &&
+                dragSource.image.provider === image.provider &&
+                dragSource.image.id === image.id
+              }
+            />
+          ))}
+          {Array.from(
+            { length: Math.max(0, pageSize - visibleImages.length) },
+            (_, index) => (
+              <LibraryImagePlaceholder
+                key={`placeholder:${index}`}
+                gridStyle={cardProps.gridStyle}
+                captionRows={cardProps.captionRows}
+                loading={busy}
+              />
+            ),
+          )}
+        </div>
+        {message && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+            <p
+              role={error ? "alert" : "status"}
+              className="max-w-full rounded-md bg-(--panel)/95 px-3 py-2 text-center text-sm wrap-break-word"
+            >
+              {message}
+            </p>
+          </div>
+        )}
       </div>
-      <div className={gridClassName}>
-        {images.map((image) => (
-          <OnlineImage
-            key={image.id}
-            image={image}
-            {...cardProps}
-            asset={{
-              id: `provider:${image.provider}:${image.id}`,
-              category: "",
-              title: image.title,
-              src: image.thumbnail,
-              provenance: {
-                provider: image.provider,
-                entityId: image.id,
-                sourcePage: image.sourcePage,
-                originalUrl: image.original.url,
-                creator: image.creator,
-                license: image.license,
-                licenseUrl: image.licenseUrl,
-              },
-            }}
-            className="w-full"
-            disabled={importing !== null}
-            onTitle={(title) =>
-              setImages((current) =>
-                current.map((item) =>
-                  item.id === image.id ? { ...item, title } : item,
-                ),
-              )
-            }
-            onDelete={() => {}}
-            onImport={() => {
-              void importImage(image);
-            }}
-            onSelect={
-              selectionOnly
-                ? () => {
-                    void importImage(image);
-                  }
-                : undefined
-            }
-            source={{ kind: "provider", image }}
-            dragAffected={
-              dragSource?.kind === "provider" &&
-              dragSource.image.provider === image.provider &&
-              dragSource.image.id === image.id
-            }
-          />
-        ))}
-      </div>
-      {request && !loading && (
+      {request && (
         <div className="mt-3 flex justify-between gap-2">
           <Button
             aria-label={t("library.search.previous")}
             title={t("library.search.previous")}
-            disabled={!history.length}
+            disabled={busy || !history.length}
             onClick={() => {
               setBrowsing((previous) => ({
                 ...previous,
@@ -383,9 +429,9 @@ export function OnlineImages({
           <Button
             aria-label={t("library.search.next")}
             title={t("library.search.next")}
-            disabled={next === undefined}
+            disabled={!canGoNext}
             onClick={() => {
-              if (next === undefined) return;
+              if (!canGoNext) return;
               setBrowsing((previous) => ({
                 ...previous,
                 history: [...history, request.offset],

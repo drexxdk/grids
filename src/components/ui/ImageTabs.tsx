@@ -13,20 +13,22 @@ export function ImageSourceSelect({
   onChange?: (value: string) => void;
 }) {
   return (
-    <SelectField
-      id={id}
-      label={t("library.source.label")}
-      value={value}
-      onChange={onChange ?? (() => {})}
-      options={[
-        { value: "imported", label: t("library.source.imported") },
-        ...imageProviders.map((provider) => ({
-          value: provider.id,
-          label: provider.name,
-          disabled: !onChange,
-        })),
-      ]}
-    />
+    <div className="grid min-w-0 w-full gap-2 [&_.field-label]:m-0!">
+      <SelectField
+        id={id}
+        label={t("library.source.label")}
+        value={value}
+        onChange={onChange ?? (() => {})}
+        options={[
+          { value: "imported", label: t("library.source.imported") },
+          ...imageProviders.map((provider) => ({
+            value: provider.id,
+            label: provider.name,
+            disabled: !onChange,
+          })),
+        ]}
+      />
+    </div>
   );
 }
 

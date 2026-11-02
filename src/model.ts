@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captionMaxLength } from "./config";
 
 export const fontOptions = ["Bangers", "Bebas Neue", "Boogaloo", "Manrope"];
 export function fontWeightOptions(font: string) {
@@ -289,7 +290,7 @@ export const publishers = {
 export const makeCell = (asset: Asset | null = null): Cell => ({
   id: crypto.randomUUID(),
   assetId: asset?.id ?? null,
-  title: asset?.title.slice(0, 120) ?? "",
+  title: asset?.title.slice(0, captionMaxLength) ?? "",
   fit: "cover",
 });
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
@@ -559,7 +560,7 @@ export const cropSchema = z
 const cellSchema = z.strictObject({
   id: z.uuid(),
   assetId: z.uuid().nullable(),
-  title: z.string().max(120),
+  title: z.string().max(captionMaxLength),
   fit: z.enum(["contain", "cover"]),
   crop: cropSchema.optional(),
 });
@@ -588,7 +589,7 @@ export const workspaceSchema = z
       ...styleSchema.shape,
       id: z.uuid(),
       name: z.string().max(70),
-      heading: z.string().max(120),
+      heading: z.string().max(captionMaxLength),
       cells: z.array(cellSchema).max(gridLimit * gridLimit),
       overflow: z
         .array(
@@ -709,7 +710,7 @@ export function documentReducer(
       if (
         !workspace.assets.some((asset) => asset.id === command.assetId) ||
         typeof command.title !== "string" ||
-        command.title.length > 120
+        command.title.length > captionMaxLength
       )
         return workspace;
       return {
@@ -822,7 +823,7 @@ export function documentReducer(
         ? updateCell(command.cellId, (cell) => ({
             ...cell,
             assetId: asset.id,
-            title: asset.title.slice(0, 120),
+            title: asset.title.slice(0, captionMaxLength),
             fit: "cover",
             crop: undefined,
           }))
@@ -885,7 +886,7 @@ export function documentReducer(
               ? {
                   ...cell,
                   assetId: asset.id,
-                  title: asset.title.slice(0, 120),
+                  title: asset.title.slice(0, captionMaxLength),
                   fit: "cover",
                   crop: undefined,
                 }

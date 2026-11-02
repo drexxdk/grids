@@ -480,6 +480,53 @@ test("provider pages fill twelve unique eligible images without skipping overflo
   ).toEqual({ images: [image(13)], next: undefined });
 });
 
+test("provider pages cache picker sizes separately and preserve every result across cursors", async () => {
+  const requests = [];
+  const catalog = Array.from({ length: 24 }, (_, index) => ({
+    id: String(index),
+  }));
+  const provider = providers.cacheImageProvider(
+    providers.fillImagePages({
+      ...providers.commons,
+      async search(_query, _signal, offset, limit) {
+        requests.push({ offset, limit });
+        const next = offset + limit;
+        return {
+          images: catalog.slice(offset, next),
+          next: next < catalog.length ? next : undefined,
+        };
+      },
+    }),
+  );
+  const signal = new AbortController().signal;
+  const first = await provider.search("picker sizing", signal, 0, null, 10);
+  expect(first.images).toEqual(catalog.slice(0, 10));
+  expect(first.next).toBe(10);
+  expect((await provider.search("picker sizing", signal)).images).toEqual(
+    catalog.slice(0, 12),
+  );
+  expect(
+    (await provider.search("picker sizing", signal, 0, null, 10)).images,
+  ).toEqual(first.images);
+  expect(requests).toEqual([
+    { offset: 0, limit: 10 },
+    { offset: 0, limit: 12 },
+  ]);
+  const second = await provider.search(
+    "picker sizing",
+    signal,
+    first.next,
+    null,
+    10,
+  );
+  expect([...first.images, ...second.images]).toEqual(catalog.slice(0, 20));
+  expect(requests.at(-1)).toEqual({ offset: 10, limit: 10 });
+  for (const pageSize of [0, -1, 1.5, 13])
+    await expect(
+      provider.search("invalid size", signal, 0, null, pageSize),
+    ).rejects.toMatchObject({ kind: "invalid" });
+});
+
 test("provider pages follow empty eligible batches and stop at API exhaustion", async () => {
   const requests = [];
   const provider = providers.fillImagePages({
