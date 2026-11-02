@@ -36,6 +36,7 @@ import {
   ColorField,
   IconRadioField,
   SelectField,
+  Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
@@ -446,6 +447,7 @@ export default function App() {
     board.canvasPadding,
     board.imageAspect,
     board.captionPlacement,
+    board.titlesVisible,
     board.captionAlignment,
     board.headingFontSize,
     captionRows,
@@ -1539,6 +1541,13 @@ export default function App() {
                     <h3 className="m-0 text-sm font-semibold text-(--text)">
                       {t("settings.card")}
                     </h3>
+                    <Toggle
+                      label={t("settings.fields.showTitles")}
+                      checked={board.titlesVisible !== false}
+                      onChange={(titlesVisible) =>
+                        patchBoard({ titlesVisible })
+                      }
+                    />
                     <IconRadioField
                       id="caption-position"
                       label={t("editor.captionPosition.label")}
@@ -1926,9 +1935,6 @@ export default function App() {
                 if (singleImage) closeImagePicker();
               }}
             />
-            {activeAssets.length === 0 && !importProgress && (
-              <p>{t("library.empty")}</p>
-            )}
             {activeAssets.length > 0 && (
               <Button
                 className="mt-2 min-h-11 w-full"

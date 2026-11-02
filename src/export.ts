@@ -94,7 +94,10 @@ export function layoutCaption(
   fontWeight = 400,
   maximumHeight = Infinity,
 ) {
-  let fontSize = (width * sizePercent) / 100;
+  const fontSize = Math.min(
+    (width * sizePercent) / 100,
+    Math.max(0, maximumHeight / 1.05),
+  );
   context.letterSpacing = "0px";
   context.font = `${fontWeight} ${fontSize}px "${font}"`;
   let lines = wrapTitle(
@@ -103,30 +106,20 @@ export function layoutCaption(
     width - captionPadding(width).horizontal * 2,
     true,
   );
-  if (lines.length * fontSize * 1.05 > maximumHeight) {
-    let lower = 0;
-    let upper = fontSize;
-    for (let iteration = 0; iteration < 16; iteration++) {
-      const candidate = (lower + upper) / 2;
-      context.font = `${fontWeight} ${candidate}px "${font}"`;
-      const candidateLines = wrapTitle(
-        context,
-        title,
-        width - captionPadding(width).horizontal * 2,
-        true,
-      );
-      if (candidateLines.length * candidate * 1.05 <= maximumHeight)
-        lower = candidate;
-      else upper = candidate;
-    }
-    fontSize = lower;
-    context.font = `${fontWeight} ${fontSize}px "${font}"`;
-    lines = wrapTitle(
-      context,
-      title,
-      width - captionPadding(width).horizontal * 2,
-      true,
-    );
+  const maximumLines =
+    fontSize > 0
+      ? Math.max(1, Math.min(3, Math.floor(maximumHeight / (fontSize * 1.05))))
+      : 3;
+  if (lines.length > maximumLines) {
+    lines = lines.slice(0, maximumLines);
+    const characters = Array.from(lines[maximumLines - 1].trimEnd());
+    const availableWidth = width - captionPadding(width).horizontal * 2;
+    while (
+      characters.length &&
+      context.measureText(`${characters.join("")}\u2026`).width > availableWidth
+    )
+      characters.pop();
+    lines[maximumLines - 1] = `${characters.join("").trimEnd()}\u2026`;
   }
   return { fontSize, lines };
 }
@@ -347,7 +340,7 @@ export async function createExport(
       );
       context.restore();
     }
-    if (!entry.title.trim()) return;
+    if (item.titlesVisible === false || !entry.title.trim()) return;
     const captionTop = top + geometry.captionTop;
     context.save();
     context.fillStyle =

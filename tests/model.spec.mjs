@@ -1096,7 +1096,7 @@ test("visual crops preserve originals and share full-box source rectangles", () 
   expect(swapped.grid.cells[0].crop).toEqual(crop);
 });
 
-test("multiline caption geometry grows shared bands without changing image ratios", () => {
+test("multiline caption geometry caps shared bands at three rows without changing image ratios", () => {
   const style = {
     ...model.makeWorkspace().grid,
     imageAspect: "square",
@@ -1104,12 +1104,12 @@ test("multiline caption geometry grows shared bands without changing image ratio
   };
   expect(model.cellGeometry(style, 600, 6)).toMatchObject({
     imageHeight: 600,
-    captionHeight: 482,
-    height: 1082,
+    captionHeight: 274,
+    height: 874,
   });
   expect(
     model.cellGeometry({ ...style, captionPlacement: "above" }, 600, 6),
-  ).toMatchObject({ imageTop: 482, captionTop: 0, height: 1082 });
+  ).toMatchObject({ imageTop: 274, captionTop: 0, height: 874 });
   expect(
     model.cellGeometry(
       {
@@ -1211,6 +1211,22 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   const reset = model.resetWorkspace(workspace);
   expect(model.getEditorSettings(reset).style).toEqual(defaults);
   expect(reset.assets).toEqual(workspace.assets);
+});
+
+test("title visibility roundtrips without removing captions or reserving bands", () => {
+  const workspace = localWorkspace();
+  workspace.grid.titlesVisible = false;
+  const settings = model.getEditorSettings(workspace);
+  expect(settings.style.titlesVisible).toBe(false);
+  const restored = model.applyEditorSettings(workspace, settings);
+  expect(restored.grid.titlesVisible).toBe(false);
+  expect(restored.grid.cells).toEqual(workspace.grid.cells);
+  expect(restored.assets).toEqual(workspace.assets);
+  for (const captionPlacement of ["above", "below", "overlay"])
+    expect(
+      model.cellGeometry({ ...restored.grid, captionPlacement }, 600, 6),
+    ).toMatchObject({ captionHeight: 0, imageTop: 0, height: 800 });
+  expect(model.resetWorkspace(restored).grid.titlesVisible).not.toBe(false);
 });
 
 test("independent spacing and background settings roundtrip and reset", () => {

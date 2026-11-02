@@ -254,7 +254,14 @@ export function GridCell({
   const geometry = cellGeometry(
     gridStyle,
     600,
-    gridStyle.captionPlacement === "overlay" ? overlayCaptionRows : captionRows,
+    asset
+      ? Math.min(
+          3,
+          gridStyle.captionPlacement === "overlay"
+            ? overlayCaptionRows
+            : captionRows,
+        )
+      : 0,
   );
   const cropRectangle =
     cell.crop && imageSize.width && imageSize.height
@@ -296,6 +303,27 @@ export function GridCell({
   )
     .toString(16)
     .padStart(2, "0")}`;
+  const captionStyle = {
+    top:
+      overlay && alignment === "bottom"
+        ? "auto"
+        : `${(geometry.captionTop / geometry.height) * 100}%`,
+    bottom: overlay && alignment === "bottom" ? 0 : undefined,
+    height: `${(geometry.captionHeight / geometry.height) * 100}%`,
+    background: overlay
+      ? overlayColor
+      : (gridStyle.cellBackgroundColor ??
+        publishers[gridStyle.publisher].caption),
+    "--card-caption-color": overlay
+      ? overlayColor
+      : (gridStyle.cellBackgroundColor ??
+        publishers[gridStyle.publisher].caption),
+    fontFamily: `"${gridStyle.cellFont}", sans-serif`,
+    fontWeight: resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
+    color: gridStyle.cellTextColor ?? "#f4f4ef",
+    margin: 0,
+    letterSpacing: 0,
+  } as React.CSSProperties;
   useLayoutEffect(() => {
     const field = caption.current;
     if (!field) return;
@@ -308,29 +336,48 @@ export function GridCell({
       const padding = captionPadding(bounds.width);
       if (overlay)
         setOverlayCaptionRows(
-          layoutCaption(
-            context,
-            cell.title || "Add heading",
-            gridStyle.cellFont,
-            600,
-            gridStyle.cellFontSize,
-            resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
-          ).lines.length,
+          Math.min(
+            3,
+            layoutCaption(
+              context,
+              cell.title || "Add heading",
+              gridStyle.cellFont,
+              600,
+              gridStyle.cellFontSize,
+              resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
+            ).lines.length,
+          ),
         );
-      const { fontSize, lines } = layoutCaption(
-        context,
-        cell.title || "Add heading",
-        gridStyle.cellFont,
-        bounds.width,
-        gridStyle.cellFontSize,
-        resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
-        overlay ? bounds.height - padding.vertical * 2 : Infinity,
+      const fontSize = Math.min(
+        (bounds.width * (gridStyle.cellFontSize ?? 11)) / 100,
+        Math.max(0, (bounds.height - padding.vertical * 2) / 1.05),
       );
       field.style.fontSize = `${fontSize}px`;
-      field.style.paddingLeft =
-        field.style.paddingRight = `${padding.horizontal}px`;
-      field.style.paddingTop =
-        field.style.paddingBottom = `${Math.max(0, (bounds.height - lines.length * fontSize * 1.05) / 2)}px`;
+      field.style.padding = `${padding.vertical}px ${padding.horizontal}px`;
+      field.parentElement?.style.setProperty(
+        "--library-caption-font-size",
+        `${fontSize}px`,
+      );
+      field.parentElement?.style.setProperty(
+        "--library-caption-padding",
+        `${padding.vertical}px ${padding.horizontal}px`,
+      );
+      field.parentElement?.style.setProperty(
+        "--library-caption-lines",
+        String(
+          fontSize > 0
+            ? Math.max(
+                1,
+                Math.min(
+                  3,
+                  Math.floor(
+                    (bounds.height - padding.vertical * 2) / (fontSize * 1.05),
+                  ),
+                ),
+              )
+            : 3,
+        ),
+      );
     };
     const observer = new ResizeObserver(fit);
     observer.observe(field);
@@ -799,29 +846,9 @@ export function GridCell({
             </div>
             <textarea
               ref={caption}
-              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} ${asset ? "" : "hidden!"} peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 min-h-0! field-sizing-fixed! placeholder:text-(--muted)/35 hover:placeholder:text-(--muted)/80 focus:placeholder:text-(--muted)/80 outline-none!`}
-              style={
-                {
-                  top: `${(geometry.captionTop / geometry.height) * 100}%`,
-                  height: `${(geometry.captionHeight / geometry.height) * 100}%`,
-                  background: overlay
-                    ? overlayColor
-                    : (gridStyle.cellBackgroundColor ??
-                      publishers[gridStyle.publisher].caption),
-                  "--card-caption-color": overlay
-                    ? overlayColor
-                    : (gridStyle.cellBackgroundColor ??
-                      publishers[gridStyle.publisher].caption),
-                  fontFamily: `"${gridStyle.cellFont}", sans-serif`,
-                  fontWeight: resolveFontWeight(
-                    gridStyle.cellFont,
-                    gridStyle.cellFontWeight,
-                  ),
-                  color: gridStyle.cellTextColor ?? "#f4f4ef",
-                  margin: 0,
-                  letterSpacing: 0,
-                } as React.CSSProperties
-              }
+              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} ${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} opacity-0 focus:opacity-100 peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 min-h-0! field-sizing-fixed! placeholder:text-(--muted)/35 hover:placeholder:text-(--muted)/80 focus:placeholder:text-(--muted)/80 outline-none!`}
+              style={captionStyle}
+              title={cell.title}
               rows={1}
               maxLength={captionMaxLength}
               value={cell.title}
@@ -845,10 +872,29 @@ export function GridCell({
               }}
               onChange={(event) => onPatch({ title: event.target.value })}
             />
+            <div
+              aria-hidden="true"
+              data-caption-preview
+              data-library-caption-preview={library || undefined}
+              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center overflow-hidden text-center peer-focus/caption:hidden`}
+              style={{
+                ...captionStyle,
+                fontSize: "var(--library-caption-font-size)",
+                lineHeight: 1.05,
+                padding: "var(--library-caption-padding)",
+              }}
+            >
+              <span
+                className="line-clamp-3 whitespace-pre-wrap wrap-anywhere"
+                style={{ WebkitLineClamp: "var(--library-caption-lines,3)" }}
+              >
+                {cell.title || t("editor.headingPlaceholder")}
+              </span>
+            </div>
             <span
               aria-hidden="true"
               data-caption-feedback
-              className={`${asset ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)`}
+              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)`}
               style={
                 {
                   "--caption-feedback-inset": "0px",

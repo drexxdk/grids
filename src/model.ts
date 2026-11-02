@@ -140,6 +140,7 @@ export interface GridStyle {
   canvasBackgroundColor?: string;
   background: string;
   imageAspect?: "portrait" | "landscape" | "square";
+  titlesVisible?: boolean;
   captionPlacement?: "above" | "below" | "overlay";
   captionAlignment?: "top" | "middle" | "bottom";
   captionOverlayColor?: string;
@@ -156,6 +157,7 @@ export const previewCardMinWidth = 128;
 export const previewCardMaxWidth = 200;
 
 export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
+  captionRows = Math.min(3, captionRows);
   const aspectRatio =
     style.imageAspect === "portrait"
       ? 3 / 4
@@ -165,7 +167,7 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
   const imageHeight = Math.round(width / aspectRatio);
   const placement = style.captionPlacement ?? "below";
   const requestedCaptionHeight =
-    captionRows === 0
+    style.titlesVisible === false || captionRows === 0
       ? 0
       : Math.max(
           Math.round(width * 0.23),
@@ -411,6 +413,7 @@ const styleSchema = z.strictObject({
     .optional(),
   background: z.string().regex(/^#[0-9a-f]{6}$/i),
   imageAspect: z.enum(["portrait", "landscape", "square"]).optional(),
+  titlesVisible: z.boolean().optional(),
   captionPlacement: z.enum(["above", "below", "overlay"]).optional(),
   captionAlignment: z.enum(["top", "middle", "bottom"]).optional(),
   captionOverlayColor: z
@@ -485,6 +488,9 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       ...(grid.captionPlacement !== undefined
         ? { captionPlacement: grid.captionPlacement }
         : {}),
+      ...(grid.titlesVisible !== undefined
+        ? { titlesVisible: grid.titlesVisible }
+        : {}),
       ...(grid.captionAlignment !== undefined
         ? { captionAlignment: grid.captionAlignment }
         : {}),
@@ -507,6 +513,7 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
   return {
     ...grid,
     imageAspect: style.imageAspect,
+    titlesVisible: style.titlesVisible,
     captionPlacement: style.captionPlacement,
     captionAlignment: style.captionAlignment,
     captionOverlayColor: style.captionOverlayColor,

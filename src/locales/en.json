@@ -94,7 +94,6 @@
     },
     "dropZone": "Image library drop zone",
     "clearAll": "Clear all images",
-    "empty": "No images yet.",
     "gifUnsupported": "{value1}: GIF uploads are not supported.",
     "importing": "Importing...",
     "source": {
@@ -136,7 +135,8 @@
       "fontSize": "Font size",
       "textColor": "Text color",
       "overlayColor": "Overlay color",
-      "overlayOpacity": "Overlay opacity"
+      "overlayOpacity": "Overlay opacity",
+      "showTitles": "Show titles"
     },
     "reset": {
       "title": "Reset grid settings",

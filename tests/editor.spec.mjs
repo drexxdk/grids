@@ -6832,78 +6832,95 @@ test("precise empty image frames remain independent of hidden captions", async (
   const caption = cell.locator(".cell-heading");
   const frames = cell.locator("[data-cell-image-frame]");
   await expect(caption).toBeHidden();
-  for (const placement of ["above", "below", "overlay-bottom", "overlay-top"]) {
-    await selectField(page, "caption-position", placement);
-    await page.mouse.move(1, 1);
-    const idleColor = await frames
-      .first()
-      .evaluate((element) =>
-        getComputedStyle(element).getPropertyValue("--frame-color"),
-      );
-    const before = await cell.boundingBox();
-    const imageBounds = await image.boundingBox();
-    const surface = cell.locator("[data-card-content]");
-    const surfaceBounds = await surface.boundingBox();
-    await image.hover({ position: { x: 8, y: 5 } });
-    for (const frame of await frames.all()) {
-      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
-      await expect(frame.locator("rect")).toHaveAttribute(
-        "stroke-width",
-        "var(--card-frame-stroke)",
-      );
-      await expect(frame.locator("rect")).toHaveAttribute(
-        "stroke-dasharray",
-        "var(--card-frame-dash) var(--card-frame-dash-gap)",
-      );
-      const rounding = await frame.locator("rect").evaluate((element) => ({
-        rx: getComputedStyle(element).rx,
-        ry: getComputedStyle(element).ry,
+  for (const [shape, ratio] of [
+    ["portrait", 0.75],
+    ["landscape", 4 / 3],
+    ["square", 1],
+  ]) {
+    await selectField(page, "image-shape", shape);
+    for (const placement of [
+      "above",
+      "below",
+      "overlay-bottom",
+      "overlay-top",
+    ]) {
+      await selectField(page, "caption-position", placement);
+      await page.mouse.move(1, 1);
+      const idleColor = await frames
+        .first()
+        .evaluate((element) =>
+          getComputedStyle(element).getPropertyValue("--frame-color"),
+        );
+      const before = await cell.boundingBox();
+      const imageBounds = await image.boundingBox();
+      const surface = cell.locator("[data-card-content]");
+      const surfaceBounds = await surface.boundingBox();
+      const prompt = await cell.locator(".empty-cell").boundingBox();
+      expect(prompt.y).toBeCloseTo(imageBounds.y, 1);
+      expect(prompt.height).toBeCloseTo(imageBounds.height, 1);
+      expect(imageBounds.height).toBeCloseTo(surfaceBounds.height, 1);
+      expect(before.width / before.height).toBeCloseTo(ratio, 2);
+      await image.hover({ position: { x: 8, y: 5 } });
+      for (const frame of await frames.all()) {
+        await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+        await expect(frame.locator("rect")).toHaveAttribute(
+          "stroke-width",
+          "var(--card-frame-stroke)",
+        );
+        await expect(frame.locator("rect")).toHaveAttribute(
+          "stroke-dasharray",
+          "var(--card-frame-dash) var(--card-frame-dash-gap)",
+        );
+        const rounding = await frame.locator("rect").evaluate((element) => ({
+          rx: getComputedStyle(element).rx,
+          ry: getComputedStyle(element).ry,
+        }));
+        expect(rounding.rx).toBe(rounding.ry);
+        await expect(frame).toHaveCSS("pointer-events", "none");
+        const bounds = await frame.boundingBox();
+        const edge = (before.width - 2) * 0.0025;
+        expect(bounds.x).toBeCloseTo(before.x + 1 + edge, 1);
+        expect(bounds.y).toBeCloseTo(before.y + 1 + edge, 1);
+        expect(bounds.width).toBeCloseTo(before.width - 2 - edge * 2, 1);
+        expect(bounds.height).toBeCloseTo(before.height - 2 - edge * 2, 1);
+      }
+      await expect(surface).toHaveCSS("mask-image", /linear-gradient/);
+      const proportional = await cell.evaluate((element) => ({
+        stroke: parseFloat(
+          getComputedStyle(element.querySelector("rect")).strokeWidth,
+        ),
+        maskSize: getComputedStyle(element.querySelector("[data-card-content]"))
+          .maskSize,
+        maskPosition: getComputedStyle(
+          element.querySelector("[data-card-content]"),
+        ).maskPosition,
+        width: element.getBoundingClientRect().width - 2,
       }));
-      expect(rounding.rx).toBe(rounding.ry);
-      await expect(frame).toHaveCSS("pointer-events", "none");
-      const bounds = await frame.boundingBox();
-      const edge = (before.width - 2) * 0.0025;
-      expect(bounds.x).toBeCloseTo(before.x + 1 + edge, 1);
-      expect(bounds.y).toBeCloseTo(before.y + 1 + edge, 1);
-      expect(bounds.width).toBeCloseTo(before.width - 2 - edge * 2, 1);
-      expect(bounds.height).toBeCloseTo(before.height - 2 - edge * 2, 1);
+      expect(proportional.stroke).toBeCloseTo(proportional.width * 0.005, 3);
+      const maskedInset = parseFloat(proportional.maskPosition);
+      expect(maskedInset).toBeCloseTo(
+        proportional.width * 0.0075 +
+          Math.min(12, Math.max(6, proportional.width * 0.03)),
+        3,
+      );
+      await expect(cell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      expect(await surface.boundingBox()).toEqual(surfaceBounds);
+      expect(await image.boundingBox()).toEqual(imageBounds);
+      await expect(caption).toBeHidden();
+      await expect(cell.locator("[data-caption-feedback]")).toBeHidden();
+      await page.mouse.move(0, 0);
+      for (const frame of await frames.all())
+        await expect(frame).toHaveCSS("--frame-color", idleColor);
+      await image.focus();
+      await image.press("Tab");
+      await expect(caption).not.toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(image).toBeFocused();
+      for (const frame of await frames.all()) {
+        await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+      }
+      expect(await cell.boundingBox()).toEqual(before);
     }
-    await expect(surface).toHaveCSS("mask-image", /linear-gradient/);
-    const proportional = await cell.evaluate((element) => ({
-      stroke: parseFloat(
-        getComputedStyle(element.querySelector("rect")).strokeWidth,
-      ),
-      maskSize: getComputedStyle(element.querySelector("[data-card-content]"))
-        .maskSize,
-      maskPosition: getComputedStyle(
-        element.querySelector("[data-card-content]"),
-      ).maskPosition,
-      width: element.getBoundingClientRect().width - 2,
-    }));
-    expect(proportional.stroke).toBeCloseTo(proportional.width * 0.005, 3);
-    const maskedInset = parseFloat(proportional.maskPosition);
-    expect(maskedInset).toBeCloseTo(
-      proportional.width * 0.0075 +
-        Math.min(12, Math.max(6, proportional.width * 0.03)),
-      3,
-    );
-    await expect(cell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    expect(await surface.boundingBox()).toEqual(surfaceBounds);
-    expect(await image.boundingBox()).toEqual(imageBounds);
-    await expect(caption).toBeHidden();
-    await expect(cell.locator("[data-caption-feedback]")).toBeHidden();
-    await page.mouse.move(0, 0);
-    for (const frame of await frames.all())
-      await expect(frame).toHaveCSS("--frame-color", idleColor);
-    await image.focus();
-    await image.press("Tab");
-    await expect(caption).not.toBeFocused();
-    await page.keyboard.press("Shift+Tab");
-    await expect(image).toBeFocused();
-    for (const frame of await frames.all()) {
-      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
-    }
-    expect(await cell.boundingBox()).toEqual(before);
   }
 });
 
@@ -7039,8 +7056,7 @@ test("captions share external bands and fit individual overlays across canvas, l
         ).toBeLessThan(0.1);
         for (const item of group) {
           expect(item.fontSize).toBeCloseTo(item.width * 0.11, 1);
-          expect(item.captionHeight).toBeGreaterThan(item.fontSize * 6 * 1.05);
-          expect(item.scrollHeight).toBeLessThanOrEqual(item.clientHeight + 1);
+          expect(item.captionHeight).toBeGreaterThan(item.fontSize * 3 * 1.05);
         }
       }
       await expect(page.locator(".cell-heading").nth(1)).toHaveValue(multiline);
@@ -7052,11 +7068,17 @@ test("captions share external bands and fit individual overlays across canvas, l
         const captions = page.locator(".cell-heading");
         await expect
           .poll(() =>
-            captions
+            page
+              .locator(".grid-cell [data-caption-preview] span")
               .nth(1)
-              .evaluate(
-                (field) => field.scrollHeight <= field.clientHeight + 1,
-              ),
+              .evaluate((text) => {
+                const style = getComputedStyle(text);
+                return (
+                  Number(style.webkitLineClamp) <= 3 &&
+                  text.getBoundingClientRect().height <=
+                    parseFloat(style.lineHeight) * 3 + 0.1
+                );
+              }),
           )
           .toBe(true);
         const short = await captions.first().boundingBox();
@@ -7070,7 +7092,7 @@ test("captions share external bands and fit individual overlays across canvas, l
           const font = await captions
             .nth(1)
             .evaluate((field) => parseFloat(getComputedStyle(field).fontSize));
-          expect(font).toBeLessThan(long.width * 0.11);
+          expect(font).toBeCloseTo(long.width * 0.11, 1);
         }
       }
     }
@@ -7106,14 +7128,16 @@ test("captions share external bands and fit individual overlays across canvas, l
     },
     [...bytes],
   );
-  expect(dimensions).toEqual({ width: 462, height: 583 });
+  expect(dimensions).toEqual({ width: 462, height: 531 });
   const drawing = await page.evaluate(() => window.captionDrawing);
-  for (const line of multiline.split("\n"))
+  for (const line of multiline.split("\n").slice(0, 2))
     expect(
       drawing.some(
         (entry) => entry.text === line && parseFloat(entry.font) === 16.5,
       ),
     ).toBe(true);
+  expect(drawing.some((entry) => entry.text === "Line Three\u2026")).toBe(true);
+  expect(drawing.some((entry) => entry.text === "Line Six")).toBe(false);
   expect(
     drawing.some(
       (entry) => entry.text === "Short" && parseFloat(entry.font) === 16.5,
@@ -7136,15 +7160,16 @@ test("captions share external bands and fit individual overlays across canvas, l
     });
     await downloadBoard(page);
     const overlayDrawing = await page.evaluate(() => window.captionDrawing);
-    for (const line of multiline.split("\n")) {
-      const entry = overlayDrawing.find((entry) => entry.text === line);
-      expect(entry).toBeTruthy();
-      expect(
-        Math.abs(Number(entry.font.match(/([\d.]+)px/)[1]) - expectedFont) *
-          multiline.split("\n").length *
-          1.05,
-      ).toBeLessThan(1);
-    }
+    const entry = overlayDrawing.find(
+      (entry) => entry.text === "Line One\u2026",
+    );
+    expect(entry).toBeTruthy();
+    expect(
+      Math.abs(Number(entry.font.match(/([\d.]+)px/)[1]) - expectedFont),
+    ).toBeLessThan(0.1);
+    expect(overlayDrawing.some((entry) => entry.text === "Line Six")).toBe(
+      false,
+    );
     expect(
       overlayDrawing.some(
         (entry) => entry.text === "Short" && parseFloat(entry.font) === 16.5,
@@ -11837,6 +11862,126 @@ test("guest reset restores settings without deleting images or removed placement
   expect(errors).toEqual([]);
 });
 
+test("long title overlays reach the bottom and titles can be hidden without losing text", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await uploadCellImage(page);
+  const title =
+    "719aa1d1e36fc0028a6b11d2317a4547 monster killer bre espresso and cream coffee can 355ml";
+  await page.locator(".cell-heading").first().fill(title);
+  await openSidebarPanel(page, "Images");
+  await page.locator(".library-heading").fill(title);
+  await selectField(page, "caption-position", "overlay-bottom");
+  const canvasPreview = page
+    .locator(".grid-cell [data-caption-preview]")
+    .first();
+  await expect(canvasPreview).toBeVisible();
+  await expect(canvasPreview.locator("span")).toHaveCSS(
+    "-webkit-line-clamp",
+    "3",
+  );
+  await expect(canvasPreview).toHaveText(title);
+  await page.locator(".cell-heading").first().click();
+  await expect(canvasPreview).toBeHidden();
+  await expect(page.locator(".cell-heading").first()).toHaveValue(title);
+  await page.locator(".cell-image-button").nth(1).press("Enter");
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  for (const width of [800, 390]) {
+    await setEditorViewport(page, { width, height: 900 });
+    await expect
+      .poll(() =>
+        picker.locator("[data-library-caption-preview]").evaluate((preview) => {
+          const caption = preview.getBoundingClientRect();
+          const content = preview.parentElement.getBoundingClientRect();
+          const text = preview.querySelector("span");
+          const style = getComputedStyle(text);
+          return (
+            style.webkitLineClamp === "3" &&
+            text.getBoundingClientRect().height <=
+              parseFloat(style.lineHeight) * 3 + 0.1 &&
+            text.scrollHeight > text.clientHeight &&
+            Math.abs(content.bottom - caption.bottom) < 0.1
+          );
+        }),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`long-title-overlay-${width}.png`),
+    });
+    const field = picker.locator(".library-heading");
+    const preview = picker.locator("[data-library-caption-preview]");
+    await expect(preview).toBeVisible();
+    await field.click();
+    await expect(preview).toBeHidden();
+    await expect(field).toHaveValue(title);
+    await picker
+      .getByRole("heading", { name: "Choose image", exact: true })
+      .click();
+    await expect(preview).toBeVisible();
+  }
+  await picker
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await setEditorViewport(page, { width: 1440, height: 1080 });
+  await selectField(page, "caption-position", "below");
+  await openSidebarPanel(page, "Settings");
+  const toggle = page.getByRole("switch", { name: "Show titles", exact: true });
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(page.locator(".cell-heading").first()).toBeHidden();
+  await expect
+    .poll(() =>
+      page
+        .locator(".grid-cell")
+        .first()
+        .evaluate((card) => {
+          const content = card
+            .querySelector("[data-card-content]")
+            .getBoundingClientRect();
+          const image = card
+            .querySelector("[data-card-image]")
+            .getBoundingClientRect();
+          return Math.abs(content.height - image.height);
+        }),
+    )
+    .toBeLessThan(0.1);
+  await reloadWorkspace(page);
+  await openSidebarPanel(page, "Settings");
+  await expect(toggle).not.toBeChecked();
+  await expect(page.locator(".cell-heading").first()).toBeHidden();
+  await expect(page.locator(".cell-heading").first()).toHaveValue(title);
+  await page.evaluate(() => {
+    window.titleDrawing = [];
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      ...parameters
+    ) {
+      window.titleDrawing.push(text);
+      return original.call(this, text, ...parameters);
+    };
+  });
+  await downloadBoard(page);
+  expect(await page.evaluate(() => window.titleDrawing)).toEqual([]);
+  await toggle.click();
+  await expect(page.locator(".cell-heading").first()).toBeVisible();
+  await expect(page.locator(".cell-heading").first()).toHaveValue(title);
+  await openSidebarPanel(page, "Images");
+  await expect(page.locator(".library-heading")).toBeVisible();
+  await expect(page.locator(".library-heading")).toHaveValue(title);
+  await page.evaluate(() => {
+    window.titleDrawing = [];
+  });
+  await downloadBoard(page);
+  const exportedTitle = await page.evaluate(() => window.titleDrawing);
+  expect(exportedTitle).toHaveLength(3);
+  expect(exportedTitle.at(-1)).toMatch(/\u2026$/);
+});
+
 test("long imported filenames produce valid captions across reload", async ({
   page,
 }) => {
@@ -12734,7 +12879,8 @@ touchTest(
       page.getByRole("dialog", { name: "Delete images", exact: true }),
     ).toHaveCount(0);
     await expect(picker.getByRole("img")).toHaveCount(0);
-    await expect(picker.getByText("No images yet.")).toBeVisible();
+    await expect(picker.getByText("No images yet.")).toHaveCount(0);
+    await expect(picker.locator("[data-upload-tile]")).toBeVisible();
     await expect(
       page.locator(".grid-cell").first().locator("img"),
     ).toHaveAttribute("alt", "Picker 2");
