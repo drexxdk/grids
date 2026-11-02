@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { Asset } from "../model";
+import { provenanceSchema, providerHosts, type Asset } from "../model";
 
 export interface ProviderImage {
-  provider: "commons";
+  provider: NonNullable<Asset["provenance"]>["provider"];
   id: string;
   title: string;
   sourcePage: string;
@@ -12,20 +12,30 @@ export interface ProviderImage {
   thumbnail: string;
   original: {
     url: string;
-    width: number;
-    height: number;
+    width?: number;
+    height?: number;
     mime: string;
-    size: number;
+    size?: number;
   };
 }
 
 export interface ImageProvider {
-  id: string;
+  id: ProviderImage["provider"];
   name: string;
   domain: string;
   policyUrl: string;
   browse: {
-    id: "space" | "nature" | "art" | "places" | "history";
+    id:
+      | "space"
+      | "nature"
+      | "art"
+      | "places"
+      | "history"
+      | "paintings"
+      | "sculpture"
+      | "portraits"
+      | "prints"
+      | "ceramics";
     query: string;
   }[];
   capabilities: {
@@ -219,21 +229,167 @@ export const commons: ImageProvider = {
   },
 };
 
-export const imageProviders: readonly ImageProvider[] = [commons];
+const museumTopics: ImageProvider["browse"] = [
+  { id: "paintings", query: "painting" },
+  { id: "sculpture", query: "sculpture" },
+  { id: "portraits", query: "portrait" },
+  { id: "prints", query: "print" },
+  { id: "ceramics", query: "ceramic" },
+];
+let metRequestTime = 0;
+let metCooldown = 0;
+
+async function metJson(url: URL, signal: AbortSignal): Promise<unknown> {
+  signal.throwIfAborted();
+  const cooldown = metCooldown - Date.now();
+  if (cooldown > 0) throw new ProviderError("quota", cooldown);
+  const wait = 100 - (Date.now() - metRequestTime);
+  if (wait > 0)
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        reject(signal.reason);
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, wait);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  signal.throwIfAborted();
+  metRequestTime = Date.now();
+  const response = await fetch(url, {
+    signal,
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+  });
+  if (response.status === 429) {
+    const retry = response.headers.get("Retry-After") ?? "60";
+    const seconds = Number(retry);
+    const delay = Number.isFinite(seconds)
+      ? seconds * 1000
+      : Date.parse(retry) - Date.now();
+    const duration = Math.max(1000, Number.isFinite(delay) ? delay : 60000);
+    metCooldown = Date.now() + duration;
+    throw new ProviderError("quota", duration);
+  }
+  if (!response.ok) throw new ProviderError("unavailable");
+  try {
+    return await response.json();
+  } catch {
+    throw new ProviderError("invalid");
+  }
+}
+
+const metSearchSchema = z.object({
+  total: z.number().int().nonnegative(),
+  objectIDs: z.array(z.number().int().positive()).max(12).nullable(),
+});
+const metObjectSchema = z.object({
+  objectID: z.number().int().positive(),
+  isPublicDomain: z.literal(true),
+  title: z.string().min(1),
+  artistDisplayName: z.string(),
+  primaryImage: z.url(),
+  primaryImageSmall: z.url(),
+  objectURL: z.url(),
+  rightsAndReproduction: z.string().optional(),
+});
+
+export const met: ImageProvider = {
+  id: "met",
+  name: "The Met",
+  domain: "Art and cultural collections",
+  policyUrl:
+    "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
+  browse: museumTopics,
+  capabilities: commons.capabilities,
+  async search(query, signal, offset = 0) {
+    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+    const url = new URL(
+      "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
+    );
+    url.search = new URLSearchParams({
+      q: query.slice(0, 160),
+      hasImages: "true",
+      offset: String(offset),
+      limit: "12",
+    }).toString();
+    const parsed = metSearchSchema.safeParse(await metJson(url, requestSignal));
+    if (!parsed.success) throw new ProviderError("invalid");
+    const images: ProviderImage[] = [];
+    for (const id of parsed.data.objectIDs ?? []) {
+      const object = metObjectSchema.safeParse(
+        await metJson(
+          new URL(
+            `https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`,
+          ),
+          requestSignal,
+        ),
+      );
+      if (!object.success) continue;
+      const item = object.data;
+      if (
+        item.objectID !== id ||
+        item.rightsAndReproduction?.trim() ||
+        !safeUrl(item.primaryImage, "images.metmuseum.org") ||
+        !safeUrl(item.primaryImageSmall, "images.metmuseum.org") ||
+        !safeUrl(item.objectURL, "www.metmuseum.org")
+      )
+        continue;
+      images.push({
+        provider: "met",
+        id: String(id),
+        title: item.title.slice(0, 120),
+        sourcePage: item.objectURL,
+        creator: plainText(item.artistDisplayName),
+        license: "CC0",
+        licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+        thumbnail: item.primaryImageSmall,
+        original: { url: item.primaryImage, mime: "image/jpeg" },
+      });
+    }
+    const next = offset + 12;
+    return {
+      images,
+      next:
+        (parsed.data.objectIDs?.length ?? 0) > 0 &&
+        next < Math.min(parsed.data.total, 10000) &&
+        next + 12 <= 10000
+          ? next
+          : undefined,
+    };
+  },
+};
+
+export const imageProviders: readonly ImageProvider[] = [commons, met];
 
 export async function downloadProviderImage(
   image: ProviderImage,
   signal: AbortSignal,
 ): Promise<{ blob: Blob; provenance: NonNullable<Asset["provenance"]> }> {
-  if (!safeUrl(image.original.url, "upload.wikimedia.org"))
-    throw new ProviderError("invalid");
+  const provenance = provenanceSchema.safeParse({
+    provider: image.provider,
+    entityId: image.id,
+    sourcePage: image.sourcePage,
+    originalUrl: image.original.url,
+    creator: image.creator,
+    license: image.license,
+    licenseUrl: image.licenseUrl,
+  });
+  if (!provenance.success) throw new ProviderError("invalid");
   const response = await fetch(image.original.url, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
     credentials: "omit",
     referrerPolicy: "no-referrer",
+    redirect: "error",
   });
   if (
     !response.ok ||
+    (response.url &&
+      !safeUrl(response.url, providerHosts[image.provider].image)) ||
     response.headers.get("Content-Type")?.split(";")[0] !==
       image.original.mime ||
     !response.body
@@ -256,14 +412,6 @@ export async function downloadProviderImage(
   if (!size) throw new ProviderError("invalid");
   return {
     blob: new Blob(chunks, { type: image.original.mime }),
-    provenance: {
-      provider: image.provider,
-      entityId: image.id,
-      sourcePage: image.sourcePage,
-      originalUrl: image.original.url,
-      creator: image.creator,
-      license: image.license,
-      licenseUrl: image.licenseUrl,
-    },
+    provenance: provenance.data,
   };
 }

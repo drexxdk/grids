@@ -486,6 +486,92 @@ async function mockCommons(page) {
   };
 }
 
+async function mockMet(page) {
+  const image = await readFile(
+    path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
+  );
+  const requests = [];
+  let failDownload = false;
+  const object = (id, patch = {}) => ({
+    objectID: id,
+    isPublicDomain: true,
+    title: id === 2 ? "Vase" : "Iris",
+    artistDisplayName: "<b>Fixture curator</b>",
+    rightsAndReproduction: "",
+    primaryImage: `https://images.metmuseum.org/CRDImages/ep/original/${id}.jpg`,
+    primaryImageSmall: `https://images.metmuseum.org/CRDImages/ep/web-large/${id}.jpg`,
+    objectURL: `https://www.metmuseum.org/art/collection/search/${id}`,
+    ...patch,
+  });
+  await page.route(
+    "https://collectionapi.metmuseum.org/public/collection/**",
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/search")) {
+        expect(url.pathname).toBe("/public/collection/v1.1/search");
+        expect(url.searchParams.get("hasImages")).toBe("true");
+        expect(url.searchParams.get("limit")).toBe("12");
+        const query = url.searchParams.get("q");
+        const offset = Number(url.searchParams.get("offset"));
+        requests.push({ query, offset });
+        if (query === "quota")
+          return route.fulfill({
+            status: 429,
+            headers: { "Retry-After": "1" },
+            body: "{}",
+          });
+        if (query === "invalid")
+          return route.fulfill({ json: { total: 1, objectIDs: "invalid" } });
+        if (query === "empty")
+          return route.fulfill({ json: { total: 0, objectIDs: null } });
+        if (query === "slow") {
+          await new Promise((resolve) => page.once("met-release", resolve));
+          try {
+            await route.fulfill({ json: { total: 1, objectIDs: [99] } });
+          } catch {}
+          return;
+        }
+        return route.fulfill({
+          json: {
+            total: 13,
+            objectIDs: offset
+              ? [2]
+              : query === "painting"
+                ? [1, 3, 4, 5, 6, 7, 8]
+                : [1],
+          },
+        });
+      }
+      const id = Number(url.pathname.split("/").at(-1));
+      const patches = {
+        3: { isPublicDomain: false },
+        4: { rightsAndReproduction: "All rights reserved" },
+        5: { primaryImageSmall: "https://example.com/image.jpg" },
+        6: { primaryImage: "https://example.com/image.jpg" },
+        7: { objectURL: "https://example.com/source" },
+        8: { primaryImage: "" },
+      };
+      return route.fulfill({ json: object(id, patches[id]) });
+    },
+  );
+  await page.route("https://images.metmuseum.org/**", (route) =>
+    route.fulfill({
+      status:
+        failDownload && route.request().url().includes("/original/")
+          ? 503
+          : 200,
+      contentType: "image/jpeg",
+      body: image,
+    }),
+  );
+  return {
+    requests,
+    failDownload: (value) => {
+      failDownload = value;
+    },
+  };
+}
+
 async function searchCommons(page, query, waitForResults = true) {
   const online = page.getByRole("region", { name: "Online", exact: true });
   await online
@@ -495,6 +581,224 @@ async function searchCommons(page, query, waitForResults = true) {
     await expect(online).toHaveAttribute("aria-busy", "false");
   return online;
 }
+
+for (const [mode, providerTest] of [
+  ["desktop", test],
+  ["mobile", touchTest],
+]) {
+  providerTest(
+    `Met ${mode} shared browsing import crop export and reload`,
+    async ({ page }, testInfo) => {
+      const mock = await mockMet(page);
+      await page.goto("./");
+      if (mode === "desktop")
+        await selectField(page, "sidebar-image-source", "met");
+      else {
+        await page
+          .locator(".cell-image-button")
+          .first()
+          .tap({ position: { x: 5, y: 5 } });
+        await selectField(page, "picker-image-source", "met");
+      }
+      const online = page.getByRole("region", { name: "Online", exact: true });
+      const remote = online.locator("[data-library-thumbnail]");
+      const searchbox = online.getByRole("searchbox", {
+        name: "Search images",
+        exact: true,
+      });
+      await expect(remote).toHaveCount(1);
+      await expect(online.locator(".library-heading")).toHaveValue("Iris");
+      await expect(remote).toHaveJSProperty("draggable", mode === "desktop");
+      await expect(online.locator("img")).toHaveJSProperty(
+        "naturalWidth",
+        1200,
+      );
+      expect(
+        await page.evaluate(() =>
+          document.activeElement?.matches("input,textarea"),
+        ),
+      ).toBe(false);
+      const topics = online.getByRole("group").first();
+      await expect(topics.getByRole("button")).toHaveCount(5);
+      for (const name of [
+        "Paintings",
+        "Sculpture",
+        "Portraits",
+        "Prints",
+        "Ceramics",
+      ]) {
+        const button = topics.getByRole("button", { name, exact: true });
+        await expect(button).toHaveAttribute("title", name);
+        expect((await button.boundingBox()).width).toBe(32);
+      }
+      const searchBounds = await searchbox.boundingBox();
+      const topicBounds = await topics.boundingBox();
+      const cardBounds = await remote.boundingBox();
+      expect(topicBounds.y).toBeGreaterThanOrEqual(
+        searchBounds.y + searchBounds.height,
+      );
+      expect(cardBounds.y).toBeGreaterThanOrEqual(
+        topicBounds.y + topicBounds.height,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`met-${mode}-browse.png`),
+      });
+      await topics
+        .getByRole("button", { name: "Ceramics", exact: true })
+        .click();
+      await expect(online).toHaveAttribute("aria-busy", "false");
+      expect(mock.requests.at(-1).query).toBe("ceramic");
+      await searchbox.fill("iri");
+      await searchbox.fill("iris");
+      await expect(online).toHaveAttribute("aria-busy", "false");
+      expect(mock.requests.at(-1).query).toBe("iris");
+      expect(mock.requests.some((request) => request.query === "iri")).toBe(
+        false,
+      );
+      await online
+        .getByRole("button", { name: "Next results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveValue("Vase");
+      await online
+        .getByRole("button", { name: "Previous results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveValue("Iris");
+      await expect(
+        online.getByRole("link", { name: "Source and rights" }),
+      ).toHaveAttribute("title", "Fixture curator - CC0");
+      const importImage = async () => {
+        if (mode === "mobile")
+          await online
+            .getByRole("button", { name: "Use Iris", exact: true })
+            .tap({ position: { x: 5, y: 5 } });
+        else {
+          await remote.hover({ position: { x: 5, y: 5 } });
+          await online
+            .getByRole("button", { name: "Import Iris", exact: true })
+            .click();
+        }
+      };
+      mock.failDownload(true);
+      await importImage();
+      await expect(online.getByRole("alert")).toHaveText(
+        "Could not import this image. Try another result.",
+      );
+      await expect(page.locator(".grid-cell img")).toHaveCount(0);
+      mock.failDownload(false);
+      if (mode === "desktop") {
+        await remote.dragTo(page.locator(".cell-image-button").first(), {
+          sourcePosition: { x: 5, y: 5 },
+        });
+        await expect(page.locator(".grid-cell img")).toHaveCount(1);
+        await remote.dragTo(page.locator(".cell-image-button").nth(1), {
+          sourcePosition: { x: 5, y: 5 },
+        });
+        await expect(page.locator(".grid-cell img")).toHaveCount(2);
+        await selectField(page, "sidebar-image-source", "imported");
+        await expect(page.locator("#asset-library .asset")).toHaveCount(1);
+        await expect(
+          page
+            .locator("#asset-library")
+            .getByRole("link", { name: "Source and rights" }),
+        ).toHaveAttribute(
+          "href",
+          "https://www.metmuseum.org/art/collection/search/1",
+        );
+      } else {
+        await importImage();
+        await expect(
+          page.getByRole("dialog", { name: "Choose image", exact: true }),
+        ).toHaveCount(0);
+      }
+      const first = page.locator(".grid-cell").first();
+      await first
+        .locator(".cell-image-button")
+        .click({ position: { x: 5, y: 5 } });
+      await first
+        .getByRole("button", { name: "Crop image", exact: true })
+        .click();
+      const crop = page.getByRole("dialog", {
+        name: "Crop image",
+        exact: true,
+      });
+      await crop
+        .getByRole("button", { name: "Apply crop", exact: true })
+        .click();
+      await selectExportField(page, "resolution", "150");
+      const download = await downloadBoard(page);
+      const bytes = await readFile(await download.path());
+      expect([...bytes.subarray(0, 8)]).toEqual([
+        137, 80, 78, 71, 13, 10, 26, 10,
+      ]);
+      await expect
+        .poll(
+          async () =>
+            (await localDatabase(page)).document.assets[0]?.provenance
+              ?.provider,
+        )
+        .toBe("met");
+      const saved = await localDatabase(page);
+      expect(saved.document.assets[0].provenance).toMatchObject({
+        provider: "met",
+        entityId: "1",
+        license: "CC0",
+        creator: "Fixture curator",
+      });
+      expect(saved.images).toHaveLength(1);
+      expect(saved.document.grid.cells[0].crop).toBeDefined();
+      expect(
+        await page.evaluate(() => localStorage.getItem("grids-settings-v1")),
+      ).not.toContain("metmuseum");
+      await page.reload();
+      await expect(page.locator(".grid-cell img")).toHaveCount(
+        mode === "desktop" ? 2 : 1,
+      );
+      await expect(page.locator(".cell-heading").first()).toHaveValue("Iris");
+      if (mode === "desktop") {
+        await selectField(page, "sidebar-image-source", "met");
+        await expect(remote).toBeVisible();
+      }
+      await page.screenshot({ path: testInfo.outputPath(`met-${mode}.png`) });
+    },
+  );
+}
+
+test("Met filters reject invalid pages and ignore stale results without affecting Commons", async ({
+  page,
+}) => {
+  const mock = await mockMet(page);
+  await mockCommons(page);
+  await page.goto("./");
+  await selectField(page, "sidebar-image-source", "met");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  const search = online.getByRole("searchbox", {
+    name: "Search images",
+    exact: true,
+  });
+  await expect(online.locator(".library-heading")).toHaveValue("Iris");
+  await search.fill("slow");
+  await expect
+    .poll(() => mock.requests.some((request) => request.query === "slow"))
+    .toBe(true);
+  await search.fill("iris");
+  await expect(online.locator(".library-heading")).toHaveValue("Iris");
+  page.emit("met-release");
+  await search.fill("invalid");
+  await expect(online.getByRole("alert")).toHaveText(
+    "The Met returned an unexpected response.",
+  );
+  await search.fill("empty");
+  await expect(online).toHaveAttribute("aria-busy", "false");
+  await expect(online.locator(".asset")).toHaveCount(0);
+  await expect(online.getByRole("alert")).toHaveCount(0);
+  await search.fill("quota");
+  await expect(online.getByRole("alert")).toHaveText(
+    "The Met is rate limiting requests. Try again shortly.",
+  );
+  await selectField(page, "sidebar-image-source", "commons");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
+});
 
 for (const [mode, providerTest] of [
   ["desktop", test],
@@ -2352,6 +2656,7 @@ test("right sidebar switches images and settings with an image source dropdown",
   await expect(page.getByRole("option")).toHaveText([
     "Imported",
     "Wikimedia Commons",
+    "The Met",
   ]);
   await expect(
     page.getByRole("option", { name: "Imported", exact: true }),

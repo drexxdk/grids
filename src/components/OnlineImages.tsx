@@ -7,6 +7,9 @@ import {
   Palette,
   Landmark,
   History,
+  UserRound,
+  Layers,
+  Coffee,
   Search,
 } from "lucide-react";
 import { t } from "../i18n";
@@ -25,6 +28,11 @@ const topicIcons = {
   art: Palette,
   places: Landmark,
   history: History,
+  paintings: Palette,
+  sculpture: Landmark,
+  portraits: UserRound,
+  prints: Layers,
+  ceramics: Coffee,
 };
 
 export function OnlineImages({
@@ -118,8 +126,8 @@ export function OnlineImages({
           !navigator.onLine
             ? t("library.search.offline")
             : failure instanceof ProviderError
-              ? t(`library.search.${failure.kind}`)
-              : t("library.search.unavailable"),
+              ? t(`library.search.${failure.kind}`, { value1: provider.name })
+              : t("library.search.unavailable", { value1: provider.name }),
         );
       })
       .finally(() => {

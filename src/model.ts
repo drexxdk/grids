@@ -20,24 +20,46 @@ export function resolveFontWeight(font: string, weight = 400) {
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
-export const provenanceSchema = z.strictObject({
-  provider: z.literal("commons"),
-  entityId: z.string().regex(/^\d+$/),
-  sourcePage: z.url({
-    protocol: /^https$/,
-    hostname: /^commons\.wikimedia\.org$/,
-  }),
-  originalUrl: z.url({
-    protocol: /^https$/,
-    hostname: /^upload\.wikimedia\.org$/,
-  }),
-  creator: z.string().max(1000),
-  license: z.enum(["CC0", "Public domain"]),
-  licenseUrl: z.url({
-    protocol: /^https$/,
-    hostname: /^(creativecommons\.org|commons\.wikimedia\.org)$/,
-  }),
-});
+export const providerHosts = {
+  commons: { source: "commons.wikimedia.org", image: "upload.wikimedia.org" },
+  met: { source: "www.metmuseum.org", image: "images.metmuseum.org" },
+} as const;
+export const provenanceSchema = z
+  .strictObject({
+    provider: z.enum(["commons", "met"]),
+    entityId: z.string().regex(/^\d+$/),
+    sourcePage: z.url({
+      protocol: /^https$/,
+      hostname: /^(commons\.wikimedia\.org|www\.metmuseum\.org)$/,
+    }),
+    originalUrl: z.url({
+      protocol: /^https$/,
+      hostname: /^(upload\.wikimedia\.org|images\.metmuseum\.org)$/,
+    }),
+    creator: z.string().max(1000),
+    license: z.enum(["CC0", "Public domain"]),
+    licenseUrl: z.url({
+      protocol: /^https$/,
+      hostname: /^(creativecommons\.org|commons\.wikimedia\.org)$/,
+    }),
+  })
+  .refine((value) => {
+    try {
+      const source = new URL(value.sourcePage);
+      const original = new URL(value.originalUrl);
+      const license = new URL(value.licenseUrl);
+      const hosts = providerHosts[value.provider];
+      return (
+        source.hostname === hosts.source &&
+        original.hostname === hosts.image &&
+        [source, original, license].every(
+          (url) => !url.username && !url.password && !url.port,
+        )
+      );
+    } catch {
+      return false;
+    }
+  });
 export interface Asset {
   id: string;
   category: string;

@@ -39,6 +39,33 @@ test("provider provenance validates safe source URLs and stays out of settings",
     license: "Public domain",
     licenseUrl: "https://commons.wikimedia.org/wiki/Commons:Public_domain",
   };
+  for (const [provider, sourcePage, originalUrl] of [
+    [
+      "met",
+      "https://www.metmuseum.org/art/collection/search/1",
+      "https://images.metmuseum.org/CRDImages/ep/original/1.jpg",
+    ],
+  ]) {
+    const candidate = {
+      ...provenance,
+      provider,
+      sourcePage,
+      originalUrl,
+      license: "CC0",
+      licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+    };
+    expect(model.provenanceSchema.safeParse(candidate).success).toBe(true);
+    expect(
+      model.provenanceSchema.safeParse({ ...candidate, provider: "commons" })
+        .success,
+    ).toBe(false);
+    expect(
+      model.provenanceSchema.safeParse({
+        ...candidate,
+        originalUrl: originalUrl.replace("https://", "https://user:pass@"),
+      }).success,
+    ).toBe(false);
+  }
   workspace.assets.push({
     id: crypto.randomUUID(),
     title: "Earth",
@@ -55,6 +82,9 @@ test("provider provenance validates safe source URLs and stays out of settings",
   );
   for (const patch of [
     { sourcePage: "javascript:alert(1)" },
+    { sourcePage: "not-a-url" },
+    { originalUrl: "not-a-url" },
+    { licenseUrl: "not-a-url" },
     { originalUrl: "https://example.com/image.jpg" },
     { license: "CC BY-SA 4.0" },
     { provider: "unsupported" },
