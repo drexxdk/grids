@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,6 +22,8 @@ import { t } from "../i18n";
 import {
   type ImageProvider,
   ProviderError,
+  providerPreviewUrl,
+  downloadProviderImage,
   type ProviderImage,
 } from "../providers";
 import { Button } from "./ui/controls";
@@ -34,6 +42,109 @@ const topicIcons = {
   prints: Layers,
   ceramics: Coffee,
 };
+
+function OnlineImage({
+  image,
+  asset,
+  ...props
+}: { image: ProviderImage } & ComponentProps<typeof LibraryImage>) {
+  const element = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 0, density: 1 });
+  const [thumbnailSize, setThumbnailSize] = useState<{
+    width: number;
+    height: number;
+  }>();
+  const [failedPreview, setFailedPreview] = useState("");
+  const [originalPreview, setOriginalPreview] = useState<{
+    source: string;
+    url: string;
+  }>();
+  useLayoutEffect(() => {
+    const root = element.current;
+    if (!root) return;
+    const measure = () => {
+      const width = root.getBoundingClientRect().width;
+      if (width > 0)
+        setViewport({ width, density: window.devicePixelRatio || 1 });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    let densityQuery = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
+    );
+    const densityChanged = () => {
+      densityQuery.removeEventListener("change", densityChanged);
+      densityQuery = window.matchMedia(
+        `(resolution: ${window.devicePixelRatio}dppx)`,
+      );
+      densityQuery.addEventListener("change", densityChanged);
+      measure();
+    };
+    densityQuery.addEventListener("change", densityChanged);
+    window.addEventListener("resize", measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      densityQuery.removeEventListener("change", densityChanged);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  const selectedSrc = viewport.width
+    ? providerPreviewUrl(image, viewport.width, viewport.density, thumbnailSize)
+    : "";
+  const needsOriginal =
+    image.provider === "met" && selectedSrc === image.original.url;
+  const originalUrl = image.original.url;
+  useEffect(() => {
+    if (!needsOriginal) return;
+    const controller = new AbortController();
+    let url = "";
+    void downloadProviderImage(image, controller.signal)
+      .then(async ({ blob }) => {
+        controller.signal.throwIfAborted();
+        url = URL.createObjectURL(blob);
+        const decoded = new Image();
+        decoded.src = url;
+        await decoded.decode();
+        controller.signal.throwIfAborted();
+        if (decoded.naturalWidth * decoded.naturalHeight > 40000000)
+          throw new Error("Image dimensions are too large");
+        setOriginalPreview({ source: originalUrl, url });
+      })
+      .catch(() => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    return () => {
+      controller.abort();
+      if (url) URL.revokeObjectURL(url);
+      setOriginalPreview(undefined);
+    };
+  }, [needsOriginal, originalUrl]);
+  const src = needsOriginal
+    ? originalPreview?.source === originalUrl
+      ? originalPreview.url
+      : image.thumbnail
+    : selectedSrc && selectedSrc === failedPreview
+      ? image.thumbnail
+      : selectedSrc;
+  return (
+    <LibraryImage
+      {...props}
+      elementRef={element}
+      asset={{ ...asset, src }}
+      onImageLoad={(loaded) => {
+        if (image.provider === "met" && loaded.src === image.thumbnail)
+          setThumbnailSize({
+            width: loaded.naturalWidth,
+            height: loaded.naturalHeight,
+          });
+      }}
+      onImageError={(loaded) => {
+        if (loaded.src !== image.thumbnail) setFailedPreview(loaded.src);
+      }}
+    />
+  );
+}
 
 export function OnlineImages({
   provider,
@@ -204,8 +315,9 @@ export function OnlineImages({
       </div>
       <div className={gridClassName}>
         {images.map((image) => (
-          <LibraryImage
+          <OnlineImage
             key={image.id}
+            image={image}
             {...cardProps}
             asset={{
               id: `provider:${image.provider}:${image.id}`,

@@ -34,6 +34,89 @@ test.beforeAll(async () => {
   ]);
 });
 
+test("provider previews choose bounded cover renditions for every shape and density", () => {
+  const image = {
+    provider: "commons",
+    thumbnail:
+      "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Wide.jpg/330px-Wide.jpg?source=api",
+    original: {
+      url: "https://upload.wikimedia.org/wikipedia/commons/a/ab/Wide.jpg",
+      width: 6000,
+      height: 3000,
+    },
+  };
+  for (const original of [
+    image.original,
+    { ...image.original, width: 3000, height: 6000 },
+    { ...image.original, width: 6000, height: 6000 },
+  ]) {
+    for (const cardWidth of [128, 160, 320]) {
+      for (const density of [1, 2, 3]) {
+        const url = new URL(
+          providers.providerPreviewUrl(
+            { ...image, original },
+            cardWidth,
+            density,
+          ),
+        );
+        const width = Number(url.pathname.match(/\/(\d+)px-/)[1]);
+        for (const aspect of [3 / 4, 1, 4 / 3]) {
+          expect(width).toBeGreaterThanOrEqual(cardWidth * density);
+          expect(
+            (width * original.height) / original.width,
+          ).toBeGreaterThanOrEqual((cardWidth / aspect) * density);
+        }
+        const buckets = [120, 250, 330, 500, 960, 1280, 1920, 3840];
+        const previous = buckets[buckets.indexOf(width) - 1];
+        if (previous)
+          expect(previous).toBeLessThan(
+            Math.max(
+              cardWidth * density,
+              ((cardWidth / (3 / 4)) * density * original.width) /
+                original.height,
+            ),
+          );
+        expect(url.searchParams.get("source")).toBe("api");
+      }
+    }
+  }
+  expect(providers.providerPreviewUrl(image, 320)).toContain("/960px-");
+  expect(providers.providerPreviewUrl(image, 160)).toContain("/500px-");
+  expect(
+    providers.providerPreviewUrl(
+      { ...image, original: { ...image.original, width: 100, height: 50 } },
+      320,
+    ),
+  ).toBe(image.original.url);
+  expect(
+    providers.providerPreviewUrl({ ...image, provider: "met" }, 320, 2),
+  ).toBe(image.thumbnail);
+  expect(
+    providers.providerPreviewUrl({ ...image, provider: "met" }, 320, 1, {
+      width: 480,
+      height: 640,
+    }),
+  ).toBe(image.thumbnail);
+  expect(
+    providers.providerPreviewUrl({ ...image, provider: "met" }, 320, 2, {
+      width: 480,
+      height: 640,
+    }),
+  ).toBe(image.original.url);
+  expect(
+    providers.providerPreviewUrl({ ...image, provider: "met" }, 320, 1, {
+      width: 1000,
+      height: 200,
+    }),
+  ).toBe(image.original.url);
+  expect(
+    providers.providerPreviewUrl(
+      { ...image, thumbnail: "https://example.com/330px-Wide.jpg" },
+      160,
+    ),
+  ).toBe("https://example.com/330px-Wide.jpg");
+});
+
 test("provider pages fill twelve unique eligible images without skipping overflow", async () => {
   const requests = [];
   const image = (id) => ({ id: String(id) });

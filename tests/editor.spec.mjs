@@ -393,7 +393,7 @@ async function beginCellUpload(page, index) {
   return page.locator("#replace-upload");
 }
 
-async function mockCommons(page) {
+async function mockCommons(page, { width = 400, height = 600 } = {}) {
   const image = await readFile(
     path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
   );
@@ -406,10 +406,10 @@ async function mockCommons(page) {
     imageinfo: [
       {
         url: `https://upload.wikimedia.org/wikipedia/commons/test/${id}.jpg`,
-        thumburl: `https://thumb.wikimedia.org/wikipedia/commons/test/thumb-${id}.jpg`,
+        thumburl: `https://thumb.wikimedia.org/wikipedia/commons/thumb/test/${id}.jpg/330px-thumb-${id}.jpg`,
         descriptionurl: `https://commons.wikimedia.org/wiki/File:${title}.jpg`,
-        width: 400,
-        height: 600,
+        width,
+        height,
         size: image.length,
         mime: "image/jpeg",
         extmetadata: {
@@ -560,7 +560,7 @@ async function mockMet(page) {
               ]
             : query === "painting"
               ? [1, 3, 4, 5, 6, 7, 8]
-              : [1];
+              : [{ undersized: 10, unavailable: 11, adequate: 12 }[query] ?? 1];
         return route.fulfill({
           json: {
             total: catalog.length,
@@ -607,6 +607,184 @@ async function searchCommons(page, query, waitForResults = true) {
     await expect(online).toHaveAttribute("aria-busy", "false");
   return online;
 }
+
+async function resizedProviderFixture(page, width, height) {
+  const image = await readFile(
+    path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
+  );
+  const base64 = await page.evaluate(
+    async ({ source, width, height }) => {
+      const decoded = new Image();
+      decoded.src = `data:image/jpeg;base64,${source}`;
+      await decoded.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(decoded, 0, 0, width, height);
+      return canvas.toDataURL("image/png").split(",")[1];
+    },
+    { source: image.toString("base64"), width, height },
+  );
+  return Buffer.from(base64, "base64");
+}
+
+for (const [mode, density, viewport] of [
+  ["desktop", 1, { width: 1440, height: 1080 }],
+  ["mobile", 2, { width: 390, height: 844 }],
+]) {
+  test(`Commons ${mode} preview renditions cover all shapes without oversized requests`, async ({
+    browser,
+  }, testInfo) => {
+    const context = await browser.newContext({
+      viewport,
+      deviceScaleFactor: density,
+      isMobile: mode === "mobile",
+      hasTouch: mode === "mobile",
+    });
+    const page = await context.newPage();
+    try {
+      await mockCommons(page, { width: 6000, height: 3000 });
+      const thumbnailWidths = [];
+      const originals = [];
+      page.on("request", (request) => {
+        if (request.url().startsWith("https://upload.wikimedia.org/"))
+          originals.push(request.url());
+      });
+      await page.route(/^https:\/\/thumb\.wikimedia\.org\//, async (route) => {
+        const width = Number(
+          new URL(route.request().url()).pathname.match(/\/(\d+)px-/)[1],
+        );
+        thumbnailWidths.push(width);
+        await route.fulfill({
+          contentType: "image/png",
+          body: await resizedProviderFixture(page, width, width / 2),
+        });
+      });
+      await page.goto("./");
+      if (mode === "mobile") {
+        await page
+          .locator(".cell-image-button")
+          .first()
+          .tap({ position: { x: 5, y: 5 } });
+        await selectField(page, "picker-image-source", "commons");
+      } else await selectField(page, "sidebar-image-source", "commons");
+      const online = page.getByRole("region", { name: "Online", exact: true });
+      const image = online.locator("img");
+      const assertRendition = async () => {
+        const cardWidth = (
+          await online.locator("[data-library-image]").boundingBox()
+        ).width;
+        const required = Math.ceil(cardWidth * (4 / 3) * density * 2);
+        const expected = [120, 250, 330, 500, 960, 1280, 1920, 3840].find(
+          (width) => width >= required,
+        );
+        await expect(image).toHaveAttribute(
+          "src",
+          new RegExp(`/${expected}px-`),
+        );
+        await expect(image).toHaveJSProperty("naturalWidth", expected);
+        await expect(image).toHaveJSProperty("naturalHeight", expected / 2);
+      };
+      await assertRendition();
+      expect(thumbnailWidths).toHaveLength(1);
+      if (mode === "desktop") {
+        for (const shape of ["landscape", "square", "portrait"]) {
+          await selectField(page, "image-shape", shape);
+          await assertRendition();
+        }
+        expect(thumbnailWidths).toHaveLength(1);
+      } else {
+        await setEditorViewport(page, { width: 260, height: 844 });
+        await assertRendition();
+      }
+      expect(originals).toHaveLength(0);
+      expect((await localDatabase(page)).images).toHaveLength(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`preview-sizing-${mode}.png`),
+      });
+      if (mode === "mobile")
+        await online
+          .getByRole("button", { name: "Use Earth", exact: true })
+          .tap({ position: { x: 5, y: 5 } });
+      else {
+        await online
+          .getByRole("button", { name: "Image options: Earth", exact: true })
+          .hover({ position: { x: 5, y: 5 } });
+        await online
+          .getByRole("button", { name: "Import Earth", exact: true })
+          .click();
+      }
+      await expect
+        .poll(async () => (await localDatabase(page)).images.length)
+        .toBe(1);
+      expect(originals).toEqual([
+        "https://upload.wikimedia.org/wikipedia/commons/test/1.jpg",
+      ]);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+test("Met preview variants upgrade only when necessary and release temporary originals", async ({
+  page,
+}) => {
+  const mock = await mockMet(page);
+  let height = 1500;
+  const originals = [];
+  page.on("request", (request) => {
+    if (
+      request
+        .url()
+        .startsWith("https://images.metmuseum.org/CRDImages/ep/original/")
+    )
+      originals.push(request.url());
+  });
+  await page.route(
+    "https://images.metmuseum.org/CRDImages/ep/web-large/**",
+    async (route) => {
+      await route.fulfill({
+        contentType: "image/png",
+        body: await resizedProviderFixture(page, 1000, height),
+      });
+    },
+  );
+  await page.goto("./");
+  await selectField(page, "sidebar-image-source", "met");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  const image = online.locator("img");
+  await expect(image).toHaveJSProperty("naturalHeight", 1500);
+  await expect(image).toHaveAttribute("src", /\/web-large\//);
+  expect(originals).toHaveLength(0);
+  height = 100;
+  await searchCommons(page, "undersized");
+  await expect(image).toHaveAttribute("src", /^blob:/);
+  await expect(image).toHaveJSProperty("naturalWidth", 1200);
+  const temporary = await image.getAttribute("src");
+  expect(originals).toHaveLength(1);
+  expect((await localDatabase(page)).images).toHaveLength(0);
+  mock.failDownload(true);
+  await searchCommons(page, "unavailable");
+  await expect.poll(() => originals.length).toBe(2);
+  await expect(image).toHaveAttribute("src", /\/web-large\//);
+  await expect(image).toHaveJSProperty("naturalHeight", 100);
+  expect(
+    await page.evaluate(async (url) => {
+      try {
+        await fetch(url);
+        return true;
+      } catch {
+        return false;
+      }
+    }, temporary),
+  ).toBe(false);
+  height = 1500;
+  mock.failDownload(false);
+  await searchCommons(page, "adequate");
+  await expect(image).toHaveJSProperty("naturalHeight", 1500);
+  expect(originals).toHaveLength(2);
+  expect((await localDatabase(page)).images).toHaveLength(0);
+});
 
 for (const [mode, providerTest] of [
   ["desktop", test],

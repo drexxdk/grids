@@ -151,6 +151,9 @@ export function gridSpacing(style: GridStyle, width: number) {
     padding: ((style.canvasPadding ?? 12) * width) / 600,
   };
 }
+export const previewCardMinWidth = 128;
+export const previewCardMaxWidth = 320;
+
 export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
   const aspectRatio =
     style.imageAspect === "portrait"

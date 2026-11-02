@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { provenanceSchema, providerHosts, type Asset } from "../model";
+import {
+  provenanceSchema,
+  providerHosts,
+  previewCardMaxWidth,
+  type Asset,
+} from "../model";
 
 export interface ProviderImage {
   provider: NonNullable<Asset["provenance"]>["provider"];
@@ -17,6 +22,49 @@ export interface ProviderImage {
     mime: string;
     size?: number;
   };
+}
+
+export function providerPreviewUrl(
+  image: ProviderImage,
+  cardWidth: number,
+  pixelRatio = 1,
+  thumbnailSize?: { width: number; height: number },
+) {
+  const displayWidth = Math.min(previewCardMaxWidth, Math.max(1, cardWidth));
+  const density = Math.max(1, pixelRatio);
+  if (image.provider === "met") {
+    return thumbnailSize &&
+      (thumbnailSize.width < displayWidth * density ||
+        thumbnailSize.height < ((displayWidth * 4) / 3) * density)
+      ? image.original.url
+      : image.thumbnail;
+  }
+  const { width, height } = image.original;
+  if (!width || !height) return image.thumbnail;
+  const scale = Math.min(
+    1,
+    Math.max(
+      (displayWidth * density) / width,
+      (((displayWidth * 4) / 3) * density) / height,
+    ),
+  );
+  const requiredWidth = Math.ceil(width * scale);
+  const renditionWidth = [120, 250, 330, 500, 960, 1280, 1920, 3840].find(
+    (candidate) => candidate >= requiredWidth,
+  );
+  if (!renditionWidth || renditionWidth >= width) return image.original.url;
+  const url = new URL(image.thumbnail);
+  if (
+    !["upload.wikimedia.org", "thumb.wikimedia.org"].includes(url.hostname) ||
+    !url.pathname.includes("/thumb/") ||
+    !/\/\d+px-[^/]+$/.test(url.pathname)
+  )
+    return image.thumbnail;
+  url.pathname = url.pathname.replace(
+    /\/\d+px-([^/]+)$/,
+    `/${renditionWidth}px-$1`,
+  );
+  return url.href;
 }
 
 export interface ImageProvider {

@@ -544,7 +544,7 @@ export function GridCell({
                 >
                   <img
                     className="pointer-events-none rounded-none! border-0!"
-                    src={asset.src}
+                    src={asset.src || undefined}
                     referrerPolicy={
                       asset.provenance ? "no-referrer" : undefined
                     }

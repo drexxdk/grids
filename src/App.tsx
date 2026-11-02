@@ -52,6 +52,8 @@ import {
 import {
   fontOptions,
   fontWeightOptions,
+  previewCardMinWidth,
+  previewCardMaxWidth,
   resolveFontWeight,
   gridLimit,
   makeWorkspace,
@@ -79,8 +81,6 @@ import {
 } from "./export";
 import { LocalWorkspaceStore, LocalWorkspaceConflictError } from "./storage";
 
-const previewCardMinWidth = 128;
-const previewCardMaxWidth = 320;
 const pickerGridClassName =
   "grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--picker-card-min-width)),1fr))] gap-4 *:max-w-(--picker-card-max-width)";
 

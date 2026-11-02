@@ -1,4 +1,5 @@
 import type { Asset, Cell, GridStyle } from "../model";
+import type { Ref } from "react";
 import { ExternalLink } from "lucide-react";
 import { t } from "../i18n";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
@@ -18,6 +19,9 @@ export function LibraryImage({
   onSelect,
   onImport,
   source,
+  elementRef,
+  onImageLoad,
+  onImageError,
   className = "max-[900px]:w-20.5 max-[900px]:shrink-0",
 }: {
   asset: Asset;
@@ -39,10 +43,25 @@ export function LibraryImage({
   onSelect?: () => void;
   onImport?: () => void;
   source?: CardDragSource;
+  elementRef?: Ref<HTMLDivElement>;
+  onImageLoad?: (image: HTMLImageElement) => void;
+  onImageError?: (image: HTMLImageElement) => void;
   className?: string;
 }) {
   return (
-    <div data-library-image className={`relative min-w-0 ${className}`}>
+    <div
+      ref={elementRef}
+      data-library-image
+      className={`relative min-w-0 ${className}`}
+      onLoadCapture={(event) => {
+        if (event.target instanceof HTMLImageElement)
+          onImageLoad?.(event.target);
+      }}
+      onErrorCapture={(event) => {
+        if (event.target instanceof HTMLImageElement)
+          onImageError?.(event.target);
+      }}
+    >
       <GridCell
         cell={
           cell
