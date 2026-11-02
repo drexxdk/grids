@@ -138,12 +138,19 @@ export function IconRadioField({
   onChange: (value: string) => void;
 }) {
   return (
-    <RadioGroup id={id} value={value} onChange={onChange}>
+    <RadioGroup
+      id={id}
+      value={value}
+      onChange={onChange}
+      className="@container/radio"
+    >
       <Label className="field-label">{label}</Label>
       <div
         className={clsx(
           "isolate grid gap-0 rounded-md bg-(--bg)",
-          columns === 3 ? "grid-cols-3" : "grid-cols-2",
+          columns === 3
+            ? "grid-cols-3 @max-[260px]/radio:grid-cols-2"
+            : "grid-cols-2",
         )}
       >
         {options.map(
@@ -159,17 +166,26 @@ export function IconRadioField({
               disabled={optionValue === value}
               data-value={optionValue}
               className={clsx(
-                "relative flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-none border border-solid border-(--line) bg-(--bg) px-1 py-2 text-(--muted) data-hover:z-10 data-hover:border-(--accent) data-checked:bg-(--selected) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! data-checked:data-hover:border-(--line) focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
+                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-(--line) bg-(--bg) px-1 py-2 text-(--muted) data-hover:z-10 data-hover:border-(--accent) data-checked:bg-(--selected) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! data-checked:data-hover:border-(--line) focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
                 optionIndex % columns !== 0 && "-ml-px",
                 optionIndex >= columns && "-mt-px",
                 optionIndex === 0 && "rounded-tl-md",
                 optionIndex === columns - 1 && "rounded-tr-md",
                 optionIndex === options.length - columns && "rounded-bl-md",
                 optionIndex === options.length - 1 && "rounded-br-md",
+                columns === 3 &&
+                  optionIndex === 0 &&
+                  "@max-[260px]/radio:rounded-bl-none",
+                columns === 3 &&
+                  optionIndex === 1 &&
+                  "@max-[260px]/radio:rounded-tr-md",
+                columns === 3 &&
+                  optionIndex === 2 &&
+                  "@max-[260px]/radio:col-span-2 @max-[260px]/radio:ml-0 @max-[260px]/radio:-mt-px @max-[260px]/radio:rounded-tr-none @max-[260px]/radio:rounded-bl-md",
               )}
             >
-              <Icon aria-hidden="true" className="size-6! shrink-0" />
-              <span className="w-full text-center text-xs leading-4 wrap-break-word">
+              <Icon aria-hidden="true" className="size-4! shrink-0" />
+              <span className="min-w-0 text-center text-xs leading-4 wrap-break-word">
                 {optionLabel}
               </span>
             </Radio>

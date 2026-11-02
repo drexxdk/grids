@@ -970,11 +970,34 @@ test("canvas resizing commits fitted dimensions before the next paint", async ({
 test("settings have open sections and joined appearance radio grids", async ({
   page,
 }, testInfo) => {
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 390, 260]) {
     await setEditorViewport(page, { width, height: 1000 });
     await page.goto("./");
-    if (width > 900) await openSidebarPanel(page, "Settings");
-    else
+    if (width > 900) {
+      await openSidebarPanel(page, "Settings");
+      const tabs = page.getByRole("tablist", {
+        name: "Editor panels",
+        exact: true,
+      });
+      for (const tab of await tabs.getByRole("tab").all()) {
+        await expect(tab).toHaveCSS("height", "44px");
+        await expect(tab).toHaveCSS("flex-direction", "row");
+        expect(
+          await tab.evaluate((element) => {
+            const icon = element.querySelector("svg").getBoundingClientRect();
+            const title = element.querySelector("span").getBoundingClientRect();
+            return (
+              icon.right <= title.left &&
+              Math.abs(icon.y + icon.height / 2 - title.y - title.height / 2) <
+                1
+            );
+          }),
+        ).toBe(true);
+      }
+      await tabs.screenshot({
+        path: testInfo.outputPath("compact-panel-tabs.png"),
+      });
+    } else
       await page
         .getByRole("button", {
           name: "Show sidebar",
@@ -1002,7 +1025,7 @@ test("settings have open sections and joined appearance radio grids", async ({
       await expect(section).toHaveCSS("border-left-width", "0px");
     }
     for (const [group, columns] of [
-      [shapes, 3],
+      [shapes, width === 260 ? 2 : 3],
       [headings, 2],
     ]) {
       await group.scrollIntoViewIfNeeded();
@@ -1024,20 +1047,28 @@ test("settings have open sections and joined appearance radio grids", async ({
         expect(Math.abs(first.y + first.height - third.y - 1)).toBeLessThan(1);
       }
       for (const radio of await radios.all()) {
-        await expect(radio).toHaveCSS("flex-direction", "column");
+        await expect(radio).toHaveCSS("flex-direction", "row");
+        const bounds = await radio.boundingBox();
+        expect(bounds.height).toBeGreaterThanOrEqual(44);
+        expect(bounds.height).toBeLessThan(64);
         expect(
           await radio.evaluate((el) => {
             const icon = el.querySelector("svg").getBoundingClientRect();
             const label = el.querySelector("span");
+            const title = label.getBoundingClientRect();
             return (
-              icon.bottom <= label.getBoundingClientRect().top &&
+              icon.right <= title.left &&
+              Math.abs(icon.y + icon.height / 2 - title.y - title.height / 2) <
+                1 &&
               label.scrollWidth <= label.clientWidth
             );
           }),
         ).toBe(true);
       }
       await group.screenshot({
-        path: testInfo.outputPath(`appearance-radios-${width}-${columns}.png`),
+        path: testInfo.outputPath(
+          `appearance-radios-${width}-${group === shapes ? "shape" : "heading"}.png`,
+        ),
       });
     }
     const portrait = shapes.getByRole("radio", {
