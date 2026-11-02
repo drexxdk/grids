@@ -1316,7 +1316,7 @@ export default function App() {
                   data-workspace-extent
                   className="pointer-events-none"
                   style={{
-                    width: `calc(100% + ${canvasOverflow.width}px)`,
+                    width: `calc(100% + ${canvasOverflow.width}px + ${canvasOverflow.width > 0 && canvasOverflow.height === 0 ? "var(--native-scrollbar-width,0px)" : "0px"})`,
                     height: canvasOverflow.height,
                   }}
                 />

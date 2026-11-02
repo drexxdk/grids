@@ -1679,6 +1679,9 @@ test("Commons cards share imported settings and support native mouse and touch d
           "naturalWidth",
           1200,
         );
+        await expect
+          .poll(async () => parseFloat((await imported.evaluate(metrics)).size))
+          .toBeGreaterThan(0);
         const expected = await imported.evaluate(metrics);
         expect(expected.frameCount).toBe(0);
         expect(expected.mask).toBe("none");
@@ -4593,6 +4596,80 @@ test("canvas preview fits both row and column changes without resizing controls"
     )
     .toBeGreaterThanOrEqual(13.8);
 });
+
+scrollbarTest(
+  "horizontal-only grid overflow shows a usable workspace scrollbar",
+  async ({ page }, testInfo) => {
+    await page.goto("./");
+    for (let count = 0; count < 2; count++)
+      await page
+        .getByRole("button", { name: "Remove row", exact: true })
+        .click();
+    await openSidebarPanel(page, "Settings");
+    await selectField(page, "caption-position", "overlay-bottom");
+    await closeSidebarPanel(page);
+    const scroller = page.locator("[data-workspace-scroll]");
+    const viewport = page.locator("[data-canvas-viewport]");
+    for (const width of [462, 390]) {
+      await setEditorViewport(page, { width, height: 727 });
+      await scroller.evaluate((element) => element.scrollTo(0, 0));
+      await expect
+        .poll(() =>
+          viewport.evaluate(
+            (element) => element.scrollWidth - element.clientWidth,
+          ),
+        )
+        .toBeGreaterThan(0);
+      const overflow = await viewport.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      );
+      const gutter = await page.evaluate(() =>
+        parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--native-scrollbar-width",
+          ),
+        ),
+      );
+      expect(gutter).toBeGreaterThan(0);
+      if (width === 462) expect(overflow).toBeLessThan(gutter);
+      await expect
+        .poll(() =>
+          scroller.evaluate(
+            (element) => element.offsetHeight - element.clientHeight,
+          ),
+        )
+        .toBeGreaterThan(0);
+      expect(
+        await viewport.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        ),
+      ).toBe(0);
+      const heading = page.locator(".board-export-heading");
+      const before = await heading.boundingBox();
+      const bounds = await scroller.boundingBox();
+      await page.mouse.move(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+      );
+      await page.mouse.wheel(1000, 0);
+      await expect
+        .poll(() => viewport.evaluate((element) => element.scrollLeft))
+        .toBe(overflow);
+      expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(
+        overflow,
+      );
+      expect(await heading.boundingBox()).toEqual(before);
+      const last = await page.locator(".grid-cell").last().boundingBox();
+      const visible = await viewport.boundingBox();
+      expect(last.x + last.width).toBeLessThanOrEqual(
+        visible.x + visible.width + 1,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`horizontal-only-${width}.png`),
+      });
+    }
+  },
+);
 
 nativeTouchTest(
   "workspace-edge scrolling moves grid items while heading and controls stay fixed",
