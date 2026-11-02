@@ -418,6 +418,10 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
           Copyrighted: { value: "False" },
           AttributionRequired: { value: "false" },
           Restrictions: { value: "" },
+          Categories: {
+            value:
+              "Astronomy|Landscape photography|Paintings|Architecture|Historical photographs",
+          },
           ...overrides,
         },
       },
@@ -428,6 +432,7 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
     async (route) => {
       const url = new URL(route.request().url());
       const query = url.searchParams.get("gsrsearch");
+      expect(query).toContain("haslicense:unrestricted");
       const offset = Number(url.searchParams.get("gsroffset"));
       const limit = Number(url.searchParams.get("gsrlimit"));
       requests.push({ query, offset, limit });
@@ -436,6 +441,26 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
           status: 429,
           headers: { "Retry-After": "1" },
           body: "{}",
+        });
+      if (query.startsWith("busy") || query.startsWith("maxlag"))
+        return route.fulfill({
+          json: {
+            error: {
+              code: query.startsWith("busy")
+                ? "cirrussearch-too-busy-error"
+                : "maxlag",
+              info: "Search is currently too busy. Please try again later.",
+            },
+          },
+        });
+      if (query.startsWith("servicefailure"))
+        return route.fulfill({ status: 503, body: "Service unavailable" });
+      if (query.startsWith("invalidcursor"))
+        return route.fulfill({
+          json: {
+            continue: { gsroffset: "12", continue: "-||" },
+            query: { pages: [result(1, "Earth")] },
+          },
         });
       if (query.startsWith("invalid"))
         return route.fulfill({ json: { query: { pages: "bad response" } } });
@@ -460,23 +485,40 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
         }),
         result(5, "Missing rights", { Copyrighted: { value: "" } }),
       ];
-      const catalog = query.startsWith("paged")
+      const catalog = query.startsWith("historycontinuation")
         ? [
-            ...first,
+            ...first.slice(0, 2),
             ...Array.from({ length: 11 }, (_, index) =>
               result(index + 10, `Open ${index + 10}`),
             ),
-            result(2, "Moon"),
           ]
-        : query.startsWith("moon")
-          ? [result(2, "Moon")]
-          : first;
+        : query.startsWith("scoped")
+          ? [
+              result(30, "Unrelated", { Categories: { value: "" } }),
+              result(31, "Neutral title", {
+                Categories: { value: "Architecture" },
+              }),
+              result(32, "Forest", { Categories: { value: "Nature" } }),
+            ]
+          : query.startsWith("paged")
+            ? [
+                ...first,
+                ...Array.from({ length: 11 }, (_, index) =>
+                  result(index + 10, `Open ${index + 10}`),
+                ),
+                result(2, "Moon"),
+              ]
+            : query.startsWith("moon")
+              ? [result(2, "Moon")]
+              : first;
       const next = offset + limit;
       return route.fulfill({
         json: {
           ...(next < catalog.length
             ? { continue: { gsroffset: next, continue: "-||" } }
-            : {}),
+            : {
+                continue: { iistart: "2024-07-31T01:29:44Z", continue: "||" },
+              }),
           query: { pages: catalog.slice(offset, next) },
         },
       });
@@ -510,6 +552,7 @@ async function mockMet(page) {
     isPublicDomain: true,
     title: id === 2 ? "Vase" : id >= 10 ? `Open ${id}` : "Iris",
     artistDisplayName: "<b>Fixture curator</b>",
+    tags: [{ term: "Portraits" }],
     rightsAndReproduction: "",
     primaryImage: `https://images.metmuseum.org/CRDImages/ep/original/${id}.jpg`,
     primaryImageSmall: `https://images.metmuseum.org/CRDImages/ep/web-large/${id}.jpg`,
@@ -528,7 +571,12 @@ async function mockMet(page) {
         expect(limit).toBeLessThanOrEqual(12);
         const query = url.searchParams.get("q");
         const offset = Number(url.searchParams.get("offset"));
-        requests.push({ query, offset, limit });
+        requests.push({
+          query,
+          offset,
+          limit,
+          medium: url.searchParams.get("medium"),
+        });
         if (query === "quota")
           return route.fulfill({
             status: 429,
@@ -547,21 +595,26 @@ async function mockMet(page) {
           return;
         }
         const catalog =
-          query === "paged"
-            ? [
-                1,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                ...Array.from({ length: 11 }, (_, index) => index + 10),
-                2,
-              ]
-            : query === "painting"
-              ? [1, 3, 4, 5, 6, 7, 8]
-              : [{ undersized: 10, unavailable: 11, adequate: 12 }[query] ?? 1];
+          query === "scoped"
+            ? [1, 10]
+            : query === "paged"
+              ? [
+                  1,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  ...Array.from({ length: 11 }, (_, index) => index + 10),
+                  2,
+                ]
+              : query === "painting"
+                ? [1, 3, 4, 5, 6, 7, 8]
+                : [
+                    { undersized: 10, unavailable: 11, adequate: 12 }[query] ??
+                      1,
+                  ];
         return route.fulfill({
           json: {
             total: catalog.length,
@@ -572,6 +625,7 @@ async function mockMet(page) {
       const id = Number(url.pathname.split("/").at(-1));
       detailRequests.push(id);
       const patches = {
+        10: { tags: [{ term: "Flowers" }] },
         3: { isPublicDomain: false },
         4: { rightsAndReproduction: "All rights reserved" },
         5: { primaryImageSmall: "https://example.com/image.jpg" },
@@ -826,7 +880,7 @@ for (const [mode, providerTest] of [
         ),
       ).toBe(false);
       const topics = online.getByRole("group").first();
-      await expect(topics.getByRole("button")).toHaveCount(5);
+      await expect(topics.getByRole("button")).toHaveCount(6);
       for (const name of [
         "Paintings",
         "Sculpture",
@@ -1078,7 +1132,7 @@ for (const [mode, providerTest] of [
       expect(iconBounds.x).toBeGreaterThan(fieldBounds.x);
       expect(iconBounds.x + iconBounds.width).toBeLessThan(fieldBounds.x + 40);
       const topics = online.getByRole("group", {
-        name: "Browse topics",
+        name: "Explore",
         exact: true,
       });
       for (const topic of await topics.getByRole("button").all()) {
@@ -1114,11 +1168,11 @@ for (const [mode, providerTest] of [
       await expect
         .poll(() =>
           mock.requests.some((request) =>
-            request.query.startsWith("Ansel Adams landscape"),
+            request.query.startsWith("cancelled-filter"),
           ),
         )
         .toBe(true);
-      await expect(searchbox).toHaveValue("");
+      await expect(searchbox).toHaveValue("cancelled-filter");
       await expect(searchbox).not.toBeFocused();
       await expect(online.locator("[data-library-image]")).toHaveCount(1);
       await searchCommons(page, "earth");
@@ -1126,7 +1180,7 @@ for (const [mode, providerTest] of [
         mock.requests.some((request) =>
           request.query.startsWith("cancelled-filter"),
         ),
-      ).toBe(false);
+      ).toBe(true);
       await expect(online.locator("[data-library-image]")).toHaveCount(1);
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
@@ -1427,7 +1481,328 @@ test("Commons cards share imported settings and support native mouse and touch d
   }
 });
 
+for (const failure of ["malformed", "blocked"]) {
+  test(`editor navigation tolerates ${failure} preference storage`, async ({
+    page,
+  }) => {
+    await page.addInitScript((failure) => {
+      if (failure === "malformed")
+        localStorage.setItem("grids-ui-v1", "{broken");
+      else {
+        const getItem = Storage.prototype.getItem;
+        const setItem = Storage.prototype.setItem;
+        Storage.prototype.getItem = function (key) {
+          if (key === "grids-ui-v1")
+            throw new DOMException("Unavailable", "SecurityError");
+          return getItem.call(this, key);
+        };
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "grids-ui-v1")
+            throw new DOMException("Unavailable", "QuotaExceededError");
+          return setItem.call(this, key, value);
+        };
+      }
+    }, failure);
+    await page.goto("./?source=invalid&panel=invalid&offset=-1");
+    await expect(page.locator("#board-grid")).toBeVisible();
+    await expect(page.locator("#sidebar-image-source")).toHaveText("Imported");
+    await openSidebarPanel(page, "Settings");
+    await page.reload();
+    await expect(
+      page.getByRole("tab", { name: "Settings", exact: true }),
+    ).toBeDisabled();
+    await expect(page.locator("#board-grid")).toBeVisible();
+  });
+}
+
 for (const provider of ["commons", "met"]) {
+  test(`${provider} topic filters exclude unrelated metadata without changing search text`, async ({
+    page,
+  }) => {
+    await (provider === "commons" ? mockCommons(page) : mockMet(page));
+    await page.goto(
+      `./?source=${provider}&topic=${provider === "commons" ? "places" : "portraits"}&q=scoped`,
+    );
+    const online = page.getByRole("region", { name: "Online", exact: true });
+    const input = online.getByRole("searchbox", {
+      name: "Search images",
+      exact: true,
+    });
+    await expect(online.locator(".library-heading")).toHaveValue(
+      provider === "commons" ? "Neutral title" : "Iris",
+    );
+    await expect(input).toHaveValue("scoped");
+    if (provider === "commons") {
+      await online.getByRole("button", { name: "Nature", exact: true }).click();
+      await expect(online.locator(".library-heading")).toHaveValue("Forest");
+    }
+    await online.getByRole("button", { name: "All", exact: true }).click();
+    await expect(online.locator(".library-heading")).toHaveCount(
+      provider === "commons" ? 3 : 2,
+    );
+    await expect(input).toHaveValue("scoped");
+  });
+
+  for (const [mode, providerTest] of [
+    ["desktop", test],
+    ["mobile", touchTest],
+  ]) {
+    providerTest(
+      `${provider} ${mode} combines search with topic filters and All`,
+      async ({ page }, testInfo) => {
+        const mock = await (provider === "commons"
+          ? mockCommons(page)
+          : mockMet(page));
+        await page.goto("./");
+        const open = async () => {
+          if (mode === "mobile")
+            await page
+              .locator(".cell-image-button")
+              .first()
+              .tap({ position: { x: 5, y: 5 } });
+          await selectField(
+            page,
+            mode === "mobile" ? "picker-image-source" : "sidebar-image-source",
+            provider,
+          );
+        };
+        await open();
+        const online = page.getByRole("region", {
+          name: "Online",
+          exact: true,
+        });
+        const input = online.getByRole("searchbox", {
+          name: "Search images",
+          exact: true,
+        });
+        const firstTopic = provider === "commons" ? "Space" : "Paintings";
+        const secondTopic = provider === "commons" ? "Nature" : "Ceramics";
+        await searchCommons(page, "paged");
+        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(
+          online.getByRole("button", { name: firstTopic, exact: true }),
+        ).toBeDisabled();
+        await online
+          .getByRole("button", { name: "Next results", exact: true })
+          .click();
+        await expect(online.locator(".library-heading")).toHaveValue(
+          provider === "commons" ? "Moon" : "Vase",
+        );
+        const beforeTopic = mock.requests.length;
+        await online
+          .getByRole("button", { name: secondTopic, exact: true })
+          .click();
+        await expect(input).toHaveValue("paged");
+        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await expect(
+          online.getByRole("button", { name: "Previous results", exact: true }),
+        ).toBeDisabled();
+        expect(mock.requests.length).toBeGreaterThan(beforeTopic);
+        const scoped = mock.requests.at(-1);
+        if (provider === "commons")
+          expect(scoped.query).toBe(
+            "paged filetype:bitmap haslicense:unrestricted",
+          );
+        else expect(scoped.medium).toBe("Ceramics");
+        await page.reload();
+        if (mode === "mobile") {
+          await expect(page.getByRole("dialog")).toHaveCount(0);
+          await open();
+        }
+        await expect(input).toHaveValue("paged");
+        await expect(
+          online.getByRole("button", { name: secondTopic, exact: true }),
+        ).toBeDisabled();
+        await searchCommons(page, "");
+        await expect(
+          online.getByRole("button", { name: secondTopic, exact: true }),
+        ).toBeDisabled();
+        await searchCommons(page, "paged");
+        await expect(online.locator(".library-heading")).toHaveCount(12);
+        await online.getByRole("button", { name: "All", exact: true }).click();
+        await expect(input).toHaveValue("paged");
+        await expect(online.locator(".library-heading")).toHaveCount(12);
+        const unrestricted = mock.requests.at(-1);
+        if (provider === "commons")
+          expect(unrestricted.query).not.toContain("intitle:");
+        else expect(unrestricted.medium).toBeNull();
+        await input.fill("");
+        await expect(online).toHaveAttribute("aria-busy", "false");
+        await expect(
+          online.getByRole("button", { name: "All", exact: true }),
+        ).toBeDisabled();
+        await searchCommons(page, "paged");
+        await online
+          .getByRole("button", { name: "Next results", exact: true })
+          .click();
+        await expect(online.locator(".library-heading")).toHaveValue(
+          provider === "commons" ? "Moon" : "Vase",
+        );
+        if (mode === "desktop") {
+          const url = new URL(page.url());
+          expect(url.searchParams.get("topic")).toBe("all");
+          expect(url.searchParams.get("q")).toBe("paged");
+          expect(url.searchParams.get("offset")).toBe(
+            provider === "commons" ? "15" : "18",
+          );
+        }
+        await page.reload();
+        if (mode === "mobile") await open();
+        await expect(input).toHaveValue("paged");
+        await expect(
+          online.getByRole("button", { name: "All", exact: true }),
+        ).toBeDisabled();
+        await expect(online.locator(".library-heading")).toHaveValue(
+          provider === "commons" ? "Moon" : "Vase",
+        );
+        await input.scrollIntoViewIfNeeded();
+        await page.screenshot({
+          path: testInfo.outputPath(`${provider}-${mode}-combined-search.png`),
+        });
+      },
+    );
+  }
+
+  test(`${provider} opens a shared provider page without prior browser state`, async ({
+    page,
+  }) => {
+    await (provider === "commons" ? mockCommons(page) : mockMet(page));
+    const offset = provider === "commons" ? 15 : 18;
+    await page.goto(
+      `./?panel=images&source=${provider}&q=paged&offset=${offset}`,
+    );
+    const online = page.getByRole("region", { name: "Online", exact: true });
+    await expect(online.locator(".library-heading")).toHaveValue(
+      provider === "commons" ? "Moon" : "Vase",
+    );
+    await online
+      .getByRole("button", { name: "Previous results", exact: true })
+      .click();
+    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await expect(
+      online.getByRole("button", { name: "Previous results", exact: true }),
+    ).toBeDisabled();
+  });
+
+  touchTest(
+    `${provider} remembers picker browsing without reopening dialogs on reload`,
+    async ({ page }) => {
+      await (provider === "commons" ? mockCommons(page) : mockMet(page));
+      await page.goto("./");
+      await page
+        .locator(".cell-image-button")
+        .first()
+        .tap({ position: { x: 5, y: 5 } });
+      await selectField(page, "picker-image-source", provider);
+      const online = await searchCommons(page, "paged");
+      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await online
+        .getByRole("button", { name: "Next results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Moon" : "Vase",
+      );
+      expect(new URL(page.url()).searchParams.get("source")).toBe("imported");
+      await page.reload();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page
+        .locator(".cell-image-button")
+        .first()
+        .tap({ position: { x: 5, y: 5 } });
+      await expect(page.locator("#picker-image-source")).toHaveText(
+        provider === "commons" ? "Wikimedia Commons" : "The Met",
+      );
+      await expect(
+        online.getByRole("searchbox", { name: "Search images", exact: true }),
+      ).toHaveValue("paged");
+      await expect(online.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Moon" : "Vase",
+      );
+      expect(
+        await page.evaluate(() =>
+          document.activeElement?.matches("input,textarea"),
+        ),
+      ).toBe(false);
+      await online
+        .getByRole("button", { name: "Previous results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveCount(12);
+    },
+  );
+
+  test(`${provider} remembers sidebar navigation across reload and browser history`, async ({
+    page,
+  }) => {
+    await mockCommons(page);
+    await mockMet(page);
+    await page.goto("./?extra=keep#anchor");
+    await selectField(page, "sidebar-image-source", provider);
+    const online = await searchCommons(page, "paged");
+    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await online
+      .getByRole("button", { name: "Next results", exact: true })
+      .click();
+    const last = provider === "commons" ? "Moon" : "Vase";
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    expect(new URL(page.url()).searchParams.get("offset")).toBe(
+      provider === "commons" ? "15" : "18",
+    );
+    await page.goBack();
+    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await page.goForward();
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await openSidebarPanel(page, "Settings");
+    await page.reload();
+    await expect(
+      page.getByRole("tab", { name: "Settings", exact: true }),
+    ).toBeDisabled();
+    await openSidebarPanel(page, "Images");
+    await expect(page.locator("#sidebar-image-source")).toHaveText(
+      provider === "commons" ? "Wikimedia Commons" : "The Met",
+    );
+    await expect(
+      online.getByRole("searchbox", { name: "Search images", exact: true }),
+    ).toHaveValue("paged");
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await online
+      .getByRole("button", { name: "Previous results", exact: true })
+      .click();
+    await expect(online.locator(".library-heading")).toHaveCount(12);
+    await online
+      .getByRole("button", { name: "Next results", exact: true })
+      .click();
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    await sidebarToggle(page, true).click();
+    await page.reload();
+    await expect(sidebarToggle(page, false)).toBeVisible();
+    await openSidebarPanel(page, "Images");
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("extra")).toBe("keep");
+    expect(url.hash).toBe("#anchor");
+    await selectField(
+      page,
+      "sidebar-image-source",
+      provider === "commons" ? "met" : "commons",
+    );
+    await selectField(page, "sidebar-image-source", provider);
+    await expect(online.locator(".library-heading")).toHaveValue(last);
+    const topic = provider === "commons" ? "Nature" : "Sculpture";
+    await online.getByRole("button", { name: topic, exact: true }).click();
+    await expect(online).toHaveAttribute("aria-busy", "false");
+    await page.reload();
+    await expect(
+      online.getByRole("button", { name: topic, exact: true }),
+    ).toBeDisabled();
+    await expect(
+      online.getByRole("searchbox", { name: "Search images", exact: true }),
+    ).toHaveValue("paged");
+    expect(new URL(page.url()).searchParams.get("topic")).toBe(
+      topic.toLowerCase(),
+    );
+    expect(new URL(page.url()).searchParams.has("offset")).toBe(false);
+  });
+
   nativeTouchTest(
     `${provider} caches pages across views and refreshes after one hour`,
     async ({ page }) => {
@@ -1464,7 +1839,8 @@ for (const provider of ["commons", "met"]) {
       expect(mock.requests).toHaveLength(different);
       await selectField(page, "sidebar-image-source", "imported");
       await selectField(page, "sidebar-image-source", provider);
-      await expect(online.locator(".library-heading")).toHaveValue(
+      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await expect(online.locator(".library-heading").first()).toHaveValue(
         provider === "commons" ? "Earth" : "Iris",
       );
       expect(mock.requests).toHaveLength(different);
@@ -1560,6 +1936,67 @@ for (const provider of ["commons", "met"]) {
     ).toBeDisabled();
   });
 }
+
+test("Commons keeps collected images when the final batch has only image-history continuation", async ({
+  page,
+}) => {
+  const mock = await mockCommons(page);
+  await page.goto(
+    "./?panel=images&source=commons&topic=all&q=historycontinuation",
+  );
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  const headings = online.locator(".library-heading");
+  await expect(headings).toHaveCount(12);
+  await expect(headings.first()).toHaveValue("Earth");
+  await expect(headings.last()).toHaveValue("Open 20");
+  await expect(online.getByRole("alert")).toHaveCount(0);
+  await expect(
+    online.getByRole("button", { name: "Next results", exact: true }),
+  ).toBeDisabled();
+  expect(mock.requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual(
+    [
+      { offset: 0, limit: 12 },
+      { offset: 12, limit: 1 },
+    ],
+  );
+  await page.reload();
+  await expect(headings).toHaveCount(12);
+  await expect(online.getByRole("alert")).toHaveCount(0);
+  expect(mock.requests).toHaveLength(4);
+  await searchCommons(page, "invalidcursor");
+  await expect(online.getByRole("alert")).toHaveText(
+    "Wikimedia Commons returned an unexpected response.",
+  );
+});
+
+test("Commons reports busy search responses without claiming a provider outage", async ({
+  page,
+}) => {
+  const mock = await mockCommons(page);
+  await page.goto("./?source=commons&topic=space&q=busy");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  await expect(online.getByRole("alert")).toHaveText(
+    "Wikimedia Commons search is busy. Try again shortly.",
+  );
+  expect(mock.requests).toHaveLength(1);
+  await searchCommons(page, "earth");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
+  await searchCommons(page, "maxlag");
+  await expect(online.getByRole("alert")).toHaveText(
+    "Wikimedia Commons search is busy. Try again shortly.",
+  );
+  await searchCommons(page, "invalid");
+  await expect(online.getByRole("alert")).toHaveText(
+    "Wikimedia Commons returned an unexpected response.",
+  );
+  await searchCommons(page, "servicefailure");
+  await expect(online.getByRole("alert")).toHaveText(
+    "Could not load images from Wikimedia Commons. Try again.",
+  );
+  await searchCommons(page, "earth");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
+  await expect(online.getByRole("alert")).toHaveCount(0);
+});
 
 test("Commons ignores stale searches and isolates empty malformed quota and offline failures", async ({
   page,

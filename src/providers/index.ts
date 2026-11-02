@@ -97,6 +97,7 @@ export interface ImageProvider {
     query: string,
     signal: AbortSignal,
     offset?: number,
+    topic?: string | null,
   ) => Promise<{
     images: ProviderImage[];
     next?: number;
@@ -107,11 +108,12 @@ export interface ImageProvider {
 export function cacheImageProvider(provider: ImageProvider): ImageProvider {
   return {
     ...provider,
-    search(query, signal, offset = 0) {
+    search(query, signal, offset = 0, topic = null) {
       const filter = query.trim().slice(0, 160);
       return providerQuery(
-        ["provider-page", provider.id, filter, offset],
-        (requestSignal) => provider.search(filter, requestSignal, offset),
+        ["provider-page", provider.id, filter, offset, topic],
+        (requestSignal) =>
+          provider.search(filter, requestSignal, offset, topic),
         signal,
         (data) => (data?.incomplete ? 0 : providerFreshTime),
       );
@@ -121,7 +123,8 @@ export function cacheImageProvider(provider: ImageProvider): ImageProvider {
 
 export class ProviderError extends Error {
   constructor(
-    public readonly kind: "quota" | "unavailable" | "invalid",
+    public readonly kind:
+      "quota" | "busy" | "timeout" | "unavailable" | "invalid",
     public readonly retryAfter = 0,
   ) {
     super(kind);
@@ -133,6 +136,7 @@ type BatchSearch = (
   signal: AbortSignal,
   offset: number,
   limit: number,
+  topic?: string | null,
 ) => ReturnType<ImageProvider["search"]>;
 
 export function fillImagePages(
@@ -140,7 +144,7 @@ export function fillImagePages(
 ): ImageProvider {
   return {
     ...provider,
-    async search(query, signal, offset = 0) {
+    async search(query, signal, offset = 0, topic = null) {
       const deadline = AbortSignal.timeout(15000);
       const requestSignal = AbortSignal.any([signal, deadline]);
       const images: ProviderImage[] = [];
@@ -161,6 +165,7 @@ export function fillImagePages(
             requestSignal,
             cursor,
             remaining,
+            topic,
           );
           signal.throwIfAborted();
           if (result.images.length > remaining)
@@ -182,9 +187,11 @@ export function fillImagePages(
             incomplete = true;
             break;
           }
+          if (deadline.aborted) throw new ProviderError("timeout");
           throw error;
         }
       }
+      if (next !== undefined && images.length < 12) incomplete = true;
       return { images, next, ...(incomplete ? { incomplete: true } : {}) };
     },
   };
@@ -193,7 +200,10 @@ export function fillImagePages(
 const metadata = z.record(z.string(), z.object({ value: z.string() }));
 const responseSchema = z.object({
   error: z.unknown().optional(),
-  continue: z.object({ gsroffset: z.number() }).passthrough().optional(),
+  continue: z
+    .object({ gsroffset: z.number().optional() })
+    .passthrough()
+    .optional(),
   query: z
     .object({
       pages: z.array(
@@ -241,6 +251,15 @@ function plainText(value: string) {
 }
 
 let blockedUntil = 0;
+const commonsTopicFilters: Record<string, RegExp> = {
+  space: /NASA|space|astronom|galax|planet|earth|moon/i,
+  nature:
+    /nature|landscape|wildlife|plant|Ansel|tree|forest|animal|bird|mountain|flower/i,
+  art: /painting|\bart\b|sculpture|drawing|illustration|engraving/i,
+  places:
+    /architectur|building|cit(?:y|ies)|landmark|bridge|castle|church|street|mosque|town|village/i,
+  history: /histor|archive|ancient|antiquit|medieval|manuscript/i,
+};
 
 export const commons = cacheImageProvider(
   fillImagePages({
@@ -262,9 +281,13 @@ export const commons = cacheImageProvider(
       crop: true,
       export: true,
     },
-    async search(query, signal, offset = 0, limit = 12) {
+    async search(query, signal, offset = 0, limit = 12, topic = null) {
       if (Date.now() < blockedUntil)
         throw new ProviderError("quota", blockedUntil - Date.now());
+      const text =
+        query.slice(0, 160) ||
+        commons.browse.find((item) => item.id === topic)?.query ||
+        "";
       const url = new URL("https://commons.wikimedia.org/w/api.php");
       url.search = new URLSearchParams({
         action: "query",
@@ -272,7 +295,7 @@ export const commons = cacheImageProvider(
         formatversion: "2",
         origin: "*",
         generator: "search",
-        gsrsearch: `${query.slice(0, 160)} filetype:bitmap`,
+        gsrsearch: `${text} filetype:bitmap haslicense:unrestricted`.trim(),
         gsrnamespace: "6",
         gsrlimit: String(limit),
         gsroffset: String(offset),
@@ -281,7 +304,7 @@ export const commons = cacheImageProvider(
         iiurlwidth: "320",
         iiextmetadatalanguage: "en",
         iiextmetadatafilter:
-          "Artist|LicenseShortName|LicenseUrl|Copyrighted|Restrictions|AttributionRequired",
+          "Artist|LicenseShortName|LicenseUrl|Copyrighted|Restrictions|AttributionRequired|Categories",
       }).toString();
       const response = await fetch(url, {
         signal,
@@ -300,8 +323,18 @@ export const commons = cacheImageProvider(
       }
       if (!response.ok) throw new ProviderError("unavailable");
       const parsed = responseSchema.safeParse(await response.json());
-      if (!parsed.success || parsed.data.error)
+      if (!parsed.success) throw new ProviderError("invalid");
+      if (parsed.data.error) {
+        const apiError = z
+          .object({ code: z.string() })
+          .safeParse(parsed.data.error);
+        if (
+          apiError.success &&
+          ["cirrussearch-too-busy-error", "maxlag"].includes(apiError.data.code)
+        )
+          throw new ProviderError("busy");
         throw new ProviderError("invalid");
+      }
       const images: ProviderImage[] = [];
       for (const page of (parsed.data.query?.pages ?? []).sort(
         (first, second) => (first.index ?? 0) - (second.index ?? 0),
@@ -309,6 +342,14 @@ export const commons = cacheImageProvider(
         const info = page.imageinfo?.[0];
         if (!info) continue;
         const meta = info.extmetadata;
+        const topicFilter = commonsTopicFilters[topic ?? ""];
+        if (
+          topicFilter &&
+          !topicFilter.test(
+            `${page.title} ${plainText(meta.Categories?.value ?? "")}`,
+          )
+        )
+          continue;
         const license = meta.LicenseShortName?.value;
         if (license !== "CC0" && license !== "Public domain") continue;
         if (
@@ -428,7 +469,17 @@ const metObjectSchema = z.object({
   primaryImageSmall: z.url(),
   objectURL: z.url(),
   rightsAndReproduction: z.string().optional(),
+  tags: z
+    .array(z.object({ term: z.string() }))
+    .nullable()
+    .optional(),
 });
+const metTopicMediums: Record<string, string> = {
+  paintings: "Paintings",
+  sculpture: "Sculpture",
+  prints: "Prints",
+  ceramics: "Ceramics",
+};
 
 export const met = cacheImageProvider(
   fillImagePages({
@@ -439,18 +490,23 @@ export const met = cacheImageProvider(
       "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
     browse: museumTopics,
     capabilities: commons.capabilities,
-    async search(query, signal, offset = 0, limit = 12) {
+    async search(query, signal, offset = 0, limit = 12, topic = null) {
       limit = Math.min(limit, 10000 - offset);
       if (limit <= 0) return { images: [] };
       const url = new URL(
         "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
       );
       url.search = new URLSearchParams({
-        q: query.slice(0, 160),
+        q:
+          query.slice(0, 160) ||
+          museumTopics.find((item) => item.id === topic)?.query ||
+          "*",
         hasImages: "true",
         offset: String(offset),
         limit: String(limit),
       }).toString();
+      const medium = metTopicMediums[topic ?? ""];
+      if (medium) url.searchParams.set("medium", medium);
       const parsed = metSearchSchema.safeParse(await metJson(url, signal));
       if (!parsed.success) throw new ProviderError("invalid");
       const images: ProviderImage[] = [];
@@ -474,6 +530,8 @@ export const met = cacheImageProvider(
         if (!item) continue;
         if (
           !item.isPublicDomain ||
+          (topic === "portraits" &&
+            !item.tags?.some((tag) => /^portraits?$/i.test(tag.term))) ||
           item.objectID !== id ||
           item.rightsAndReproduction?.trim() ||
           !safeUrl(item.primaryImage, "images.metmuseum.org") ||

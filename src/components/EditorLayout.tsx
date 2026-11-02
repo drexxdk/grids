@@ -18,6 +18,7 @@ import {
 } from "react";
 import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
+import { useEditorState } from "../browser/navigation";
 
 const compactQuery = "(max-width: 900px)";
 function subscribeToViewport(onChange: () => void) {
@@ -49,8 +50,8 @@ export function EditorLayout({
     () => false,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedPanel, setSelectedPanel] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
+  const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
   const panelsId = useId();
   const settingsButton = useRef<HTMLButtonElement>(null);
   const headerElement = useRef<HTMLElement>(null);

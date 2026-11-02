@@ -44,6 +44,7 @@ import { LibraryImage } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
 import { ImageSourceSelect } from "./components/ui/ImageTabs";
 import { OnlineImages } from "./components/OnlineImages";
+import { useEditorState } from "./browser/navigation";
 import {
   downloadProviderImage,
   imageProviders,
@@ -230,8 +231,8 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
-  const [librarySource, setLibrarySource] = useState("imported");
-  const [pickerSource, setPickerSource] = useState("imported");
+  const [librarySource, setLibrarySource] = useEditorState("librarySource");
+  const [pickerSource, setPickerSource] = useEditorState("pickerSource");
   const libraryProvider = imageProviders.find(
     (provider) => provider.id === librarySource,
   );

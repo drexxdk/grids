@@ -16,6 +16,7 @@ import {
   UserRound,
   Layers,
   Coffee,
+  Grid2X2,
   Search,
 } from "lucide-react";
 import { t } from "../i18n";
@@ -29,6 +30,7 @@ import {
 import { Button } from "./ui/controls";
 import { LibraryImage } from "./LibraryImage";
 import type { CardDragSource } from "./GridCell";
+import { useBrowsingState } from "../browser/navigation";
 
 const topicIcons = {
   space: Orbit,
@@ -163,20 +165,11 @@ export function OnlineImages({
   ComponentProps<typeof LibraryImage>,
   "gridStyle" | "captionRows" | "moving" | "onMoveStart" | "onTouchDrag"
 >) {
-  const [query, setQuery] = useState("");
+  const [browsing, setBrowsing] = useBrowsingState(provider, selectionOnly);
+  const { query, selectedTopic, request, history } = browsing;
   const [filtering, setFiltering] = useState(false);
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(
-    provider.browse[0]?.id ?? null,
-  );
-  const [request, setRequest] = useState<{
-    query: string;
-    offset: number;
-  } | null>(() =>
-    provider.browse[0] ? { query: provider.browse[0].query, offset: 0 } : null,
-  );
   const [images, setImages] = useState<ProviderImage[]>([]);
   const [next, setNext] = useState<number>();
-  const [history, setHistory] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
@@ -196,20 +189,20 @@ export function OnlineImages({
     }
   };
   useEffect(() => {
-    if (selectedTopic !== null) return;
+    if (query.trim() === request?.query && selectedTopic === request?.topic) {
+      setFiltering(false);
+      return;
+    }
     const timer = window.setTimeout(() => {
       const filter = query.trim();
-      const fallback = provider.browse[0];
-      const nextRequest = filter
-        ? { query: filter, offset: 0 }
-        : fallback
-          ? { query: fallback.query, offset: 0 }
-          : null;
+      const nextRequest = { query: filter, topic: selectedTopic, offset: 0 };
       setFiltering(false);
       setLoading(nextRequest !== null);
-      setHistory([]);
-      if (!filter) setSelectedTopic(fallback?.id ?? null);
-      setRequest(nextRequest);
+      setBrowsing((previous) => ({
+        ...previous,
+        history: [],
+        request: nextRequest,
+      }));
     }, 300);
     return () => window.clearTimeout(timer);
   }, [provider, query, selectedTopic]);
@@ -225,7 +218,7 @@ export function OnlineImages({
     setImages([]);
     setNext(undefined);
     provider
-      .search(request.query, controller.signal, request.offset)
+      .search(request.query, controller.signal, request.offset, request.topic)
       .then((result) => {
         if (controller.signal.aborted) return;
         setImages(result.images);
@@ -265,8 +258,8 @@ export function OnlineImages({
           value={query}
           maxLength={160}
           onChange={(event) => {
-            setQuery(event.target.value);
-            setSelectedTopic(null);
+            const query = event.target.value;
+            setBrowsing((previous) => ({ ...previous, query }), "silent");
             setFiltering(true);
             setError("");
           }}
@@ -278,25 +271,29 @@ export function OnlineImages({
         aria-label={t("library.browse.title")}
         className="mb-3 flex flex-wrap gap-1"
       >
-        {provider.browse.map((topic) => {
-          const Icon = topicIcons[topic.id];
+        {[{ id: null }, ...provider.browse].map((topic) => {
+          const Icon = topic.id === null ? Grid2X2 : topicIcons[topic.id];
           return (
             <Button
-              key={topic.id}
-              title={t(`library.browse.${topic.id}`)}
+              key={topic.id ?? "all"}
+              title={t(`library.browse.${topic.id ?? "all"}`)}
               aria-pressed={selectedTopic === topic.id}
               disabled={selectedTopic === topic.id && !error}
               className="size-8! p-0! aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!"
               onClick={() => {
                 setFiltering(false);
-                setSelectedTopic(topic.id);
-                setQuery("");
-                setHistory([]);
-                setRequest({ query: topic.query, offset: 0 });
+                setBrowsing({
+                  query,
+                  selectedTopic: topic.id,
+                  history: [],
+                  request: { query: query.trim(), topic: topic.id, offset: 0 },
+                });
               }}
             >
               <Icon aria-hidden="true" />
-              <span className="sr-only">{t(`library.browse.${topic.id}`)}</span>
+              <span className="sr-only">
+                {t(`library.browse.${topic.id ?? "all"}`)}
+              </span>
             </Button>
           );
         })}
@@ -370,11 +367,15 @@ export function OnlineImages({
             title={t("library.search.previous")}
             disabled={!history.length}
             onClick={() => {
-              setRequest({
-                query: request.query,
-                offset: history[history.length - 1]!,
-              });
-              setHistory(history.slice(0, -1));
+              setBrowsing((previous) => ({
+                ...previous,
+                request: {
+                  topic: request.topic,
+                  query: request.query,
+                  offset: history[history.length - 1]!,
+                },
+                history: history.slice(0, -1),
+              }));
             }}
           >
             <ArrowLeft aria-hidden="true" />
@@ -385,8 +386,15 @@ export function OnlineImages({
             disabled={next === undefined}
             onClick={() => {
               if (next === undefined) return;
-              setHistory([...history, request.offset]);
-              setRequest({ query: request.query, offset: next });
+              setBrowsing((previous) => ({
+                ...previous,
+                history: [...history, request.offset],
+                request: {
+                  query: request.query,
+                  topic: request.topic,
+                  offset: next,
+                },
+              }));
             }}
           >
             <ArrowRight aria-hidden="true" />

@@ -8,6 +8,7 @@ import ICU from "i18next-icu";
 let model;
 let providers;
 let cache;
+let navigation;
 async function loadModule(relativePath) {
   const result = await build({
     configFile: false,
@@ -29,11 +30,130 @@ async function loadModule(relativePath) {
   );
 }
 test.beforeAll(async () => {
-  [model, providers, cache] = await Promise.all([
+  [model, providers, cache, navigation] = await Promise.all([
     loadModule("../src/model.ts"),
     loadModule("../src/providers/index.ts"),
     loadModule("../src/providers/cache.ts"),
+    loadModule("../src/browser/navigation.ts"),
   ]);
+});
+
+test("editor navigation validates saved state and URL browsing cursors", () => {
+  const defaults = navigation.parseEditorState({});
+  expect(defaults.browsing["library:commons"]).toEqual(
+    navigation.defaultBrowsing(providers.commons),
+  );
+  expect(defaults.browsing["picker:met"]).toEqual(
+    navigation.defaultBrowsing(providers.met),
+  );
+  expect(navigation.parseEditorState({ librarySource: "invalid" })).toEqual(
+    defaults,
+  );
+  const restored = navigation.readNavigation(
+    defaults,
+    new URL(
+      "https://example.com/grids/?panel=settings&source=commons&q=earth&offset=27&other=keep#anchor",
+    ),
+  );
+  expect(restored).toMatchObject({
+    selectedPanel: 1,
+    librarySource: "commons",
+    browsing: {
+      "library:commons": {
+        query: "earth",
+        selectedTopic: null,
+        request: { query: "earth", offset: 27 },
+        history: [0],
+      },
+    },
+  });
+  const url = navigation.navigationUrl(
+    restored,
+    new URL("https://example.com/grids/?other=keep#anchor"),
+  );
+  expect(url.searchParams.get("offset")).toBe("27");
+  expect(url.searchParams.get("other")).toBe("keep");
+  expect(url.hash).toBe("#anchor");
+  const invalid = navigation.readNavigation(
+    defaults,
+    new URL("https://example.com/?source=met&offset=-1&topic=invalid"),
+  );
+  expect(invalid.browsing["library:met"].request.offset).toBe(0);
+  expect(invalid.browsing["library:met"].selectedTopic).toBe("paintings");
+  expect(
+    navigation.readNavigation(restored, new URL("https://example.com/"), true),
+  ).toEqual(restored);
+  const entry = {
+    gridsNavigation: {
+      source: "commons",
+      browsing: { ...restored.browsing["library:commons"], history: [0, 15] },
+    },
+  };
+  expect(
+    navigation.readNavigation(defaults, url, false, entry).browsing[
+      "library:commons"
+    ].history,
+  ).toEqual([0, 15]);
+  expect(
+    navigation.readNavigation(defaults, url, false, {
+      gridsNavigation: { ...entry.gridsNavigation, source: "met" },
+    }).browsing["library:commons"].history,
+  ).toEqual([0]);
+  const combined = navigation.readNavigation(
+    defaults,
+    new URL(
+      "https://example.com/?source=commons&topic=places&q=bridge&offset=27",
+    ),
+  );
+  expect(combined.browsing["library:commons"]).toMatchObject({
+    query: "bridge",
+    selectedTopic: "places",
+    request: { query: "bridge", topic: "places", offset: 27 },
+  });
+  const combinedUrl = navigation.navigationUrl(
+    combined,
+    new URL("https://example.com/"),
+  );
+  expect(combinedUrl.searchParams.get("topic")).toBe("places");
+  expect(combinedUrl.searchParams.get("q")).toBe("bridge");
+  const all = navigation.readNavigation(
+    defaults,
+    new URL("https://example.com/?source=met&topic=all"),
+  );
+  expect(all.browsing["library:met"]).toMatchObject({
+    query: "",
+    selectedTopic: null,
+    request: { query: "", topic: null, offset: 0 },
+  });
+  expect(
+    navigation
+      .navigationUrl(all, new URL("https://example.com/"))
+      .searchParams.get("topic"),
+  ).toBe("all");
+});
+
+test("provider topic scopes reach every batch and use separate page cache entries", async () => {
+  const calls = [];
+  const provider = providers.cacheImageProvider(
+    providers.fillImagePages({
+      ...providers.commons,
+      async search(query, signal, offset, limit, topic) {
+        calls.push({ query, offset, topic });
+        return { images: [], ...(offset === 0 ? { next: 7 } : {}) };
+      },
+    }),
+  );
+  const signal = new AbortController().signal;
+  await provider.search("scoped", signal, 0, "places");
+  await provider.search("scoped", signal, 0, "places");
+  await provider.search("scoped", signal, 0, "nature");
+  await provider.search("scoped", signal);
+  expect(calls).toEqual(
+    ["places", "nature", null].flatMap((topic) => [
+      { query: "scoped", offset: 0, topic },
+      { query: "scoped", offset: 7, topic },
+    ]),
+  );
 });
 
 test.describe("provider query cache", () => {
@@ -398,6 +518,7 @@ test("provider pages bound replacement batches and reject looping cursors", asyn
   const page = await provider.search("query", new AbortController().signal);
   expect(page.images).toHaveLength(5);
   expect(page.next).toBe(60);
+  expect(page.incomplete).toBe(true);
   expect(requests).toEqual([0, 12, 24, 36, 48]);
   for (const next of [0, -12, NaN, 1.5]) {
     const looping = providers.fillImagePages({
@@ -408,6 +529,38 @@ test("provider pages bound replacement batches and reject looping cursors", asyn
       { images: [], next: undefined },
     );
   }
+});
+
+test("provider page cache refreshes batch-capped short pages instead of retaining them for an hour", async () => {
+  let recovered = false;
+  let calls = 0;
+  const provider = providers.cacheImageProvider(
+    providers.fillImagePages({
+      ...providers.commons,
+      search: async (_query, _signal, offset) => {
+        calls++;
+        return recovered
+          ? {
+              images: Array.from({ length: 12 }, (_, index) => ({
+                id: String(index),
+              })),
+            }
+          : { images: [{ id: String(offset) }], next: offset + 12 };
+      },
+    }),
+  );
+  const signal = new AbortController().signal;
+  const short = await provider.search("batch-limit cache", signal);
+  expect(short.images).toHaveLength(5);
+  expect(short.incomplete).toBe(true);
+  expect(calls).toBe(5);
+  recovered = true;
+  const full = await provider.search("batch-limit cache", signal);
+  expect(full.images).toHaveLength(12);
+  expect(full.incomplete).toBeUndefined();
+  expect(calls).toBe(6);
+  await provider.search("batch-limit cache", signal);
+  expect(calls).toBe(6);
 });
 
 test("provider pages preserve completed results and cursor at the shared deadline", async () => {
@@ -426,6 +579,16 @@ test("provider pages preserve completed results and cursor at the shared deadlin
     expect(
       await provider.search("query", new AbortController().signal),
     ).toEqual({ images: [{ id: "first" }], next: 12, incomplete: true });
+    const empty = providers.fillImagePages({
+      ...providers.commons,
+      search: async (_query, signal) => {
+        signal.throwIfAborted();
+        return { images: [] };
+      },
+    });
+    await expect(
+      empty.search("query", new AbortController().signal),
+    ).rejects.toMatchObject({ kind: "timeout" });
   } finally {
     AbortSignal.timeout = timeout;
   }

@@ -100,7 +100,7 @@ export function LibraryImage({
           target="_blank"
           rel="noreferrer"
           title={`${asset.provenance.creator} - ${asset.provenance.license}`}
-          className="mt-1 flex min-h-11 items-center gap-1 text-xs text-(--accent) wrap-break-word"
+          className="mt-1 flex items-center justify-center gap-1 px-2 py-1 text-center text-xs text-(--accent) wrap-break-word"
         >
           <ExternalLink aria-hidden="true" className="size-3! shrink-0" />
           {t("library.search.source")}
