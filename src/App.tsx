@@ -1075,6 +1075,21 @@ export default function App() {
                       onDelete={() => deleteImages([asset.id])}
                     />
                   ))}
+                  {Array.from(
+                    {
+                      length: Math.max(
+                        0,
+                        imagePageSize - activeAssets.length - 1,
+                      ),
+                    },
+                    (_, index) => (
+                      <LibraryImagePlaceholder
+                        key={`placeholder:${index}`}
+                        gridStyle={board}
+                        captionRows={captionRows}
+                      />
+                    ),
+                  )}
                 </div>
                 <input
                   id="upload"

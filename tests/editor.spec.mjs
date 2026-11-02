@@ -1223,7 +1223,9 @@ for (const [mode, providerTest] of [
       }
       const online = page.getByRole("region", { name: "Online", exact: true });
       await expect(
-        online.locator("button[aria-haspopup='listbox']"),
+        online.locator(
+          "button[aria-haspopup='listbox']:not(#picker-image-source)",
+        ),
       ).toHaveCount(0);
       await expect(
         page.locator(
@@ -1486,9 +1488,6 @@ test("Commons cards share imported settings and support native mouse and touch d
       const image = element
         .querySelector("[data-card-image]")
         .getBoundingClientRect();
-      const frame = getComputedStyle(
-        element.querySelector("[data-cell-image-frame] rect"),
-      );
       return {
         width: Math.round(bounds.width * 100) / 100,
         height: Math.round(bounds.height * 100) / 100,
@@ -1503,8 +1502,9 @@ test("Commons cards share imported settings and support native mouse and touch d
         captionTop: caption.top,
         captionHeight: caption.height,
         padding: caption.padding,
-        frameStroke: frame.strokeWidth,
-        frameDash: frame.strokeDasharray,
+        frameCount: element.querySelectorAll("[data-cell-image-frame]").length,
+        mask: getComputedStyle(element.querySelector("[data-card-content]"))
+          .maskImage,
       };
     };
     const dimensions = new Set();
@@ -1528,6 +1528,8 @@ test("Commons cards share imported settings and support native mouse and touch d
           1200,
         );
         const expected = await imported.evaluate(metrics);
+        expect(expected.frameCount).toBe(0);
+        expect(expected.mask).toBe("none");
         expect(Math.abs(expected.imageRatio - ratio)).toBeLessThan(0.02);
         expect(expected.font).toContain("Boogaloo");
         expect(expected.weight).toBe("700");
@@ -3387,7 +3389,7 @@ scrollbarTest(
     for (const gutter of [0, 16]) {
       await setEditorViewport(page, { width: 1440, height: 600 });
       await page.goto("./");
-      await expect(page.locator("#board-grid")).toBeVisible();
+      await openSidebarPanel(page, "Images");
       await page.addStyleTag({
         content: `::-webkit-scrollbar { width: ${gutter}px; height: ${gutter}px; }`,
       });
@@ -3772,6 +3774,7 @@ test("right sidebar switches images and settings with an image source dropdown",
   await expect(images).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#sidebar-image-source")).toBeVisible();
   await expect(page.locator("#background-value")).toBeHidden();
+  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(9);
   for (const width of [1440, 960]) {
     await setEditorViewport(page, { width, height: 1080 });
     await expect
@@ -3836,6 +3839,7 @@ test("right sidebar switches images and settings with an image source dropdown",
     ),
   });
   await expect(sidebar.locator(".asset")).toHaveCount(1);
+  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(8);
   await selectField(page, "sidebar-image-source", "commons");
   await expect(
     page.getByRole("region", { name: "Online", exact: true }),
@@ -6060,6 +6064,7 @@ test("caption hover and focus are distinct without changing field geometry", asy
       const idleColor = await field.evaluate(
         (element) => getComputedStyle(element).backgroundColor,
       );
+      await field.scrollIntoViewIfNeeded();
       const before = await field.boundingBox();
       await field.hover();
       await expect(feedback).toHaveCSS("border-top-width", "1px");
@@ -6110,10 +6115,18 @@ test("caption hover and focus are distinct without changing field geometry", asy
         (element) => getComputedStyle(element).backgroundColor,
       );
       expect(focusColor).toBe(idleColor);
-      await expect(card.locator("[data-cell-image-frame]")).toHaveCSS(
-        "--frame-color",
-        "transparent",
-      );
+      if (selector === ".asset") {
+        await expectSolidLibraryCard(card);
+        await expect(card).toHaveCSS(
+          "border-top-color",
+          await paletteColor(page, "line"),
+        );
+      } else {
+        await expect(card.locator("[data-cell-image-frame]")).toHaveCSS(
+          "--frame-color",
+          "transparent",
+        );
+      }
       const after = await field.boundingBox();
       for (const dimension of ["x", "y", "width", "height"])
         expect(after[dimension]).toBeCloseTo(before[dimension], 2);
@@ -6159,26 +6172,40 @@ test("hovering another header clears the previous card outline without moving fo
       const cards = page.locator(selector);
       const image = cards.nth(0).locator("[data-card-image] > button");
       const header = cards.nth(1).locator("textarea");
-      const firstFrame = cards.nth(0).locator("[data-cell-image-frame]");
-      const secondFrame = cards.nth(1).locator("[data-cell-image-frame]");
+      const firstFrame =
+        selector === ".asset"
+          ? cards.nth(0)
+          : cards.nth(0).locator("[data-cell-image-frame]");
+      const secondFrame =
+        selector === ".asset"
+          ? cards.nth(1)
+          : cards.nth(1).locator("[data-cell-image-frame]");
+      const property =
+        selector === ".asset" ? "border-top-color" : "--frame-color";
+      const activeColor =
+        selector === ".asset" ? await paletteColor(page, "accent") : "#d8f36a";
+      const idleColor =
+        selector === ".asset"
+          ? await paletteColor(page, "line")
+          : "transparent";
       await header.click();
       await image.hover({ position: { x: 5, y: 5 } });
-      await expect(firstFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await expect(firstFrame).toHaveCSS(property, activeColor);
       await expect(header).toBeFocused();
       await expect(image).not.toBeFocused();
       await header.hover();
-      await expect(firstFrame).toHaveCSS("--frame-color", "transparent");
-      await expect(secondFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(firstFrame).toHaveCSS(property, idleColor);
+      await expect(secondFrame).toHaveCSS(property, idleColor);
       await expect(header).toBeFocused();
       await image.focus();
       await image.press("Enter");
       await expect(
         cards.nth(0).getByRole("group", { name: "Cell tools", exact: true }),
       ).toBeVisible();
-      await expect(firstFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await expect(firstFrame).toHaveCSS(property, activeColor);
       await image.press("Escape");
       await header.click();
-      await expect(firstFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(firstFrame).toHaveCSS(property, idleColor);
     }
   }
 });
@@ -6472,9 +6499,10 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
   await expect(cells.nth(2)).toHaveClass(/drag-over/);
   await expect(page.locator("[data-drag-floating]")).toHaveCSS("opacity", "1");
   await expect(library.locator(".library-heading")).toHaveValue("Red");
-  await expect(library.locator(":scope > [data-cell-image-frame]")).toHaveCSS(
-    "--frame-color",
-    "transparent",
+  await expectSolidLibraryCard(library);
+  await expect(library).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "line"),
   );
   await expect(cells.nth(2).locator(".empty-cell")).toHaveCount(1);
   await page.keyboard.press("Escape");
@@ -9433,8 +9461,11 @@ test("image source dropdown fits narrow panels without category filters", async 
   const thumbnail = page.locator(".asset [data-library-thumbnail]").first();
   await thumbnail.hover({ position: { x: 5, y: 50 } });
   const imageButton = page.locator(".asset").first();
-  const imageFrame = imageButton.locator("[data-cell-image-frame]");
-  await expect(imageFrame).toHaveCSS("--frame-color", "#d8f36a");
+  await expectSolidLibraryCard(imageButton);
+  await expect(imageButton).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "accent"),
+  );
   await page.mouse.move(1, 1);
   await thumbnail.focus();
   await thumbnail.press("Tab");
@@ -9447,13 +9478,10 @@ test("image source dropdown fits narrow panels without category filters", async 
   const keyboardFocus = page.locator(".asset").nth(1);
   await expect(keyboardFocus.locator("[data-library-thumbnail]")).toBeFocused();
   await expect(keyboardFocus).toHaveCSS("outline-style", "none");
-  await expect(keyboardFocus.locator("[data-cell-image-frame]")).toHaveCSS(
-    "--frame-color",
-    "#d8f36a",
-  );
-  await expect(keyboardFocus.locator("rect")).toHaveAttribute(
-    "stroke-dasharray",
-    "var(--card-frame-dash) var(--card-frame-dash-gap)",
+  await expectSolidLibraryCard(keyboardFocus);
+  await expect(keyboardFocus).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "accent"),
   );
   const uploadFocus = page.locator("[data-upload-tile]");
   await page.mouse.move(1, 1);
@@ -9494,9 +9522,10 @@ test("image source dropdown fits narrow panels without category filters", async 
   await expect(desktopImage.locator(".asset-name")).toBeVisible();
   await desktopImage.locator(".asset-name").hover();
   await expect(desktopImage).toHaveCSS("outline-style", "none");
-  await expect(desktopImage.locator("[data-cell-image-frame]")).toHaveCSS(
-    "--frame-color",
-    "transparent",
+  await expectSolidLibraryCard(desktopImage);
+  await expect(desktopImage).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "line"),
   );
   await page.mouse.move(1, 1);
   await desktopImage.locator("[data-library-thumbnail]").focus();
@@ -9511,9 +9540,10 @@ test("image source dropdown fits narrow panels without category filters", async 
   const desktopFocus = page.locator("#asset-library .asset").nth(1);
   await expect(desktopFocus.locator("[data-library-thumbnail]")).toBeFocused();
   await expect(desktopFocus).toHaveCSS("outline-style", "none");
-  await expect(desktopFocus.locator("[data-cell-image-frame]")).toHaveCSS(
-    "--frame-color",
-    "#d8f36a",
+  await expectSolidLibraryCard(desktopFocus);
+  await expect(desktopFocus).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "accent"),
   );
   expect(
     await page.evaluate(
@@ -11387,7 +11417,16 @@ test("long imported filenames produce valid captions across reload", async ({
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
-  await chooseImage(page, title);
+  await page.locator(".cell-image-button").first().press("Enter");
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  await expect(picker).toBeVisible();
+  await picker
+    .getByRole("button", { name: `Use ${title}`, exact: true })
+    .click();
+  await expect(picker).toHaveCount(0);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     title.slice(0, 120),
   );
@@ -12360,7 +12399,7 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
   await context.close();
 });
 
-test("upload tiles match image card geometry and hover frames in aside and picker", async ({
+test("upload tiles match image card geometry with distinct drop-target hover frames in aside and picker", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -12375,27 +12414,26 @@ test("upload tiles match image card geometry and hover frames in aside and picke
   const metrics = (element) => {
     const style = getComputedStyle(element);
     const bounds = element.getBoundingClientRect();
-    const frame = getComputedStyle(
-      element.querySelector("[data-cell-image-frame] rect"),
-    );
-    const frameBounds = element
-      .querySelector("[data-cell-image-frame]")
-      .getBoundingClientRect();
-    const svgBounds = element
-      .querySelector("[data-cell-image-frame] svg")
+    const frameElement = element.querySelector("[data-cell-image-frame]");
+    const frame = frameElement
+      ? getComputedStyle(frameElement.querySelector("rect"))
+      : null;
+    const frameBounds = frameElement?.getBoundingClientRect();
+    const svgBounds = frameElement
+      ?.querySelector("svg")
       .getBoundingClientRect();
     return {
       width: bounds.width,
       height: bounds.height,
       radius: style.borderRadius,
       border: style.border,
-      stroke: frame.strokeWidth,
-      dash: frame.strokeDasharray,
-      frameRadius: frame.rx,
-      frameWidth: frameBounds.width,
-      frameHeight: frameBounds.height,
-      svgWidth: svgBounds.width,
-      svgHeight: svgBounds.height,
+      stroke: frame?.strokeWidth,
+      dash: frame?.strokeDasharray,
+      frameRadius: frame?.rx,
+      frameWidth: frameBounds?.width,
+      frameHeight: frameBounds?.height,
+      svgWidth: svgBounds?.width,
+      svgHeight: svgBounds?.height,
       mask: getComputedStyle(element.querySelector("[data-card-content]"))
         .maskImage,
     };
@@ -12420,7 +12458,7 @@ test("upload tiles match image card geometry and hover frames in aside and picke
         expect(uploaded.height).toBeCloseTo(pictured.height, 1);
         expect(uploaded.radius).toBe(pictured.radius);
         expect(uploaded.border).toBe(pictured.border);
-        for (const measured of [uploaded, pictured]) {
+        for (const measured of [uploaded]) {
           expect(measured.svgWidth).toBeCloseTo(measured.frameWidth, 1);
           expect(measured.svgHeight).toBeCloseTo(measured.frameHeight, 1);
           expect(measured.svgWidth).toBeGreaterThan(measured.width * 0.9);
@@ -12434,17 +12472,15 @@ test("upload tiles match image card geometry and hover frames in aside and picke
         const imageHover = await image.evaluate(metrics);
         expect(uploadHover.width).toBeCloseTo(imageHover.width, 1);
         expect(uploadHover.height).toBeCloseTo(imageHover.height, 1);
-        expect(parseFloat(uploadHover.stroke)).toBeCloseTo(
-          parseFloat(imageHover.stroke),
-          3,
-        );
-        expect(parseFloat(uploadHover.frameRadius)).toBeCloseTo(
-          parseFloat(imageHover.frameRadius),
-          3,
-        );
-        for (const key of ["border", "radius", "dash", "mask"])
-          expect(uploadHover[key]).toBe(imageHover[key]);
+        expect(parseFloat(uploadHover.stroke)).toBeGreaterThan(0);
+        expect(parseFloat(uploadHover.frameRadius)).toBeGreaterThan(0);
+        expect(uploadHover.radius).toBe(imageHover.radius);
         expect(uploadHover.mask).toMatch(/radial-gradient/);
+        await expectSolidLibraryCard(image);
+        await expect(image).toHaveCSS(
+          "border-top-color",
+          await paletteColor(page, "accent"),
+        );
       };
       await compare(
         picker.locator("[data-upload-tile]"),
@@ -12693,7 +12729,7 @@ touchTest(
   },
 );
 
-test("inset hover and focus surfaces keep visibly rounded corners", async ({
+test("drop-target inset and solid library hover and focus surfaces keep rounded corners", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -12726,6 +12762,18 @@ test("inset hover and focus surfaces keep visibly rounded corners", async ({
           await image.focus();
           await image.press("Tab");
           await page.keyboard.press("Shift+Tab");
+        }
+        if (selector === ".asset") {
+          await expectSolidLibraryCard(card);
+          await expect(card).toHaveCSS(
+            "border-top-color",
+            await paletteColor(page, "accent"),
+          );
+          await expect(card.locator("[data-card-content]")).toHaveCSS(
+            "border-top-left-radius",
+            "11px",
+          );
+          continue;
         }
         await expect(card.locator("[data-card-content]")).toHaveCSS(
           "mask-image",

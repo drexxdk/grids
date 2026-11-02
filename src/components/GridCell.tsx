@@ -354,7 +354,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${library ? "data-image-hovered:border-(--accent)! has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${library ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
