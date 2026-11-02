@@ -2912,7 +2912,7 @@ test("settings have open sections and joined appearance radio grids", async ({
         })
         .click();
     const shapes = page.getByRole("radiogroup", {
-      name: "Image shape",
+      name: "Shape",
       exact: true,
     });
     const headings = page.getByRole("radiogroup", {
@@ -2920,15 +2920,86 @@ test("settings have open sections and joined appearance radio grids", async ({
       exact: true,
     });
     await expect(shapes.getByRole("radio")).toHaveCount(3);
+    await expect(
+      page
+        .getByRole("group", { name: "Card style", exact: true })
+        .locator("#image-shape"),
+    ).toHaveCount(1);
+    await expect(
+      page
+        .getByRole("group", { name: "Canvas style", exact: true })
+        .locator("#image-shape"),
+    ).toHaveCount(0);
     await expect(headings.getByRole("radio")).toHaveCount(4);
     await expect(
       page.getByRole("toolbar", { name: "Grid appearance" }),
     ).toHaveCount(0);
-    for (const name of ["Canvas style", "Heading style", "Card style"]) {
+    for (const name of ["Canvas style", "Canvas heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
       await expect(section).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       await expect(section).toHaveCSS("border-radius", "0px");
       await expect(section).toHaveCSS("border-left-width", "0px");
+    }
+    for (const [firstId, secondId] of [
+      ["canvas-padding", "gap"],
+      ["heading-font-weight", "heading-font-size"],
+      ["cell-font-weight", "cell-font-size"],
+      ["heading-background-color-value", "heading-text-color-value"],
+      ["cell-background-color-value", "cell-text-color-value"],
+      ["caption-overlay-value", "caption-opacity"],
+    ]) {
+      const bounds = await page.evaluate(
+        ([firstId, secondId]) => {
+          const first = document.getElementById(firstId);
+          const second = document.getElementById(secondId);
+          return {
+            width: first.closest("fieldset").clientWidth,
+            first: (first.type === "text" ? first.parentElement : first)
+              .getBoundingClientRect()
+              .toJSON(),
+            second: (second.type === "text" ? second.parentElement : second)
+              .getBoundingClientRect()
+              .toJSON(),
+          };
+        },
+        [firstId, secondId],
+      );
+      if (bounds.width > 260) {
+        expect(Math.abs(bounds.first.y - bounds.second.y)).toBeLessThanOrEqual(
+          1.1,
+        );
+        expect(bounds.first.x + bounds.first.width).toBeLessThan(
+          bounds.second.x,
+        );
+      } else {
+        expect(bounds.first.x).toBeCloseTo(bounds.second.x, 1);
+        expect(bounds.first.y + bounds.first.height).toBeLessThan(
+          bounds.second.y,
+        );
+      }
+    }
+    for (const id of ["heading-font-weight", "cell-font-weight"]) {
+      const spacing = await page.locator(`#${id}`).evaluate((input) => {
+        const row = input.closest(".grid");
+        return {
+          height: input.getBoundingClientRect().height,
+          gap:
+            row.nextElementSibling.getBoundingClientRect().top -
+            row.getBoundingClientRect().bottom,
+        };
+      });
+      expect(spacing.height).toBe(44);
+      expect(spacing.gap).toBeCloseTo(16, 1);
+    }
+    if ([1440, 390].includes(width)) {
+      for (const name of ["Canvas heading style", "Card style"]) {
+        const section = page.getByRole("group", { name, exact: true });
+        await section.screenshot({
+          path: testInfo.outputPath(
+            `paired-${name.replaceAll(" ", "-")}-${width}.png`,
+          ),
+        });
+      }
     }
     for (const [group, columns] of [
       [shapes, width === 260 ? 2 : 3],
@@ -3492,7 +3563,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
   await expect(settings).toHaveCSS("color", "rgb(216, 243, 106)");
   await expect(settings).toHaveCSS("background-color", "rgb(48, 51, 53)");
   const shapeBounds = await sidebar
-    .getByRole("radiogroup", { name: "Image shape", exact: true })
+    .getByRole("radiogroup", { name: "Shape", exact: true })
     .boundingBox();
   const commandBounds = await commands.boundingBox();
   expect(Math.abs(shapeBounds.x - commandBounds.x)).toBeLessThan(1);
@@ -3854,7 +3925,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
       dialog.locator(".asset-panel, #sidebar-image-source"),
     ).toHaveCount(0);
     await expect(
-      dialog.getByRole("radiogroup", { name: "Image shape", exact: true }),
+      dialog.getByRole("radiogroup", { name: "Shape", exact: true }),
     ).toBeVisible();
     const panel = page.locator("[data-sidebar-track]");
     const available = await panel.evaluate((element) => ({
@@ -5333,7 +5404,7 @@ test("heading and card typography controls are independent across previews, expo
     .dragTo(page.locator(".cell-image-button").first());
   await openSidebarPanel(page, "Settings");
   await expect(
-    page.getByRole("group", { name: "Heading style", exact: true }),
+    page.getByRole("group", { name: "Canvas heading style", exact: true }),
   ).toContainText("Font");
   await expect(
     page.getByRole("group", { name: "Card style", exact: true }),
@@ -5341,7 +5412,7 @@ test("heading and card typography controls are independent across previews, expo
   await selectField(page, "heading-font", "Bebas Neue");
   await page.locator("#heading-font-size").fill("30");
   const headingHex = page
-    .getByRole("group", { name: "Heading style", exact: true })
+    .getByRole("group", { name: "Canvas heading style", exact: true })
     .getByRole("textbox", { name: "Text color hex value", exact: true });
   await headingHex.fill("#cc4488");
   await headingHex.press("Tab");
@@ -5408,13 +5479,13 @@ test("heading and card typography controls are independent across previews, expo
           exact: true,
         })
         .click();
-    for (const name of ["Canvas style", "Heading style", "Card style"]) {
+    for (const name of ["Canvas style", "Canvas heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
       await expect(section).toHaveCSS("border-left-width", "0px");
       await expect(section).toHaveCSS("border-radius", "0px");
       await expect(section).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     }
-    for (const name of ["Heading style", "Card style"]) {
+    for (const name of ["Canvas heading style", "Card style"]) {
       const section = page.getByRole("group", { name, exact: true });
       await section.scrollIntoViewIfNeeded();
       await section.screenshot({
@@ -8778,9 +8849,7 @@ test("appearance settings preserve content and match exported ratios and caption
         exact: true,
       })
       .click();
-    await expect(page.locator("#image-shape")).toHaveAccessibleName(
-      "Image shape",
-    );
+    await expect(page.locator("#image-shape")).toHaveAccessibleName("Shape");
     await expect(page.locator("#caption-position")).toHaveAccessibleName(
       "Card heading",
     );
@@ -11548,7 +11617,7 @@ test("grid headings and font choices persist and export correctly", async ({
   await selectField(page, "heading-font", "Boogaloo");
   await selectField(page, "cell-font", "Bangers");
   await page
-    .getByRole("group", { name: "Heading style", exact: true })
+    .getByRole("group", { name: "Canvas heading style", exact: true })
     .getByRole("textbox", { name: "Background hex value", exact: true })
     .fill("#ed1d24");
   await expect(page.locator(".board-export-heading")).toHaveCSS(
@@ -11931,7 +12000,75 @@ test("long title overlays reach the bottom and titles can be hidden without losi
   await openSidebarPanel(page, "Settings");
   const toggle = page.getByRole("switch", { name: "Show titles", exact: true });
   await expect(toggle).toBeChecked();
+  const titleColor = page.getByRole("textbox", {
+    name: "Overlay color hex value",
+    exact: true,
+  });
+  const titleOpacity = page.getByRole("slider", { name: /^Overlay opacity/ });
+  const cardSettings = page.getByRole("group", {
+    name: "Card style",
+    exact: true,
+  });
+  const cardControls = cardSettings.locator(
+    'input, button:not([role="switch"]):not([role="radio"]), [role="radiogroup"]:not(#image-shape)',
+  );
+  await expect(titleColor).toBeVisible();
+  await expect(titleOpacity).toBeVisible();
+  await titleColor.fill("#123456");
+  await titleOpacity.fill("37");
   await toggle.click();
+  await expect(toggle).toBeVisible();
+  await expect(
+    cardSettings.getByRole("radiogroup", { name: "Shape", exact: true }),
+  ).toBeVisible();
+  await expect(cardControls).toHaveCount(0);
+  await expect(titleColor).toHaveCount(0);
+  await expect(titleOpacity).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await setEditorViewport(page, { width, height: 1080 });
+    await openSidebarPanel(page, "Settings");
+    expect(
+      await cardSettings.evaluate((section) => {
+        const bounds = section.getBoundingClientRect();
+        const heading = section.querySelector("h3").getBoundingClientRect();
+        const toggleRow = section
+          .querySelector('[role="switch"]')
+          .parentElement.getBoundingClientRect();
+        const footer = section.nextElementSibling.getBoundingClientRect();
+        return {
+          before: Math.round(
+            heading.top -
+              bounds.top -
+              parseFloat(getComputedStyle(section).borderTopWidth),
+          ),
+          after: Math.round(footer.top - toggleRow.bottom),
+        };
+      }),
+    ).toEqual({ before: 24, after: 24 });
+    for (const id of [
+      "heading-font",
+      "heading-font-size",
+      "heading-text-color-value",
+    ]) {
+      const gap = await page.locator(`#${id}`).evaluate((element) => {
+        const control =
+          element.type === "text" ? element.parentElement : element;
+        return Math.round(
+          control.getBoundingClientRect().top -
+            control.previousElementSibling.getBoundingClientRect().bottom,
+        );
+      });
+      expect(gap).toBe(8);
+    }
+    await cardSettings.scrollIntoViewIfNeeded();
+    await page
+      .getByRole("button", { name: "Reset grid settings", exact: true })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`titles-disabled-spacing-${width}.png`),
+    });
+  }
+  await setEditorViewport(page, { width: 1440, height: 1080 });
   await expect(page.locator(".cell-heading").first()).toBeHidden();
   await expect
     .poll(() =>
@@ -11952,6 +12089,9 @@ test("long title overlays reach the bottom and titles can be hidden without losi
   await reloadWorkspace(page);
   await openSidebarPanel(page, "Settings");
   await expect(toggle).not.toBeChecked();
+  await expect(cardControls).toHaveCount(0);
+  await expect(titleColor).toHaveCount(0);
+  await expect(titleOpacity).toHaveCount(0);
   await expect(page.locator(".cell-heading").first()).toBeHidden();
   await expect(page.locator(".cell-heading").first()).toHaveValue(title);
   await page.evaluate(() => {
@@ -11968,6 +12108,9 @@ test("long title overlays reach the bottom and titles can be hidden without losi
   await downloadBoard(page);
   expect(await page.evaluate(() => window.titleDrawing)).toEqual([]);
   await toggle.click();
+  await expect(cardSettings.locator("#cell-font-size")).toHaveValue("11");
+  await expect(titleColor).toHaveValue("#123456");
+  await expect(titleOpacity).toHaveValue("37");
   await expect(page.locator(".cell-heading").first()).toBeVisible();
   await expect(page.locator(".cell-heading").first()).toHaveValue(title);
   await openSidebarPanel(page, "Images");

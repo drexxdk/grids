@@ -39,7 +39,7 @@
     "gridLabel": "Image grid",
     "actions": "Grid actions",
     "imageShape": {
-      "label": "Image shape",
+      "label": "Shape",
       "portrait": "Portrait",
       "landscape": "Landscape",
       "square": "Square"
@@ -124,7 +124,7 @@
   "settings": {
     "title": "Grid settings",
     "canvas": "Canvas style",
-    "heading": "Heading style",
+    "heading": "Canvas heading style",
     "card": "Card style",
     "fields": {
       "background": "Background",

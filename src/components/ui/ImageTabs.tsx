@@ -13,7 +13,7 @@ export function ImageSourceSelect({
   onChange?: (value: string) => void;
 }) {
   return (
-    <div className="grid min-w-0 w-full gap-2 [&_.field-label]:m-0!">
+    <div className="grid min-w-0 w-full gap-2">
       <SelectField
         id={id}
         label={t("library.source.label")}

@@ -30,6 +30,7 @@ import {
   type Transition,
 } from "motion/react";
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -142,7 +143,7 @@ export function IconRadioField({
       id={id}
       value={value}
       onChange={onChange}
-      className="@container/radio"
+      className="@container/radio flex flex-col gap-2"
     >
       <Label className="field-label">{label}</Label>
       <div
@@ -224,7 +225,12 @@ export function SelectField({
   const selected = options.find((option) => option.value === value);
   const SelectedIcon = selected?.icon;
   return (
-    <Listbox value={value} onChange={onChange}>
+    <Listbox
+      as={compact ? Fragment : "div"}
+      className={compact ? undefined : "flex flex-col gap-2"}
+      value={value}
+      onChange={onChange}
+    >
       <ListboxLabel className={compact ? "sr-only" : "field-label"}>
         {label}
       </ListboxLabel>
@@ -325,7 +331,7 @@ export function ColorField({
       ? `#${text.replace(/^#/, "").toLowerCase()}`
       : null;
   return (
-    <>
+    <div className="@container/color flex min-w-0 flex-col gap-2">
       <label className="field-label" htmlFor={`${id}-value`}>
         {label}
       </label>
@@ -340,7 +346,7 @@ export function ColorField({
           value={value}
           aria-label={t("common.fields.colorPicker", { value1: label })}
           title={t("common.fields.colorPicker", { value1: label })}
-          className="h-11 w-16 shrink-0 cursor-pointer border-0 bg-transparent p-1 data-hover:bg-(--selected) transition-colors"
+          className="h-11 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-1 data-hover:bg-(--selected) transition-colors @min-[220px]/color:w-16"
           onChange={(event) => onChange(event.target.value)}
         />
         <DataInteractive
@@ -370,7 +376,7 @@ export function ColorField({
           }}
         />
       </DataInteractive>
-    </>
+    </div>
   );
 }
 
@@ -385,7 +391,7 @@ export function Toggle({
 }) {
   const reduced = useReducedMotion();
   return (
-    <div className="flex items-center justify-between gap-3 py-3">
+    <div className="flex items-center justify-between gap-3">
       <span className="text-sm font-semibold">{label}</span>
       <Switch
         checked={checked}

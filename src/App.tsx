@@ -1342,13 +1342,192 @@ export default function App() {
                 data-sidebar-content
                 className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="flex flex-col gap-6 pb-4">
+                <div className="flex flex-col gap-6">
                   <fieldset
-                    className="m-0 min-w-0 border-0 p-0"
+                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
                     aria-label={t("settings.canvas")}
                   >
                     <h3 className="m-0 text-sm font-semibold text-(--text)">
                       {t("settings.canvas")}
+                    </h3>
+                    <ColorField
+                      id="background"
+                      label={t("settings.fields.background")}
+                      value={board.background}
+                      onChange={(background) => patchBoard({ background })}
+                    />
+                    <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                      <div className="flex flex-col gap-2">
+                        <label className="field-label" htmlFor="canvas-padding">
+                          {t("settings.fields.padding")}{" "}
+                          <output id="canvas-padding-value">
+                            {Math.round(
+                              ((board.canvasPadding ?? 12) / 6) * 10,
+                            ) / 10}
+                            %
+                          </output>
+                        </label>
+                        <input
+                          id="canvas-padding"
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="0.5"
+                          value={(board.canvasPadding ?? 12) / 6}
+                          onChange={(event) =>
+                            patchBoard({
+                              canvasPadding: Number(event.target.value) * 6,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="field-label" htmlFor="gap">
+                          {t("settings.fields.gap")}{" "}
+                          <output id="gap-value">
+                            {Math.round((board.gap / 6) * 10) / 10}%
+                          </output>
+                        </label>
+                        <input
+                          id="gap"
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="0.5"
+                          value={board.gap / 6}
+                          onChange={(event) =>
+                            patchBoard({ gap: Number(event.target.value) * 6 })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </fieldset>
+                  <fieldset
+                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 border-t border-solid border-(--line) p-0 pt-6"
+                    aria-label={t("settings.heading")}
+                  >
+                    <h3 className="m-0 text-sm font-semibold text-(--text)">
+                      {t("settings.heading")}
+                    </h3>
+                    <SelectField
+                      id="heading-font"
+                      largeFontPreview
+                      label={t("settings.fields.font")}
+                      value={board.headingFont}
+                      options={fontOptions.map((font) => ({
+                        value: font,
+                        label: font,
+                        fontFamily: font,
+                        fontWeight: resolveFontWeight(
+                          font,
+                          board.headingFontWeight,
+                        ),
+                      }))}
+                      onChange={(headingFont) =>
+                        patchBoard({
+                          headingFont,
+                          headingFontWeight: resolveFontWeight(
+                            headingFont,
+                            board.headingFontWeight,
+                          ),
+                        })
+                      }
+                    />
+                    <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                      <div className="flex flex-col gap-2">
+                        <label
+                          className="field-label"
+                          htmlFor="heading-font-weight"
+                        >
+                          {t("settings.fields.fontWeight")}{" "}
+                          <output>
+                            {resolveFontWeight(
+                              board.headingFont,
+                              board.headingFontWeight,
+                            )}
+                          </output>
+                        </label>
+                        <input
+                          id="heading-font-weight"
+                          type="range"
+                          min={board.headingFont === "Manrope" ? 100 : 400}
+                          max={board.headingFont === "Manrope" ? 900 : 700}
+                          step={board.headingFont === "Manrope" ? 100 : 300}
+                          value={resolveFontWeight(
+                            board.headingFont,
+                            board.headingFontWeight,
+                          )}
+                          aria-valuetext={
+                            fontWeightOptions(board.headingFont).find(
+                              (option) =>
+                                option.value ===
+                                resolveFontWeight(
+                                  board.headingFont,
+                                  board.headingFontWeight,
+                                ),
+                            )?.label
+                          }
+                          onChange={(event) =>
+                            patchBoard({
+                              headingFontWeight: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label
+                          className="field-label"
+                          htmlFor="heading-font-size"
+                        >
+                          {t("settings.fields.fontSize")}
+                          <output>{board.headingFontSize ?? 18}%</output>
+                        </label>
+                        <input
+                          id="heading-font-size"
+                          type="range"
+                          min="6"
+                          max="36"
+                          value={board.headingFontSize ?? 18}
+                          onChange={(event) =>
+                            patchBoard({
+                              headingFontSize: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                      <ColorField
+                        id="heading-background-color"
+                        label={t("settings.fields.background")}
+                        value={
+                          board.headingBackgroundColor ??
+                          (!board.heading.trim()
+                            ? palette.caption
+                            : palette.color === "transparent"
+                              ? board.background
+                              : palette.color)
+                        }
+                        onChange={(headingBackgroundColor) =>
+                          patchBoard({ headingBackgroundColor })
+                        }
+                      />
+                      <ColorField
+                        id="heading-text-color"
+                        label={t("settings.fields.textColor")}
+                        value={board.headingTextColor ?? palette.text}
+                        onChange={(headingTextColor) =>
+                          patchBoard({ headingTextColor })
+                        }
+                      />
+                    </div>
+                  </fieldset>
+                  <fieldset
+                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 border-t border-solid border-(--line) p-0 pt-6"
+                    aria-label={t("settings.card")}
+                  >
+                    <h3 className="m-0 text-sm font-semibold text-(--text)">
+                      {t("settings.card")}
                     </h3>
                     <IconRadioField
                       id="image-shape"
@@ -1380,167 +1559,6 @@ export default function App() {
                         })
                       }
                     />
-                    <ColorField
-                      id="background"
-                      label={t("settings.fields.background")}
-                      value={board.background}
-                      onChange={(background) => patchBoard({ background })}
-                    />
-                    <label className="field-label" htmlFor="canvas-padding">
-                      {t("settings.fields.padding")}{" "}
-                      <output id="canvas-padding-value">
-                        {Math.round(((board.canvasPadding ?? 12) / 6) * 10) /
-                          10}
-                        %
-                      </output>
-                    </label>
-                    <input
-                      id="canvas-padding"
-                      type="range"
-                      min="0"
-                      max="20"
-                      step="0.5"
-                      value={(board.canvasPadding ?? 12) / 6}
-                      onChange={(event) =>
-                        patchBoard({
-                          canvasPadding: Number(event.target.value) * 6,
-                        })
-                      }
-                    />
-                    <label className="field-label" htmlFor="gap">
-                      {t("settings.fields.gap")}{" "}
-                      <output id="gap-value">
-                        {Math.round((board.gap / 6) * 10) / 10}%
-                      </output>
-                    </label>
-                    <input
-                      id="gap"
-                      type="range"
-                      min="0"
-                      max="20"
-                      step="0.5"
-                      value={board.gap / 6}
-                      onChange={(event) =>
-                        patchBoard({ gap: Number(event.target.value) * 6 })
-                      }
-                    />
-                  </fieldset>
-                  <fieldset
-                    className="m-0 min-w-0 border-0 border-t border-solid border-(--line) p-0 pt-6"
-                    aria-label={t("settings.heading")}
-                  >
-                    <h3 className="m-0 text-sm font-semibold text-(--text)">
-                      {t("settings.heading")}
-                    </h3>
-                    <SelectField
-                      id="heading-font"
-                      largeFontPreview
-                      label={t("settings.fields.font")}
-                      value={board.headingFont}
-                      options={fontOptions.map((font) => ({
-                        value: font,
-                        label: font,
-                        fontFamily: font,
-                        fontWeight: resolveFontWeight(
-                          font,
-                          board.headingFontWeight,
-                        ),
-                      }))}
-                      onChange={(headingFont) =>
-                        patchBoard({
-                          headingFont,
-                          headingFontWeight: resolveFontWeight(
-                            headingFont,
-                            board.headingFontWeight,
-                          ),
-                        })
-                      }
-                    />
-                    <label
-                      className="field-label"
-                      htmlFor="heading-font-weight"
-                    >
-                      {t("settings.fields.fontWeight")}{" "}
-                      <output>
-                        {resolveFontWeight(
-                          board.headingFont,
-                          board.headingFontWeight,
-                        )}
-                      </output>
-                    </label>
-                    <input
-                      id="heading-font-weight"
-                      type="range"
-                      min={board.headingFont === "Manrope" ? 100 : 400}
-                      max={board.headingFont === "Manrope" ? 900 : 700}
-                      step={board.headingFont === "Manrope" ? 100 : 300}
-                      value={resolveFontWeight(
-                        board.headingFont,
-                        board.headingFontWeight,
-                      )}
-                      aria-valuetext={
-                        fontWeightOptions(board.headingFont).find(
-                          (option) =>
-                            option.value ===
-                            resolveFontWeight(
-                              board.headingFont,
-                              board.headingFontWeight,
-                            ),
-                        )?.label
-                      }
-                      onChange={(event) =>
-                        patchBoard({
-                          headingFontWeight: Number(event.target.value),
-                        })
-                      }
-                    />
-                    <label className="field-label" htmlFor="heading-font-size">
-                      {t("settings.fields.fontSize")}
-                      <output>{board.headingFontSize ?? 18}%</output>
-                    </label>
-                    <input
-                      id="heading-font-size"
-                      type="range"
-                      min="6"
-                      max="36"
-                      value={board.headingFontSize ?? 18}
-                      onChange={(event) =>
-                        patchBoard({
-                          headingFontSize: Number(event.target.value),
-                        })
-                      }
-                    />
-                    <ColorField
-                      id="heading-text-color"
-                      label={t("settings.fields.textColor")}
-                      value={board.headingTextColor ?? palette.text}
-                      onChange={(headingTextColor) =>
-                        patchBoard({ headingTextColor })
-                      }
-                    />
-                    <ColorField
-                      id="heading-background-color"
-                      label={t("settings.fields.background")}
-                      value={
-                        board.headingBackgroundColor ??
-                        (!board.heading.trim()
-                          ? palette.caption
-                          : palette.color === "transparent"
-                            ? board.background
-                            : palette.color)
-                      }
-                      onChange={(headingBackgroundColor) =>
-                        patchBoard({ headingBackgroundColor })
-                      }
-                    />
-                  </fieldset>
-                  <fieldset
-                    className="m-0 min-w-0 border-0 border-t border-solid border-(--line) p-0 pt-6"
-                    aria-label={t("settings.card")}
-                  >
-                    <h3 className="m-0 text-sm font-semibold text-(--text)">
-                      {t("settings.card")}
-                    </h3>
                     <Toggle
                       label={t("settings.fields.showTitles")}
                       checked={board.titlesVisible !== false}
@@ -1548,174 +1566,207 @@ export default function App() {
                         patchBoard({ titlesVisible })
                       }
                     />
-                    <IconRadioField
-                      id="caption-position"
-                      label={t("editor.captionPosition.label")}
-                      value={
-                        board.captionPlacement === "overlay"
-                          ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
-                          : (board.captionPlacement ?? "below")
-                      }
-                      columns={2}
-                      options={[
-                        {
-                          value: "above",
-                          label: t("editor.captionPosition.above"),
-                          icon: PanelTop,
-                        },
-                        {
-                          value: "below",
-                          label: t("editor.captionPosition.below"),
-                          icon: PanelBottom,
-                        },
-                        {
-                          value: "overlay-top",
-                          label: t("editor.captionPosition.overlayTop"),
-                          icon: PanelTopDashed,
-                        },
-                        {
-                          value: "overlay-bottom",
-                          label: t("editor.captionPosition.overlayBottom"),
-                          icon: PanelBottomDashed,
-                        },
-                      ]}
-                      onChange={(position) =>
-                        patchBoard(
-                          position === "above" || position === "below"
-                            ? { captionPlacement: position }
-                            : {
-                                captionPlacement: "overlay",
-                                captionAlignment:
-                                  position === "overlay-top" ? "top" : "bottom",
-                              },
-                        )
-                      }
-                    />
-                    <SelectField
-                      id="cell-font"
-                      largeFontPreview
-                      label={t("settings.fields.font")}
-                      value={board.cellFont}
-                      options={fontOptions.map((font) => ({
-                        value: font,
-                        label: font,
-                        fontFamily: font,
-                        fontWeight: resolveFontWeight(
-                          font,
-                          board.cellFontWeight,
-                        ),
-                      }))}
-                      onChange={(cellFont) =>
-                        patchBoard({
-                          cellFont,
-                          cellFontWeight: resolveFontWeight(
-                            cellFont,
-                            board.cellFontWeight,
-                          ),
-                        })
-                      }
-                    />
-                    <label className="field-label" htmlFor="cell-font-weight">
-                      {t("settings.fields.fontWeight")}{" "}
-                      <output>
-                        {resolveFontWeight(
-                          board.cellFont,
-                          board.cellFontWeight,
-                        )}
-                      </output>
-                    </label>
-                    <input
-                      id="cell-font-weight"
-                      type="range"
-                      min={board.cellFont === "Manrope" ? 100 : 400}
-                      max={board.cellFont === "Manrope" ? 900 : 700}
-                      step={board.cellFont === "Manrope" ? 100 : 300}
-                      value={resolveFontWeight(
-                        board.cellFont,
-                        board.cellFontWeight,
-                      )}
-                      aria-valuetext={
-                        fontWeightOptions(board.cellFont).find(
-                          (option) =>
-                            option.value ===
-                            resolveFontWeight(
-                              board.cellFont,
+                    {board.titlesVisible !== false && (
+                      <>
+                        <IconRadioField
+                          id="caption-position"
+                          label={t("editor.captionPosition.label")}
+                          value={
+                            board.captionPlacement === "overlay"
+                              ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
+                              : (board.captionPlacement ?? "below")
+                          }
+                          columns={2}
+                          options={[
+                            {
+                              value: "above",
+                              label: t("editor.captionPosition.above"),
+                              icon: PanelTop,
+                            },
+                            {
+                              value: "below",
+                              label: t("editor.captionPosition.below"),
+                              icon: PanelBottom,
+                            },
+                            {
+                              value: "overlay-top",
+                              label: t("editor.captionPosition.overlayTop"),
+                              icon: PanelTopDashed,
+                            },
+                            {
+                              value: "overlay-bottom",
+                              label: t("editor.captionPosition.overlayBottom"),
+                              icon: PanelBottomDashed,
+                            },
+                          ]}
+                          onChange={(position) =>
+                            patchBoard(
+                              position === "above" || position === "below"
+                                ? { captionPlacement: position }
+                                : {
+                                    captionPlacement: "overlay",
+                                    captionAlignment:
+                                      position === "overlay-top"
+                                        ? "top"
+                                        : "bottom",
+                                  },
+                            )
+                          }
+                        />
+                        <SelectField
+                          id="cell-font"
+                          largeFontPreview
+                          label={t("settings.fields.font")}
+                          value={board.cellFont}
+                          options={fontOptions.map((font) => ({
+                            value: font,
+                            label: font,
+                            fontFamily: font,
+                            fontWeight: resolveFontWeight(
+                              font,
                               board.cellFontWeight,
                             ),
-                        )?.label
-                      }
-                      onChange={(event) =>
-                        patchBoard({
-                          cellFontWeight: Number(event.target.value),
-                        })
-                      }
-                    />
-                    <label className="field-label" htmlFor="cell-font-size">
-                      {t("settings.fields.fontSize")}
-                      <output>{board.cellFontSize ?? 11}%</output>
-                    </label>
-                    <input
-                      id="cell-font-size"
-                      type="range"
-                      min="6"
-                      max="36"
-                      value={board.cellFontSize ?? 11}
-                      onChange={(event) =>
-                        patchBoard({ cellFontSize: Number(event.target.value) })
-                      }
-                    />
-                    <ColorField
-                      id="cell-text-color"
-                      label={t("settings.fields.textColor")}
-                      value={board.cellTextColor ?? "#f4f4ef"}
-                      onChange={(cellTextColor) =>
-                        patchBoard({ cellTextColor })
-                      }
-                    />
-                    <ColorField
-                      id="cell-background-color"
-                      label={t("settings.fields.background")}
-                      value={board.cellBackgroundColor ?? "#111315"}
-                      onChange={(cellBackgroundColor) =>
-                        patchBoard({ cellBackgroundColor })
-                      }
-                    />
-                    <ColorField
-                      id="caption-overlay"
-                      label={t("settings.fields.overlayColor")}
-                      value={board.captionOverlayColor ?? "#000000"}
-                      onChange={(captionOverlayColor) =>
-                        patchBoard({ captionOverlayColor })
-                      }
-                    />
-                    <label className="field-label" htmlFor="caption-opacity">
-                      {t("settings.fields.overlayOpacity")}{" "}
-                      <output>{board.captionOverlayOpacity ?? 60}%</output>
-                    </label>
-                    <input
-                      id="caption-opacity"
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={board.captionOverlayOpacity ?? 60}
-                      onChange={(event) =>
-                        patchBoard({
-                          captionOverlayOpacity: Number(event.target.value),
-                        })
-                      }
-                    />
+                          }))}
+                          onChange={(cellFont) =>
+                            patchBoard({
+                              cellFont,
+                              cellFontWeight: resolveFontWeight(
+                                cellFont,
+                                board.cellFontWeight,
+                              ),
+                            })
+                          }
+                        />
+                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                          <div className="flex flex-col gap-2">
+                            <label
+                              className="field-label"
+                              htmlFor="cell-font-weight"
+                            >
+                              {t("settings.fields.fontWeight")}{" "}
+                              <output>
+                                {resolveFontWeight(
+                                  board.cellFont,
+                                  board.cellFontWeight,
+                                )}
+                              </output>
+                            </label>
+                            <input
+                              id="cell-font-weight"
+                              type="range"
+                              min={board.cellFont === "Manrope" ? 100 : 400}
+                              max={board.cellFont === "Manrope" ? 900 : 700}
+                              step={board.cellFont === "Manrope" ? 100 : 300}
+                              value={resolveFontWeight(
+                                board.cellFont,
+                                board.cellFontWeight,
+                              )}
+                              aria-valuetext={
+                                fontWeightOptions(board.cellFont).find(
+                                  (option) =>
+                                    option.value ===
+                                    resolveFontWeight(
+                                      board.cellFont,
+                                      board.cellFontWeight,
+                                    ),
+                                )?.label
+                              }
+                              onChange={(event) =>
+                                patchBoard({
+                                  cellFontWeight: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <label
+                              className="field-label"
+                              htmlFor="cell-font-size"
+                            >
+                              {t("settings.fields.fontSize")}
+                              <output>{board.cellFontSize ?? 11}%</output>
+                            </label>
+                            <input
+                              id="cell-font-size"
+                              type="range"
+                              min="6"
+                              max="36"
+                              value={board.cellFontSize ?? 11}
+                              onChange={(event) =>
+                                patchBoard({
+                                  cellFontSize: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                          <ColorField
+                            id="cell-background-color"
+                            label={t("settings.fields.background")}
+                            value={board.cellBackgroundColor ?? "#111315"}
+                            onChange={(cellBackgroundColor) =>
+                              patchBoard({ cellBackgroundColor })
+                            }
+                          />
+                          <ColorField
+                            id="cell-text-color"
+                            label={t("settings.fields.textColor")}
+                            value={board.cellTextColor ?? "#f4f4ef"}
+                            onChange={(cellTextColor) =>
+                              patchBoard({ cellTextColor })
+                            }
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                          <ColorField
+                            id="caption-overlay"
+                            label={t("settings.fields.overlayColor")}
+                            value={board.captionOverlayColor ?? "#000000"}
+                            onChange={(captionOverlayColor) =>
+                              patchBoard({ captionOverlayColor })
+                            }
+                          />
+                          <div className="flex flex-col gap-2">
+                            <label
+                              className="field-label"
+                              htmlFor="caption-opacity"
+                            >
+                              {t("settings.fields.overlayOpacity")}{" "}
+                              <output>
+                                {board.captionOverlayOpacity ?? 60}%
+                              </output>
+                            </label>
+                            <input
+                              id="caption-opacity"
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={board.captionOverlayOpacity ?? 60}
+                              onChange={(event) =>
+                                patchBoard({
+                                  captionOverlayOpacity: Number(
+                                    event.target.value,
+                                  ),
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </fieldset>
-                </div>
-                <div className="mt-4 shrink-0 border-0 border-t border-solid border-(--line) py-4">
-                  <Button
-                    ref={resetButton}
-                    className="min-h-11 w-full"
-                    title={t("settings.reset.tooltip")}
-                    onClick={() => setResetOpen(true)}
-                  >
-                    <PanelsTopLeft aria-hidden="true" />
-                    {t("settings.reset.title")}
-                  </Button>
+                  <div className="shrink-0 border-0 border-t border-solid border-(--line) py-6">
+                    <Button
+                      ref={resetButton}
+                      className="min-h-11 w-full"
+                      title={t("settings.reset.tooltip")}
+                      onClick={() => setResetOpen(true)}
+                    >
+                      <PanelsTopLeft aria-hidden="true" />
+                      {t("settings.reset.title")}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </aside>
@@ -1781,61 +1832,67 @@ export default function App() {
         title={t("export.title")}
         returnFocus={exportButton}
       >
-        <SelectField
-          id="format"
-          label={t("export.format")}
-          value={format}
-          options={[
-            { value: "image/png", label: "PNG" },
-            { value: "image/jpeg", label: "JPEG" },
-            { value: "image/webp", label: "WebP" },
-          ]}
-          onChange={(format) => patchExport({ format: format as ImageFormat })}
-        />
-        <SelectField
-          id="resolution"
-          label={t("export.resolution")}
-          value={String(resolution)}
-          options={[150, 300, 600, 1200, 1800].map((size) => ({
-            value: String(size),
-            label: t("export.imageResolution", { value1: size }),
-          }))}
-          onChange={(resolution) =>
-            patchExport({ resolution: Number(resolution) })
-          }
-        />
-        <label className="field-label quality-label" htmlFor="quality">
-          {t("export.quality")}
-          <output id="quality-value">{quality}%</output>
-        </label>
-        <input
-          id="quality"
-          type="range"
-          min="50"
-          max="100"
-          value={quality}
-          disabled={format === "image/png"}
-          onChange={(event) =>
-            patchExport({ quality: Number(event.target.value) })
-          }
-        />
-        <p className="text-sm text-(--muted)">
-          {size.width} × {size.height}
-          {t("export.pixelUnit")}
-        </p>
-        <div className="mb-4 flex flex-wrap justify-end gap-2">
-          <Button onClick={() => setExportOpen(false)}>
-            {t("common.actions.cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            className="min-h-11"
-            disabled={exporting}
-            onClick={exportGrid}
-          >
-            <Download aria-hidden="true" />
-            {exporting ? t("export.progress") : t("export.download")}
-          </Button>
+        <div className="flex flex-col gap-4">
+          <SelectField
+            id="format"
+            label={t("export.format")}
+            value={format}
+            options={[
+              { value: "image/png", label: "PNG" },
+              { value: "image/jpeg", label: "JPEG" },
+              { value: "image/webp", label: "WebP" },
+            ]}
+            onChange={(format) =>
+              patchExport({ format: format as ImageFormat })
+            }
+          />
+          <SelectField
+            id="resolution"
+            label={t("export.resolution")}
+            value={String(resolution)}
+            options={[150, 300, 600, 1200, 1800].map((size) => ({
+              value: String(size),
+              label: t("export.imageResolution", { value1: size }),
+            }))}
+            onChange={(resolution) =>
+              patchExport({ resolution: Number(resolution) })
+            }
+          />
+          <div className="flex flex-col gap-2">
+            <label className="field-label quality-label" htmlFor="quality">
+              {t("export.quality")}
+              <output id="quality-value">{quality}%</output>
+            </label>
+            <input
+              id="quality"
+              type="range"
+              min="50"
+              max="100"
+              value={quality}
+              disabled={format === "image/png"}
+              onChange={(event) =>
+                patchExport({ quality: Number(event.target.value) })
+              }
+            />
+          </div>
+          <p className="text-sm text-(--muted)">
+            {size.width} × {size.height}
+            {t("export.pixelUnit")}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={() => setExportOpen(false)}>
+              {t("common.actions.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              className="min-h-11"
+              disabled={exporting}
+              onClick={exportGrid}
+            >
+              <Download aria-hidden="true" />
+              {exporting ? t("export.progress") : t("export.download")}
+            </Button>
+          </div>
         </div>
       </Modal>
       <Modal
