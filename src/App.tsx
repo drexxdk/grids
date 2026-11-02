@@ -2,7 +2,7 @@ import { t } from "./i18n";
 import {
   captionMaxLength,
   providerImageMaxPixels,
-  imagePageSize,
+  imageUploadAccept,
 } from "./config";
 import {
   useEffect,
@@ -297,6 +297,7 @@ export default function App() {
     completed: number;
     total: number;
     pending: number;
+    loadingCards: number;
   } | null>(null);
   const [saveStatus, setSaveStatus] = useState("Saved locally");
   const [pendingProviderDrops, setPendingProviderDrops] = useState<
@@ -623,17 +624,36 @@ export default function App() {
       completed: current?.completed ?? 0,
       total: (current?.total ?? 0) + batch.length,
       pending: (current?.pending ?? 0) + 1,
+      loadingCards: (current?.loadingCards ?? 0) + batch.length,
     }));
     const targetId = board.id;
-    const assets: Asset[] = [];
+    let remaining = batch.length;
+    const finishFile = () => {
+      remaining -= 1;
+      setImportProgress((current) =>
+        current
+          ? {
+              ...current,
+              completed: current.completed + 1,
+              loadingCards: current.loadingCards - 1,
+            }
+          : null,
+      );
+    };
     try {
       for (const file of batch) {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        if (!file.type.startsWith("image/")) {
-          toast.error(`${file.name} is not an image.`);
-          setImportProgress((current) =>
-            current ? { ...current, completed: current.completed + 1 } : null,
+        const gif =
+          file.type === "image/gif" ||
+          /\.gif$/i.test(file.name) ||
+          ["GIF87a", "GIF89a"].includes(await file.slice(0, 6).text());
+        if (!file.type.startsWith("image/") || gif) {
+          toast.error(
+            gif
+              ? t("library.gifUnsupported", { value1: file.name })
+              : `${file.name} is not an image.`,
           );
+          finishFile();
           continue;
         }
         let asset: Asset | null = null;
@@ -649,28 +669,29 @@ export default function App() {
           );
           await loadImage(asset.src);
           if (localStore.current !== store) return;
-          assets.push(asset);
+          dispatchDocument({
+            type: "assets/import",
+            gridId: targetId,
+            cellId: chooseImportedImage ? null : targetCellId,
+            assets: [asset],
+          });
         } catch {
           if (asset) store.releaseAsset(asset.id);
           toast.error(
             `Could not load ${file.name}. Try a PNG, JPEG, or WebP image.`,
           );
         } finally {
-          setImportProgress((current) =>
-            current ? { ...current, completed: current.completed + 1 } : null,
-          );
+          finishFile();
         }
       }
-      dispatchDocument({
-        type: "assets/import",
-        gridId: targetId,
-        cellId: chooseImportedImage ? null : targetCellId,
-        assets,
-      });
     } finally {
       setImportProgress((current) =>
         current && current.pending > 1
-          ? { ...current, pending: current.pending - 1 }
+          ? {
+              ...current,
+              pending: current.pending - 1,
+              loadingCards: current.loadingCards - remaining,
+            }
           : null,
       );
     }
@@ -1088,17 +1109,13 @@ export default function App() {
                     />
                   ))}
                   {Array.from(
-                    {
-                      length: Math.max(
-                        0,
-                        imagePageSize - activeAssets.length - 1,
-                      ),
-                    },
+                    { length: importProgress?.loadingCards ?? 0 },
                     (_, index) => (
                       <LibraryImagePlaceholder
-                        key={`placeholder:${index}`}
+                        key={`upload:${index}`}
                         gridStyle={board}
                         captionRows={captionRows}
+                        loading
                       />
                     ),
                   )}
@@ -1106,7 +1123,7 @@ export default function App() {
                 <input
                   id="upload"
                   type="file"
-                  accept="image/*"
+                  accept={imageUploadAccept}
                   multiple
                   hidden
                   onChange={(event) => upload(event)}
@@ -1744,7 +1761,7 @@ export default function App() {
         ref={replaceUpload}
         id="replace-upload"
         type="file"
-        accept="image/*"
+        accept={imageUploadAccept}
         multiple
         hidden
         onChange={(event) => upload(event, uploadTarget.current)}
@@ -1885,14 +1902,13 @@ export default function App() {
                 />
               ))}
               {Array.from(
-                {
-                  length: Math.max(0, imagePageSize - activeAssets.length - 1),
-                },
+                { length: importProgress?.loadingCards ?? 0 },
                 (_, index) => (
                   <LibraryImagePlaceholder
-                    key={`placeholder:${index}`}
+                    key={`upload:${index}`}
                     gridStyle={board}
                     captionRows={captionRows}
+                    loading
                   />
                 ),
               )}
@@ -1900,7 +1916,7 @@ export default function App() {
             <input
               id="picker-cell-upload"
               type="file"
-              accept="image/*"
+              accept={imageUploadAccept}
               multiple
               hidden
               onChange={(event) => {
@@ -1910,7 +1926,9 @@ export default function App() {
                 if (singleImage) closeImagePicker();
               }}
             />
-            {activeAssets.length === 0 && <p>{t("library.empty")}</p>}
+            {activeAssets.length === 0 && !importProgress && (
+              <p>{t("library.empty")}</p>
+            )}
             {activeAssets.length > 0 && (
               <Button
                 className="mt-2 min-h-11 w-full"

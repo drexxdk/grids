@@ -57,6 +57,7 @@ function OnlineImage({
   ...props
 }: { image: ProviderImage } & ComponentProps<typeof LibraryImage>) {
   const element = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
   const [viewport, setViewport] = useState({ width: 0, density: 1 });
   const [thumbnailSize, setThumbnailSize] = useState<{
     width: number;
@@ -139,21 +140,38 @@ function OnlineImage({
       ? image.thumbnail
       : selectedSrc;
   return (
-    <LibraryImage
-      {...props}
-      elementRef={element}
-      asset={{ ...asset, src }}
-      onImageLoad={(loaded) => {
-        if (image.provider === "met" && loaded.src === image.thumbnail)
-          setThumbnailSize({
-            width: loaded.naturalWidth,
-            height: loaded.naturalHeight,
-          });
-      }}
-      onImageError={(loaded) => {
-        if (loaded.src !== image.thumbnail) setFailedPreview(loaded.src);
-      }}
-    />
+    <div
+      className="relative w-full"
+      data-online-image-loading={!ready || undefined}
+    >
+      <LibraryImage
+        {...props}
+        className={ready ? "w-full" : "invisible w-full"}
+        elementRef={element}
+        asset={{ ...asset, src }}
+        onImageLoad={(loaded) => {
+          setReady(true);
+          if (image.provider === "met" && loaded.src === image.thumbnail)
+            setThumbnailSize({
+              width: loaded.naturalWidth,
+              height: loaded.naturalHeight,
+            });
+        }}
+        onImageError={(loaded) => {
+          if (loaded.src !== image.thumbnail) setFailedPreview(loaded.src);
+          else setReady(true);
+        }}
+      />
+      {!ready && (
+        <div className="absolute inset-0">
+          <LibraryImagePlaceholder
+            gridStyle={props.gridStyle}
+            captionRows={props.captionRows}
+            loading
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -229,6 +247,15 @@ export function OnlineImages({
     setError("");
     setImages([]);
     setNext(undefined);
+    const receiveImages = (readyImages: ProviderImage[]) => {
+      if (controller.signal.aborted) return;
+      setImages((current) =>
+        readyImages.map((image) => {
+          const existing = current.find((item) => item.id === image.id);
+          return existing ? { ...image, title: existing.title } : image;
+        }),
+      );
+    };
     provider
       .search(
         request.query,
@@ -236,14 +263,16 @@ export function OnlineImages({
         request.offset,
         request.topic,
         pageSize,
+        receiveImages,
       )
       .then((result) => {
         if (controller.signal.aborted) return;
-        setImages(result.images);
+        receiveImages(result.images);
         setNext(result.next);
       })
       .catch((failure: unknown) => {
         if (controller.signal.aborted) return;
+        setImages([]);
         setError(
           !navigator.onLine
             ? t("library.search.offline")
@@ -260,7 +289,7 @@ export function OnlineImages({
 
   const busy = loading || filtering;
   const canGoNext = !busy && next !== undefined && images.length >= pageSize;
-  const visibleImages = busy ? [] : images;
+  const visibleImages = filtering ? [] : images;
   const message =
     !busy &&
     (error || (request && !images.length ? t("library.search.empty") : ""));

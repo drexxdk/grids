@@ -114,6 +114,7 @@ export interface ImageProvider {
     offset?: number,
     topic?: string | null,
     pageSize?: number,
+    onImages?: (images: ProviderImage[]) => void,
   ) => Promise<{
     images: ProviderImage[];
     next?: number;
@@ -122,23 +123,71 @@ export interface ImageProvider {
 }
 
 export function cacheImageProvider(provider: ImageProvider): ImageProvider {
+  const pending = new Map<
+    string,
+    {
+      users: number;
+      images: ProviderImage[];
+      listeners: Set<(images: ProviderImage[]) => void>;
+    }
+  >();
   return {
     ...provider,
-    search(
+    async search(
       query,
       signal,
       offset = 0,
       topic = null,
       pageSize = providerPageSize,
+      onImages,
     ) {
+      signal.throwIfAborted();
       const filter = query.trim().slice(0, providerQueryMaxLength);
-      return providerQuery(
-        ["provider-page", provider.id, filter, offset, topic, pageSize],
-        (requestSignal) =>
-          provider.search(filter, requestSignal, offset, topic, pageSize),
-        signal,
-        (data) => (data?.incomplete ? 0 : providerFreshTime),
-      );
+      const key = [
+        "provider-page",
+        provider.id,
+        filter,
+        offset,
+        topic,
+        pageSize,
+      ];
+      const progressKey = JSON.stringify(key);
+      const progress = pending.get(progressKey) ?? {
+        users: 0,
+        images: [],
+        listeners: new Set<(images: ProviderImage[]) => void>(),
+      };
+      pending.set(progressKey, progress);
+      progress.users += 1;
+      try {
+        if (onImages) {
+          progress.listeners.add(onImages);
+          if (progress.images.length)
+            onImages(structuredClone(progress.images));
+        }
+        return await providerQuery(
+          key,
+          (requestSignal) =>
+            provider.search(
+              filter,
+              requestSignal,
+              offset,
+              topic,
+              pageSize,
+              (images) => {
+                progress.images = structuredClone(images);
+                for (const listener of progress.listeners)
+                  listener(structuredClone(progress.images));
+              },
+            ),
+          signal,
+          (data) => (data?.incomplete ? 0 : providerFreshTime),
+        );
+      } finally {
+        if (onImages) progress.listeners.delete(onImages);
+        progress.users -= 1;
+        if (!progress.users) pending.delete(progressKey);
+      }
     },
   };
 }
@@ -163,6 +212,7 @@ type BatchSearch = (
   offset: number,
   limit: number,
   topic?: string | null,
+  onImages?: (images: ProviderImage[]) => void,
 ) => ReturnType<ImageProvider["search"]>;
 
 export function fillImagePages(
@@ -176,6 +226,7 @@ export function fillImagePages(
       offset = 0,
       topic = null,
       pageSize = providerPageSize,
+      onImages,
     ) {
       if (
         !Number.isInteger(pageSize) ||
@@ -200,21 +251,25 @@ export function fillImagePages(
         const cursor: number = next;
         const remaining = pageSize - images.length;
         try {
+          const collect = (results: ProviderImage[]) => {
+            if (results.length > remaining) throw new ProviderError("invalid");
+            for (const image of results) {
+              if (seen.has(image.id)) continue;
+              seen.add(image.id);
+              images.push(image);
+            }
+            onImages?.(images.slice());
+          };
           const result = await provider.search(
             query,
             requestSignal,
             cursor,
             remaining,
             topic,
+            collect,
           );
           signal.throwIfAborted();
-          if (result.images.length > remaining)
-            throw new ProviderError("invalid");
-          for (const image of result.images) {
-            if (seen.has(image.id)) continue;
-            seen.add(image.id);
-            images.push(image);
-          }
+          collect(result.images);
           next =
             result.next !== undefined &&
             Number.isSafeInteger(result.next) &&
@@ -569,6 +624,7 @@ export const met = cacheImageProvider(
       offset = 0,
       limit = providerPageSize,
       topic = null,
+      onImages,
     ) {
       limit = Math.min(limit, metSearchResultLimit - offset);
       if (limit <= 0) return { images: [] };
@@ -629,6 +685,7 @@ export const met = cacheImageProvider(
           thumbnail: item.primaryImageSmall,
           original: { url: item.primaryImage, mime: "image/jpeg" },
         });
+        onImages?.(images.slice());
       }
       const count = parsed.data.objectIDs?.length ?? 0;
       const next = offset + count;

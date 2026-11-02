@@ -156,6 +156,80 @@ test("provider topic scopes reach every batch and use separate page cache entrie
   );
 });
 
+test("provider progress streams shared results without caching partial pages or leaking consumer edits", async () => {
+  let calls = 0;
+  let report;
+  let release;
+  const images = [
+    { id: "first", title: "First" },
+    { id: "second", title: "Second" },
+  ];
+  const provider = providers.cacheImageProvider(
+    providers.fillImagePages({
+      ...providers.commons,
+      async search(_query, _signal, _offset, _limit, _topic, onImages) {
+        calls++;
+        report = onImages;
+        onImages(images.slice(0, 1));
+        await new Promise((resolve) => {
+          release = resolve;
+        });
+        return { images };
+      },
+    }),
+  );
+  const controller = new AbortController();
+  const firstUpdates = [];
+  const first = provider.search(
+    "progressive shared results",
+    controller.signal,
+    0,
+    null,
+    2,
+    (ready) => firstUpdates.push(ready),
+  );
+  const cancelled = first.catch((error) => error);
+  await expect.poll(() => firstUpdates.length).toBe(1);
+  firstUpdates[0][0].title = "Edited locally";
+  const secondUpdates = [];
+  let settled = false;
+  const second = provider
+    .search(
+      "progressive shared results",
+      new AbortController().signal,
+      0,
+      null,
+      2,
+      (ready) => secondUpdates.push(ready),
+    )
+    .then((result) => {
+      settled = true;
+      return result;
+    });
+  expect(secondUpdates).toEqual([[images[0]]]);
+  controller.abort(new Error("cancelled"));
+  expect((await cancelled).message).toBe("cancelled");
+  report(images);
+  expect(firstUpdates).toHaveLength(1);
+  expect(secondUpdates.at(-1)).toEqual(images);
+  expect(settled).toBe(false);
+  secondUpdates.at(-1)[0].title = "Another local edit";
+  release();
+  expect((await second).images).toEqual(images);
+  expect(
+    (
+      await provider.search(
+        "progressive shared results",
+        new AbortController().signal,
+        0,
+        null,
+        2,
+      )
+    ).images,
+  ).toEqual(images);
+  expect(calls).toBe(1);
+});
+
 test.describe("provider query cache", () => {
   test.afterEach(() => cache.providerQueryClient.clear());
 

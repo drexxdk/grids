@@ -401,6 +401,23 @@ async function beginCellUpload(page, index) {
   return page.locator("#replace-upload");
 }
 
+async function uploadCellImage(page, index = 0) {
+  const input = await beginCellUpload(page, index);
+  await input.setInputFiles({
+    name: "Fixture.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"></svg>',
+    ),
+  });
+  await expect(
+    page.getByRole("dialog", { name: "Choose image", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".grid-cell").nth(index).locator("img"),
+  ).toBeVisible();
+}
+
 async function mockCommons(page, { width = 400, height = 600 } = {}) {
   const image = await readFile(
     path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
@@ -806,6 +823,116 @@ for (const [mode, density, viewport] of [
       await context.close();
     }
   });
+}
+
+for (const provider of ["commons", "met"]) {
+  for (const mode of ["desktop", "mobile"]) {
+    const providerTest = mode === "mobile" ? touchTest : test;
+    providerTest(
+      `${provider} ${mode} reveals ready cards while other metadata and previews are still loading`,
+      async ({ page }, testInfo) => {
+        await (provider === "commons" ? mockCommons(page) : mockMet(page));
+        let releaseMetadata;
+        let releasePreview;
+        const metadata = new Promise((resolve) => {
+          releaseMetadata = resolve;
+        });
+        const preview = new Promise((resolve) => {
+          releasePreview = resolve;
+        });
+        await page.route(
+          provider === "commons"
+            ? "https://commons.wikimedia.org/w/api.php?*"
+            : "https://collectionapi.metmuseum.org/public/collection/**",
+          async (route) => {
+            const url = new URL(route.request().url());
+            if (
+              provider === "commons"
+                ? Number(url.searchParams.get("gsroffset")) > 0
+                : url.pathname.endsWith("/objects/11")
+            )
+              await metadata;
+            await route.fallback();
+          },
+        );
+        await page.route(
+          provider === "commons"
+            ? /^https:\/\/(upload|thumb)\.wikimedia\.org\//
+            : "https://images.metmuseum.org/**",
+          async (route) => {
+            if (
+              /\/1\.jpg(?:\/|$)/.test(new URL(route.request().url()).pathname)
+            )
+              await preview;
+            await route.fallback();
+          },
+        );
+        try {
+          if (mode === "mobile") {
+            await page.goto("./");
+            await page
+              .locator(".cell-image-button")
+              .first()
+              .tap({ position: { x: 5, y: 5 } });
+            await selectField(page, "picker-image-source", provider);
+            await searchCommons(page, "paged", false);
+            await expect(
+              page.getByRole("dialog", { name: "Choose image", exact: true }),
+            ).toHaveCSS("opacity", "1");
+          } else {
+            await page.goto(
+              `./?panel=images&source=${provider}&topic=all&q=paged`,
+            );
+          }
+          const online = page.getByRole("region", {
+            name: "Online",
+            exact: true,
+          });
+          const initial = provider === "commons" ? 7 : 2;
+          await expect(online.locator(".asset:visible")).toHaveCount(
+            initial - 1,
+          );
+          await expect(online).toHaveAttribute("aria-busy", "true");
+          await expect(
+            online.locator('[data-image-placeholder][data-loading="true"]'),
+          ).toHaveCount(11 - initial);
+          await expect(
+            online.getByRole("button", { name: "Next results", exact: true }),
+          ).toBeDisabled();
+          await online
+            .locator(".library-heading:visible")
+            .first()
+            .fill("Ready caption");
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `${provider}-${mode}-incremental-ready.png`,
+            ),
+          });
+          releaseMetadata();
+          await expect(online).toHaveAttribute("aria-busy", "false");
+          await expect(online.locator(".asset:visible")).toHaveCount(9);
+          await expect(
+            online.locator('[data-image-placeholder][data-loading="true"]'),
+          ).toHaveCount(1);
+          releasePreview();
+          await expect(online.locator(".asset:visible")).toHaveCount(10);
+          await expect(online.locator("[data-image-placeholder]")).toHaveCount(
+            0,
+          );
+          await expect(
+            online.getByRole("textbox", {
+              name: "Library heading: Ready caption",
+              exact: true,
+            }),
+          ).toHaveValue("Ready caption");
+          expect((await localDatabase(page)).images).toHaveLength(0);
+        } finally {
+          releaseMetadata();
+          releasePreview();
+        }
+      },
+    );
+  }
 }
 
 test("Met preview variants upgrade only when necessary and release temporary originals", async ({
@@ -1678,7 +1805,7 @@ for (const failure of ["malformed", "blocked"]) {
     }, failure);
     await page.goto("./?source=invalid&panel=invalid&offset=-1");
     await expect(page.locator("#board-grid")).toBeVisible();
-    await expect(page.locator("#sidebar-image-source")).toHaveText("Imported");
+    await expect(page.locator("#sidebar-image-source")).toHaveText("My images");
     await openSidebarPanel(page, "Settings");
     await page.reload();
     await expect(
@@ -1995,6 +2122,7 @@ for (const provider of ["commons", "met"]) {
       await expect(online.locator(".library-heading")).toHaveValue(
         provider === "commons" ? "Earth" : "Iris",
       );
+      await expect(online).toHaveAttribute("aria-busy", "false");
       await searchCommons(page, "paged");
       await expect(online.locator(".library-heading")).toHaveCount(10);
       await online
@@ -2231,11 +2359,11 @@ for (const [mode, pickerTest] of [
         exact: true,
       });
       const imported = picker.getByRole("region", {
-        name: "Imported",
+        name: "My images",
         exact: true,
       });
       await expect(imported.locator("[data-upload-tile]")).toHaveCount(1);
-      await expect(imported.locator("[data-image-placeholder]")).toHaveCount(9);
+      await expect(imported.locator("[data-image-placeholder]")).toHaveCount(0);
       await selectField(page, "picker-image-source", "commons");
       const online = picker.getByRole("region", {
         name: "Online",
@@ -2488,7 +2616,7 @@ test("Commons ignores stale searches and isolates empty malformed quota and offl
   await page.context().setOffline(true);
   await searchCommons(page, "offline");
   await expect(online.getByRole("alert")).toHaveText(
-    "You are offline. Imported images are still available.",
+    "You are offline. Your saved images are still available.",
   );
   await page.context().setOffline(false);
   await selectField(page, "sidebar-image-source", "imported");
@@ -2511,7 +2639,7 @@ test("card content and actions scale with the card without resize undo", async (
   const card = page.locator(".grid-cell").first();
   const emptyMetrics = [];
   for (const size of [
-    { width: 390, height: 600 },
+    { width: 260, height: 600 },
     { width: 1440, height: 1080 },
   ]) {
     await setEditorViewport(page, size);
@@ -2555,7 +2683,7 @@ test("card content and actions scale with the card without resize undo", async (
     });
   }
   expect(emptyMetrics[1].width).toBeGreaterThan(emptyMetrics[0].width);
-  expect(emptyMetrics[1].width).toBeLessThanOrEqual(320);
+  expect(emptyMetrics[1].width).toBeLessThanOrEqual(200);
   await page.locator("#upload").setInputFiles({
     name: "Scale.svg",
     mimeType: "image/svg+xml",
@@ -3167,6 +3295,7 @@ scrollbarTest(
   "closed mobile aside does not intercept canvas input or move the canvas when opened",
   async ({ page }) => {
     await page.goto("./");
+    for (const index of [1, 2]) await uploadCellImage(page, index);
     for (const width of [390, 780]) {
       await setEditorViewport(page, { width, height: 844 });
       const track = page.locator("[data-sidebar-track]");
@@ -3835,7 +3964,7 @@ test("right sidebar switches images and settings with an image source dropdown",
   await expect(images).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#sidebar-image-source")).toBeVisible();
   await expect(page.locator("#background-value")).toBeHidden();
-  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(9);
+  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(0);
   for (const width of [1440, 960]) {
     await setEditorViewport(page, { width, height: 1080 });
     await expect
@@ -3878,15 +4007,15 @@ test("right sidebar switches images and settings with an image source dropdown",
   }
   await page.locator("#sidebar-image-source").click();
   await expect(page.getByRole("option")).toHaveText([
-    "Imported",
+    "My images",
     "Wikimedia Commons",
     "The Met",
   ]);
   await expect(
-    page.getByRole("option", { name: "Imported", exact: true }),
+    page.getByRole("option", { name: "My images", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("option", { name: "Imported", exact: true }),
+    page.getByRole("option", { name: "My images", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
@@ -3900,7 +4029,7 @@ test("right sidebar switches images and settings with an image source dropdown",
     ),
   });
   await expect(sidebar.locator(".asset")).toHaveCount(1);
-  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(8);
+  await expect(sidebar.locator("[data-image-placeholder]")).toHaveCount(0);
   await selectField(page, "sidebar-image-source", "commons");
   await expect(
     page.getByRole("region", { name: "Online", exact: true }),
@@ -4153,6 +4282,7 @@ test("canvas preview fits both row and column changes without resizing controls"
       .toBeLessThan(1);
   }
   await page.goto("./");
+  await uploadCellImage(page);
   await openSidebarPanel(page, "Settings");
   await page.locator(".cell-heading").first().fill("Keep caption");
   const original = await savedWorkspace(page);
@@ -4696,7 +4826,7 @@ test("full grid reset confirms a clean slate and retains library images through 
       path: testInfo.outputPath(`canvas-reset-${width}.png`),
     });
     await trigger.click();
-    await expect(dialog).toContainText("Imported library images are kept.");
+    await expect(dialog).toContainText("Images in My images are kept.");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
@@ -4896,6 +5026,7 @@ test("font previews and independent weights persist and match exports without th
     };
   });
   await page.goto("./");
+  await uploadCellImage(page);
   await openSidebarPanel(page, "Settings");
   await expect(page.locator("#theme-selector")).toHaveCount(0);
   await expect(
@@ -6784,7 +6915,7 @@ test("captions share external bands and fit individual overlays across canvas, l
       await selectField(page, "caption-position", placement);
       await expect
         .poll(() =>
-          page.locator(".image-card:has(textarea)").evaluateAll(
+          page.locator(".image-card:has(textarea:visible)").evaluateAll(
             (cards) =>
               cards.length > 0 &&
               cards.every((card) => {
@@ -6797,7 +6928,7 @@ test("captions share external bands and fit individual overlays across canvas, l
         )
         .toBe(true);
       const metrics = await page
-        .locator(".image-card:has(textarea)")
+        .locator(".image-card:has(textarea:visible)")
         .evaluateAll((cards) =>
           cards.map((card) => {
             const field = card.querySelector("textarea");
@@ -6820,6 +6951,7 @@ test("captions share external bands and fit individual overlays across canvas, l
           expect(group).toHaveLength(0);
           continue;
         }
+        expect(group).toHaveLength(3);
         expect(
           Math.max(...group.map((item) => item.height)) -
             Math.min(...group.map((item) => item.height)),
@@ -8040,6 +8172,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
     [...initialBytes],
   );
   expect(initialBackground).toEqual([23, 25, 27, 255]);
+  await uploadCellImage(page);
   await selectField(page, "image-shape", "square");
   await selectField(page, "caption-position", "below");
   await page.locator(".cell-heading").first().fill("Blue");
@@ -8967,7 +9100,7 @@ touchTest(
       exact: true,
     });
     const sources = picker.locator("#picker-image-source");
-    await expect(sources).toHaveText("Imported");
+    await expect(sources).toHaveText("My images");
     await expect(sources).toHaveCSS("border-radius", "4px");
     await sources.click();
     await expect(
@@ -9371,7 +9504,7 @@ test("touch cell overlays target the tapped image without autofocus", async ({
       probe.remove();
       return width;
     });
-    expect(paintInset).toBeGreaterThan(0);
+    expect(paintInset).toBe(0);
     const region = await tools.boundingBox();
     for (const [name, side, edge] of [
       ["Drag image", "left", "top"],
@@ -9477,7 +9610,7 @@ test("image source dropdown fits narrow panels without category filters", async 
   });
   await expect(page.locator(".asset")).toHaveCount(9);
   let source = page.locator("#sidebar-image-source");
-  await expect(source).toHaveText("Imported");
+  await expect(source).toHaveText("My images");
   await source.click();
   await expect(
     page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
@@ -9500,7 +9633,7 @@ test("image source dropdown fits narrow panels without category filters", async 
   await assertContained();
   await source.click();
   await expect(
-    page.getByRole("option", { name: "Imported", exact: true }),
+    page.getByRole("option", { name: "My images", exact: true }),
   ).toBeDisabled();
   await page.getByRole("listbox").press("Escape");
   await expect(page.locator(".asset")).toHaveCount(9);
@@ -9678,6 +9811,20 @@ touchTest(
           '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#e74264"/></svg>',
         ),
       },
+      {
+        name: "third.svg",
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="white"/></svg>',
+        ),
+      },
+      {
+        name: "fourth.svg",
+        mimeType: "image/svg+xml",
+        buffer: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="white"/></svg>',
+        ),
+      },
     ]);
     const add = page.getByRole("button", { name: "Add images", exact: true });
     const progress = add.getByRole("status");
@@ -9685,7 +9832,29 @@ touchTest(
       name: "Image library drop zone",
       exact: true,
     });
-    await expect(progress).toContainText("0 / 3");
+    await expect(progress).toContainText("0 / 5");
+    const loading = page.locator(
+      '[data-image-placeholder][data-loading="true"]:visible',
+    );
+    await expect(loading).toHaveCount(5);
+    await expect(loading.locator(".lucide-loader-circle")).toHaveCount(5);
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File(
+          [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="white"/></svg>',
+          ],
+          "overlap.svg",
+          { type: "image/svg+xml" },
+        ),
+      );
+      return data;
+    });
+    await library.dispatchEvent("drop", { dataTransfer: transfer });
+    await transfer.dispose();
+    await expect(progress).toContainText("0 / 6");
+    await expect(loading).toHaveCount(6);
     await expect(add).toBeDisabled();
     await expect(add).toHaveCSS("opacity", "1");
     await expect(library).toHaveAttribute("aria-busy", "true");
@@ -9696,11 +9865,15 @@ touchTest(
     await page.screenshot({
       path: testInfo.outputPath("import-progress-desktop.png"),
     });
-    for (const completed of [0, 1, 2]) {
-      await expect(progress).toContainText(`${completed} / 3`);
+    for (const completed of [0, 1, 2, 3, 4, 5]) {
+      await expect(progress).toContainText(`${completed} / 6`);
+      await expect(loading).toHaveCount(6 - completed);
+      await expect(page.locator(".asset:visible")).toHaveCount(
+        completed - (completed >= 3 ? 1 : 0),
+      );
       await expect
         .poll(() => page.evaluate(() => window.pendingImageDecodes.length))
-        .toBe(1);
+        .toBeGreaterThan(0);
       if (completed === 1) {
         await setEditorViewport(page, { width: 390, height: 844 });
         await page
@@ -9708,6 +9881,19 @@ touchTest(
           .first()
           .tap({ position: { x: 5, y: 5 } });
         await expect(progress).toBeVisible();
+        await expect(
+          page.getByRole("dialog", { name: "Choose image", exact: true }),
+        ).toHaveCSS("opacity", "1");
+        const local = page.getByRole("region", {
+          name: "My images",
+          exact: true,
+        });
+        await expect(
+          local.locator('[data-image-placeholder][data-loading="true"]'),
+        ).toHaveCount(5);
+        await expect(
+          local.getByText("No images yet.", { exact: true }),
+        ).toHaveCount(0);
         await expect
           .poll(async () => {
             const bounds = await progress.boundingBox();
@@ -9723,6 +9909,7 @@ touchTest(
       });
     }
     await expect(progress).toHaveCount(0);
+    await expect(page.locator("[data-image-placeholder]")).toHaveCount(0);
     await expect(add).toBeEnabled();
     await page
       .getByRole("dialog", { name: "Choose image", exact: true })
@@ -9731,17 +9918,124 @@ touchTest(
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await setEditorViewport(page, { width: 1440, height: 1080 });
     await expect(library).toHaveAttribute("aria-busy", "false");
-    await expect(page.locator(".asset")).toHaveCount(2);
+    await expect(page.locator(".asset")).toHaveCount(5);
     await expect(page.locator("[data-sonner-toast]")).toContainText(
       "Could not load broken.svg",
     );
     await expect
       .poll(async () => (await localDatabase(page)).document?.assets.length)
-      .toBe(2);
-    expect((await localDatabase(page)).images).toHaveLength(2);
+      .toBe(5);
+    expect((await localDatabase(page)).images).toHaveLength(5);
     expect((await savedWorkspace(page)).grid.gap).toBe(21);
   },
 );
+
+test("My images has no filler cards and rejects GIF uploads and drops", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(page.locator("#sidebar-image-source")).toHaveText("My images");
+  await expect(
+    page.locator("#asset-library [data-image-placeholder]"),
+  ).toHaveCount(0);
+  await expect(page.locator("#asset-library [data-upload-tile]")).toHaveCount(
+    1,
+  );
+  const gif = Buffer.from(
+    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+    "base64",
+  );
+  const svg = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="white"/></svg>',
+  );
+  for (const file of [
+    { name: "ordinary.gif", mimeType: "image/gif", buffer: gif },
+    { name: "disguised.png", mimeType: "image/png", buffer: gif },
+    {
+      name: "legacy.png",
+      mimeType: "image/png",
+      buffer: Buffer.concat([Buffer.from("GIF87a"), gif.subarray(6)]),
+    },
+    { name: "extension.GIF", mimeType: "image/svg+xml", buffer: svg },
+    { name: "mime.png", mimeType: "image/gif", buffer: svg },
+  ]) {
+    await page.locator("#upload").setInputFiles(file);
+    await expect(
+      page.locator("[data-sonner-toast]").filter({ hasText: file.name }),
+    ).toContainText("GIF uploads are not supported.");
+    await expect(page.locator(".asset")).toHaveCount(0);
+    expect((await localDatabase(page)).images).toHaveLength(0);
+  }
+  await page.locator("#replace-upload").setInputFiles({
+    name: "replacement.gif",
+    mimeType: "image/gif",
+    buffer: gif,
+  });
+  await expect(
+    page.locator("[data-sonner-toast]").filter({ hasText: "replacement.gif" }),
+  ).toContainText("GIF uploads are not supported.");
+  await page.locator("#upload").setInputFiles([
+    { name: "mixed.gif", mimeType: "image/gif", buffer: gif },
+    { name: "Allowed.svg", mimeType: "image/svg+xml", buffer: svg },
+  ]);
+  await expect(page.locator(".asset")).toHaveCount(1);
+  await page.locator(".cell-image-button").first().press("Enter");
+  const picker = page.getByRole("dialog", {
+    name: "Choose image",
+    exact: true,
+  });
+  const local = picker.getByRole("region", { name: "My images", exact: true });
+  await expect(local.locator("[data-image-placeholder]")).toHaveCount(0);
+  await expect(local.locator("[data-library-image]")).toHaveCount(1);
+  const accepts = await page
+    .locator('input[type="file"]')
+    .evaluateAll((inputs) => inputs.map((input) => input.accept));
+  expect(accepts).toHaveLength(3);
+  for (const accept of accepts) {
+    expect(accept).not.toContain("image/*");
+    expect(accept).not.toContain("image/gif");
+    expect(accept).toContain("image/png");
+  }
+  await picker
+    .locator("#picker-cell-upload")
+    .setInputFiles({ name: "picker.gif", mimeType: "image/gif", buffer: gif });
+  await expect(
+    page.locator("[data-sonner-toast]").filter({ hasText: "picker.gif" }),
+  ).toContainText("GIF uploads are not supported.");
+  await expect(picker).toHaveCount(0);
+  const transfer = await page.evaluateHandle(
+    (bytes) => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File([new Uint8Array(bytes)], "dropped.gif", { type: "image/gif" }),
+      );
+      return data;
+    },
+    [...gif],
+  );
+  await page
+    .locator("#asset-library")
+    .dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "dropped.gif" })
+      .last(),
+  ).toContainText("GIF uploads are not supported.");
+  await page
+    .locator(".grid-cell")
+    .first()
+    .dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(
+    page.locator("[data-sonner-toast]").filter({ hasText: "dropped.gif" }),
+  ).toHaveCount(2);
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
+  await expect
+    .poll(async () => (await localDatabase(page)).images.length)
+    .toBe(1);
+  await expect(page.locator("#asset-library .asset")).toHaveCount(1);
+  await transfer.dispose();
+});
 
 test("empty cells and image library accept direct uploads and file drops", async ({
   page,
@@ -10368,6 +10662,7 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
     };
   });
   await page.goto("./");
+  await uploadCellImage(page);
   await savedWorkspace(page);
   await expect(page.locator("#save-status")).toBeHidden();
   await page.clock.install();
@@ -10619,7 +10914,7 @@ test("missing IndexedDB image data cannot overwrite the stored grid with blank d
   await expect(page.locator("[data-sonner-toast]")).toContainText(
     "stored grid has not been replaced",
   );
-  await page.locator(".cell-heading").first().fill("Session edit");
+  await editHeading(page, "Session edit");
   const stored = await localDatabase(page);
   expect(stored.document).toEqual(original);
   expect(stored.images).toEqual([]);
@@ -10905,6 +11200,7 @@ test("single grid starts neutral and uploaded content persists", async ({
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(1);
+  await chooseImage(page, "personal");
   await page.locator(".cell-heading").first().fill("Keep my own caption");
   const snapshot = await savedWorkspace(page);
   await reloadWorkspace(page);
@@ -11919,6 +12215,8 @@ test("PWA updates activate without reloading an unsaved or focused caption", asy
           }),
       );
     expect(await release()).toBe(1);
+    await uploadCellImage(page);
+    await savedWorkspace(page);
     await page.clock.install();
     await page.clock.pauseAt(new Date());
     const caption = page.locator(".cell-heading").first();
@@ -12159,7 +12457,7 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     exact: true,
   });
   const panel = picker.locator('[id^="headlessui-dialog-panel"]');
-  await expect(picker.locator("#picker-image-source")).toHaveText("Imported");
+  await expect(picker.locator("#picker-image-source")).toHaveText("My images");
   await picker.locator("#picker-image-source").click();
   await expect(
     page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
@@ -12196,14 +12494,14 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
       .poll(async () => (await panel.boundingBox()).width)
       .toBe(Math.min(800, availableWidth));
     const grid = picker
-      .getByRole("region", { name: "Imported", exact: true })
+      .getByRole("region", { name: "My images", exact: true })
       .locator('[class~="grid"]');
     await expect(
       grid.locator(":scope > [data-upload-tile]").first(),
     ).toBeVisible();
     await expect(grid.locator(":scope > [data-library-image]")).toHaveCount(8);
     const layout = await picker
-      .getByRole("region", { name: "Imported", exact: true })
+      .getByRole("region", { name: "My images", exact: true })
       .locator('[class~="grid"]')
       .evaluate((element) => {
         const style = getComputedStyle(element);
