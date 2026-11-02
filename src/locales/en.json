@@ -136,6 +136,7 @@
       "textColor": "Text color",
       "overlayColor": "Overlay color",
       "overlayOpacity": "Overlay opacity",
+      "showHeading": "Show heading",
       "showTitles": "Show titles"
     },
     "reset": {

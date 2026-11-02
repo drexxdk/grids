@@ -28,11 +28,12 @@ export function dimensions(item: Board, size: number, captionRows = 1) {
     return cellGeometry(item, size, hasCaption ? captionRows : 0).height;
   });
   const titleHeight = geometry.captionHeight;
-  const headingHeight = item.heading?.trim()
-    ? Math.round(
-        size * Math.max(0.28, ((item.headingFontSize ?? 18) / 100) * 1.4),
-      ) + headingGap
-    : 0;
+  const headingHeight =
+    item.headingVisible && item.heading?.trim()
+      ? Math.round(
+          size * Math.max(0.28, ((item.headingFontSize ?? 18) / 100) * 1.4),
+        ) + headingGap
+      : 0;
   return {
     gap,
     padding,

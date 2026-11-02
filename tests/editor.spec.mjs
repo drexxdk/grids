@@ -2392,7 +2392,7 @@ for (const [mode, pickerTest] of [
             .querySelector(".field-label")
             .getBoundingClientRect();
           const controlBounds = control.getBoundingClientRect();
-          const rowStyles = getComputedStyle(control.parentElement);
+          const rowStyles = getComputedStyle(section.firstElementChild);
           const sideBySide = section.getBoundingClientRect().width >= 520;
           return {
             rowGap: rowStyles.rowGap,
@@ -8931,7 +8931,7 @@ test("editable hex color and Headless UI settings dropdowns synchronize and pers
   await openSidebarPanel(page, "Settings");
   await expect(
     page.getByRole("switch", { name: "Show heading", exact: true }),
-  ).toHaveCount(0);
+  ).toBeChecked();
   await expect(page.locator(".settings-panel select")).toHaveCount(0);
   const canvasStyle = page.getByRole("group", {
     name: "Canvas style",
@@ -9753,11 +9753,23 @@ test("touch cell overlays target the tapped image without autofocus", async ({
       }
       await expect
         .poll(() =>
-          caption.evaluate(
-            (field) => field.scrollHeight <= field.clientHeight + 1,
-          ),
+          page
+            .locator(".grid-cell")
+            .nth(2)
+            .locator("[data-caption-preview] > span")
+            .evaluate((preview) => {
+              const style = getComputedStyle(preview);
+              const lines = Number(style.webkitLineClamp);
+              return (
+                lines > 0 &&
+                lines <= 3 &&
+                preview.getBoundingClientRect().height <=
+                  parseFloat(style.lineHeight) * 3 + 1
+              );
+            }),
         )
         .toBe(true);
+      await expect(caption).toHaveValue("One\nTwo\nThree\nFour\nFive\nSix");
     }
   }
   await page.screenshot({
@@ -11672,6 +11684,76 @@ test("grid headings and font choices persist and export correctly", async ({
         ),
     )
     .toBe(true);
+});
+
+test("canvas heading can be disabled without losing text or style", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  await page.goto("./");
+  await useComicExample(page);
+  await openSidebarPanel(page, "Settings");
+  await selectField(page, "heading-font", "Boogaloo");
+  await page.locator("#heading-text-color-value").fill("#123456");
+  await page.locator("#heading-text-color-value").press("Tab");
+  for (const width of [1440, 390]) {
+    await setEditorViewport(page, { width, height: 900 });
+    await openSidebarPanel(page, "Settings");
+    const section = page.getByRole("group", {
+      name: "Canvas heading style",
+      exact: true,
+    });
+    const toggle = section.getByRole("switch", {
+      name: "Show heading",
+      exact: true,
+    });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(
+      section.locator('input, button:not([role="switch"])'),
+    ).toHaveCount(0);
+    await expect(page.locator(".board-export-heading")).toHaveCount(0);
+    const padding = await page.locator("#board-grid").evaluate((grid) => {
+      const style = getComputedStyle(grid);
+      return { top: style.paddingTop, bottom: style.paddingBottom };
+    });
+    expect(padding.top).toBe(padding.bottom);
+    await section.screenshot({
+      path: testInfo.outputPath(`heading-disabled-${width}.png`),
+    });
+    await reloadWorkspace(page);
+    await openSidebarPanel(page, "Settings");
+    await expect(toggle).not.toBeChecked();
+    await expect(
+      section.locator('input, button:not([role="switch"])'),
+    ).toHaveCount(0);
+    await expect(page.locator(".board-export-heading")).toHaveCount(0);
+    const saved = (await savedWorkspace(page)).grid;
+    expect(saved).toMatchObject({
+      headingVisible: false,
+      heading: "Team DC",
+      headingFont: "Boogaloo",
+      headingTextColor: "#123456",
+    });
+    await selectExportField(page, "resolution", "600");
+    const download = await downloadBoard(page);
+    const bytes = [...(await readFile(await download.path()))];
+    const height = await page.evaluate(async (bytes) => {
+      const image = await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+      const height = image.height;
+      image.close();
+      return height;
+    }, bytes);
+    expect(height).toBe(1780);
+    await openSidebarPanel(page, "Settings");
+    await toggle.click();
+    await expect(page.locator(".board-export-heading")).toHaveText("Team DC");
+    await expect(page.locator("#heading-font")).toHaveText("Boogaloo");
+    await expect(page.locator("#heading-text-color-value")).toHaveValue(
+      "#123456",
+    );
+  }
 });
 
 test("animated editor controls preserve heading content and modal scroll/focus", async ({
