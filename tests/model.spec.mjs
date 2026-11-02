@@ -7,6 +7,7 @@ import ICU from "i18next-icu";
 
 let model;
 let providers;
+let cache;
 async function loadModule(relativePath) {
   const result = await build({
     configFile: false,
@@ -28,10 +29,218 @@ async function loadModule(relativePath) {
   );
 }
 test.beforeAll(async () => {
-  [model, providers] = await Promise.all([
+  [model, providers, cache] = await Promise.all([
     loadModule("../src/model.ts"),
     loadModule("../src/providers/index.ts"),
+    loadModule("../src/providers/cache.ts"),
   ]);
+});
+
+test.describe("provider query cache", () => {
+  test.afterEach(() => cache.providerQueryClient.clear());
+
+  test("reuses fresh metadata and isolates consumer edits", async () => {
+    let calls = 0;
+    const load = async () => {
+      calls++;
+      return { images: [{ title: "Original" }], next: 12 };
+    };
+    const first = await cache.providerQuery(
+      ["page", "commons", "earth", 0],
+      load,
+      new AbortController().signal,
+    );
+    first.images[0].title = "Edited locally";
+    const second = await cache.providerQuery(
+      ["page", "commons", "earth", 0],
+      load,
+      new AbortController().signal,
+    );
+    expect(second).toEqual({ images: [{ title: "Original" }], next: 12 });
+    expect(calls).toBe(1);
+    await cache.providerQuery(
+      ["page", "commons", "earth", 12],
+      load,
+      new AbortController().signal,
+    );
+    await cache.providerQuery(
+      ["page", "met", "earth", 0],
+      load,
+      new AbortController().signal,
+    );
+    expect(calls).toBe(3);
+  });
+
+  test("deduplicates requests without letting one consumer cancel another", async () => {
+    let calls = 0;
+    let complete;
+    let sharedSignal;
+    const load = (signal) => {
+      calls++;
+      sharedSignal = signal;
+      return new Promise((resolve) => {
+        complete = resolve;
+      });
+    };
+    const first = new AbortController();
+    const cancelled = cache.providerQuery(["shared"], load, first.signal);
+    const cancellation = expect(cancelled).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    const surviving = cache.providerQuery(
+      ["shared"],
+      load,
+      new AbortController().signal,
+    );
+    first.abort();
+    await cancellation;
+    expect(sharedSignal.aborted).toBe(false);
+    complete({ id: 1 });
+    expect(await surviving).toEqual({ id: 1 });
+    expect(calls).toBe(1);
+  });
+
+  test("cancels the underlying request when its last consumer leaves", async () => {
+    let sharedSignal;
+    const controller = new AbortController();
+    const pending = cache.providerQuery(
+      ["cancelled"],
+      (signal) => {
+        sharedSignal = signal;
+        return new Promise(() => {});
+      },
+      controller.signal,
+    );
+    const cancellation = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    controller.abort();
+    await cancellation;
+    expect(sharedSignal.aborted).toBe(true);
+    expect(
+      cache.providerQueryClient.getQueryData(["cancelled"]),
+    ).toBeUndefined();
+    expect(
+      await cache.providerQuery(
+        ["cancelled"],
+        async () => "replacement",
+        new AbortController().signal,
+      ),
+    ).toBe("replacement");
+  });
+
+  test("does not retry or retain failures as usable cache results", async () => {
+    let calls = 0;
+    const load = async () => {
+      calls++;
+      throw new Error("Unavailable");
+    };
+    await expect(
+      cache.providerQuery(["failure"], load, new AbortController().signal),
+    ).rejects.toThrow("Unavailable");
+    expect(calls).toBe(1);
+    expect(cache.providerQueryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(
+      await cache.providerQuery(
+        ["failure"],
+        async () => "recovered",
+        new AbortController().signal,
+      ),
+    ).toBe("recovered");
+  });
+
+  test("refreshes expired metadata but not fresh cached results", async () => {
+    const key = ["expiry"];
+    const now = Date.now();
+    let calls = 0;
+    const load = async () => {
+      calls++;
+      return "fresh";
+    };
+    cache.providerQueryClient.setQueryData(key, "cached", {
+      updatedAt: now - cache.providerFreshTime + 60000,
+    });
+    expect(
+      await cache.providerQuery(key, load, new AbortController().signal),
+    ).toBe("cached");
+    expect(calls).toBe(0);
+    cache.providerQueryClient.setQueryData(key, "expired", {
+      updatedAt: now - cache.providerFreshTime - 1000,
+    });
+    expect(
+      await cache.providerQuery(key, load, new AbortController().signal),
+    ).toBe("fresh");
+    expect(calls).toBe(1);
+  });
+
+  test("bounds inactive metadata entries and configures two-hour retention", async () => {
+    expect(cache.providerCacheLimit).toBe(500);
+    expect(cache.providerQueryClient.getDefaultOptions().queries).toMatchObject(
+      {
+        staleTime: 3600000,
+        gcTime: 7200000,
+        retry: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      },
+    );
+    for (let index = 0; index < cache.providerCacheLimit + 5; index++)
+      await cache.providerQuery(
+        ["bounded", index],
+        async () => index,
+        new AbortController().signal,
+      );
+    expect(cache.providerQueryClient.getQueryCache().getAll()).toHaveLength(
+      cache.providerCacheLimit,
+    );
+    expect(
+      cache.providerQueryClient.getQueryData(["bounded", 0]),
+    ).toBeUndefined();
+    expect(
+      cache.providerQueryClient.getQueryData([
+        "bounded",
+        cache.providerCacheLimit + 4,
+      ]),
+    ).toBe(cache.providerCacheLimit + 4);
+  });
+});
+
+test("provider page cache does not mark deadline-truncated pages fresh", async () => {
+  let calls = 0;
+  const provider = providers.cacheImageProvider({
+    ...providers.commons,
+    search: async () => {
+      calls++;
+      return calls === 1
+        ? { images: [{ id: "first" }], next: 12, incomplete: true }
+        : { images: [{ id: "complete" }] };
+    },
+  });
+  expect(
+    (await provider.search("partial cache", new AbortController().signal))
+      .incomplete,
+  ).toBe(true);
+  expect(
+    (await provider.search("partial cache", new AbortController().signal))
+      .images[0].id,
+  ).toBe("complete");
+  await provider.search("partial cache", new AbortController().signal);
+  expect(calls).toBe(2);
+});
+
+test("provider page cache keys use the actual trimmed and bounded search text", async () => {
+  let calls = 0;
+  const provider = providers.cacheImageProvider({
+    ...providers.commons,
+    search: async (query) => {
+      calls++;
+      expect(query).toBe("trimmed cache");
+      return { images: [] };
+    },
+  });
+  await provider.search("  trimmed cache  ", new AbortController().signal);
+  await provider.search("trimmed cache", new AbortController().signal);
+  expect(calls).toBe(1);
 });
 
 test("provider previews choose bounded cover renditions for every shape and density", () => {
@@ -216,7 +425,7 @@ test("provider pages preserve completed results and cursor at the shared deadlin
     });
     expect(
       await provider.search("query", new AbortController().signal),
-    ).toEqual({ images: [{ id: "first" }], next: 12 });
+    ).toEqual({ images: [{ id: "first" }], next: 12, incomplete: true });
   } finally {
     AbortSignal.timeout = timeout;
   }

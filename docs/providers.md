@@ -6,6 +6,14 @@ See [.env.example](../.env.example) for blank credentials and registration links
 
 The example is a preparation checklist, not runtime configuration: Commons and The Met are implemented and keyless; filling in other credentials does not enable integrations. Reserved variable names can change when those integrations are built. Credentialed integrations still require terms/rights review and approved backend/gateway hosting. Never add a `VITE_` prefix to secrets: those variables are exposed in browser builds, and GitHub Pages cannot keep them private. Do not send secrets in chats, screenshots or commits.
 
+## Metadata Caching
+
+- TanStack Query shares an in-memory metadata cache between the sidebar and picker. Visible pages are keyed by provider, trimmed search text (bounded to the same 160 characters sent to the API), and raw starting offset. Met details are additionally keyed by object ID, so different searches do not repeatedly fetch the same valid record. Returning to a visited page, restoring a browse topic or reopening a provider reuses fresh results. Cached data is cloned for consumers; editing a preview caption cannot alter another view's cached metadata.
+- Successful results remain fresh for one hour. Inactive entries are garbage-collected after two hours; an additional 500-entry target evicts the oldest inactive metadata first, never active/in-flight work. Search pages and object details share that limit. An expired result is refreshed before being returned rather than silently treated as fresh. Search ordering can still change between independently refreshed pages; this cache is not a catalog snapshot.
+- Identical concurrent queries share one request. Cancelling one consumer only removes its observer; the underlying fetch aborts when no consumers remain. Errors are not automatically retried or retained as usable results. Focus and reconnect do not trigger background refetches. Fresh cached pages remain usable during quota cooldowns or offline operation; actual network requests retain existing offline errors, Retry-After handling, deadlines and rights checks.
+- Pages truncated by the shared deadline carry an incomplete marker and are immediately stale; they are not treated as complete one-hour results. Invalid Met detail schemas are also immediately stale. Valid detail metadata still passes the existing public-domain, rights and host filters before becoming an image result. This caches provider metadata, not permission guarantees or live availability; source-page review remains necessary.
+- Reloading or closing the app clears this cache. It does not use IndexedDB, localStorage or service-worker runtime caching, and stores no image blobs. Imported originals and saved grids retain their separate existing local persistence. Unit checks cover freshness, expiry, failure recovery, deduplication, independent cancellation, clone isolation, incomplete pages and entry bounds; mocked editor checks cover Previous/Next, repeated searches, provider reopening, sidebar/picker sharing, Met detail reuse and one-hour expiry.
+
 ## Preview Resolution
 
 - Online cards measure their rendered width before requesting an image and respond to resizing and screen-density changes. The editor and preview selector share the existing 128-320 CSS-pixel card limits. Resolution covers all three shapes, not just the current shape, so changing portrait/landscape/square does not need another image request. At 320 CSS pixels wide, portrait needs approximately 427 pixels of image height before accounting for screen density and the source's cover crop.
@@ -49,7 +57,7 @@ Sources: [Chicago API/image policy](https://api.artic.edu/docs/), [Cleveland Ope
 
 ## Remaining Work
 
-More providers/domains, approved licensed-content credit export, image variants/resolution selection, policy-aware bounded search caching/throttling, additional browser/device checks and real-service release rechecks. Do not present candidate integrations as supported.
+More providers/domains, approved licensed-content credit export, manual image variant/resolution controls, provider-specific cache/rate policies for future integrations, additional browser/device checks and real-service release rechecks. Do not present candidate integrations as supported.
 
 Sources reviewed:
 

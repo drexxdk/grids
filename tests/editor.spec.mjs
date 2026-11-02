@@ -503,6 +503,7 @@ async function mockMet(page) {
     path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
   );
   const requests = [];
+  const detailRequests = [];
   let failDownload = false;
   const object = (id, patch = {}) => ({
     objectID: id,
@@ -569,6 +570,7 @@ async function mockMet(page) {
         });
       }
       const id = Number(url.pathname.split("/").at(-1));
+      detailRequests.push(id);
       const patches = {
         3: { isPublicDomain: false },
         4: { rightsAndReproduction: "All rights reserved" },
@@ -592,6 +594,7 @@ async function mockMet(page) {
   );
   return {
     requests,
+    detailRequests,
     failDownload: (value) => {
       failDownload = value;
     },
@@ -1097,11 +1100,12 @@ for (const [mode, providerTest] of [
       await searchCommons(page, "earth");
       expect(mock.requests.slice(beforeFilter)).toHaveLength(1);
       expect(mock.requests.at(-1).query).toMatch(/^earth/);
+      const afterFilter = mock.requests.length;
       await searchCommons(page, "");
       await expect(
         online.getByRole("button", { name: "Space", exact: true }),
       ).toHaveAttribute("aria-pressed", "true");
-      expect(mock.requests.at(-1).query).toMatch(/^NASA Earth space/);
+      expect(mock.requests).toHaveLength(afterFilter);
       await searchbox.fill("cancelled-filter");
       await online.getByRole("button", { name: "Nature", exact: true }).click();
       await expect(
@@ -1424,6 +1428,80 @@ test("Commons cards share imported settings and support native mouse and touch d
 });
 
 for (const provider of ["commons", "met"]) {
+  nativeTouchTest(
+    `${provider} caches pages across views and refreshes after one hour`,
+    async ({ page }) => {
+      const mock = await (provider === "commons"
+        ? mockCommons(page)
+        : mockMet(page));
+      await page.goto("./");
+      await selectField(page, "sidebar-image-source", provider);
+      const online = page.getByRole("region", { name: "Online", exact: true });
+      await expect(online.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Earth" : "Iris",
+      );
+      await searchCommons(page, "paged");
+      await expect(online.locator(".library-heading")).toHaveCount(12);
+      await online
+        .getByRole("button", { name: "Next results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Moon" : "Vase",
+      );
+      const visited = mock.requests.length;
+      await online
+        .getByRole("button", { name: "Previous results", exact: true })
+        .click();
+      await expect(online.locator(".library-heading")).toHaveCount(12);
+      expect(mock.requests).toHaveLength(visited);
+      await online.locator(".library-heading").first().fill("Local caption");
+      await searchCommons(page, "different");
+      const different = mock.requests.length;
+      await searchCommons(page, "paged");
+      await expect(online.locator(".library-heading").first()).toHaveValue(
+        provider === "commons" ? "Earth" : "Iris",
+      );
+      expect(mock.requests).toHaveLength(different);
+      await selectField(page, "sidebar-image-source", "imported");
+      await selectField(page, "sidebar-image-source", provider);
+      await expect(online.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Earth" : "Iris",
+      );
+      expect(mock.requests).toHaveLength(different);
+      if (provider === "met")
+        expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(1);
+      await page
+        .locator(".cell-image-button")
+        .first()
+        .tap({ position: { x: 5, y: 5 } });
+      const picker = page.getByRole("dialog", {
+        name: "Choose image",
+        exact: true,
+      });
+      await selectField(page, "picker-image-source", provider);
+      const pickerOnline = picker.getByRole("region", {
+        name: "Online",
+        exact: true,
+      });
+      await expect(pickerOnline.locator(".library-heading")).toHaveValue(
+        provider === "commons" ? "Earth" : "Iris",
+      );
+      await pickerOnline
+        .getByRole("searchbox", { name: "Search images", exact: true })
+        .fill("paged");
+      await expect(pickerOnline.locator(".library-heading")).toHaveCount(12);
+      expect(mock.requests).toHaveLength(different);
+      await page.clock.setFixedTime(new Date(Date.now() + 3600000 + 5000));
+      await pickerOnline
+        .getByRole("searchbox", { name: "Search images", exact: true })
+        .fill("different");
+      await expect(pickerOnline).toHaveAttribute("aria-busy", "false");
+      expect(mock.requests).toHaveLength(different + 1);
+      if (provider === "met")
+        expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(2);
+    },
+  );
+
   test(`${provider} fills eligible pages and keeps exact next and previous cursors`, async ({
     page,
   }) => {
@@ -1511,8 +1589,12 @@ test("Commons ignores stale searches and isolates empty malformed quota and offl
   await searchCommons(page, "quota");
   await expect(online.getByRole("alert")).toContainText("rate limiting");
   const requestsBefore = mock.requests.length;
-  await searchCommons(page, "earth");
+  await searchCommons(page, "cooldown");
   await expect(online.getByRole("alert")).toContainText("rate limiting");
+  expect(mock.requests).toHaveLength(requestsBefore);
+  await searchCommons(page, "earth");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
+  await expect(online.getByRole("alert")).toHaveCount(0);
   expect(mock.requests).toHaveLength(requestsBefore);
   await page.context().setOffline(true);
   await searchCommons(page, "offline");

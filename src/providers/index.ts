@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerFreshTime, providerQuery } from "./cache";
 import {
   provenanceSchema,
   providerHosts,
@@ -96,7 +97,26 @@ export interface ImageProvider {
     query: string,
     signal: AbortSignal,
     offset?: number,
-  ) => Promise<{ images: ProviderImage[]; next?: number }>;
+  ) => Promise<{
+    images: ProviderImage[];
+    next?: number;
+    incomplete?: boolean;
+  }>;
+}
+
+export function cacheImageProvider(provider: ImageProvider): ImageProvider {
+  return {
+    ...provider,
+    search(query, signal, offset = 0) {
+      const filter = query.trim().slice(0, 160);
+      return providerQuery(
+        ["provider-page", provider.id, filter, offset],
+        (requestSignal) => provider.search(filter, requestSignal, offset),
+        signal,
+        (data) => (data?.incomplete ? 0 : providerFreshTime),
+      );
+    },
+  };
 }
 
 export class ProviderError extends Error {
@@ -125,6 +145,7 @@ export function fillImagePages(
       const requestSignal = AbortSignal.any([signal, deadline]);
       const images: ProviderImage[] = [];
       const seen = new Set<string>();
+      let incomplete = false;
       let next: number | undefined = offset;
       for (
         let batch = 0;
@@ -157,11 +178,14 @@ export function fillImagePages(
               : undefined;
         } catch (error) {
           signal.throwIfAborted();
-          if (deadline.aborted && images.length) break;
+          if (deadline.aborted && images.length) {
+            incomplete = true;
+            break;
+          }
           throw error;
         }
       }
-      return { images, next };
+      return { images, next, ...(incomplete ? { incomplete: true } : {}) };
     },
   };
 }
@@ -218,122 +242,124 @@ function plainText(value: string) {
 
 let blockedUntil = 0;
 
-export const commons = fillImagePages({
-  id: "commons",
-  name: "Wikimedia Commons",
-  domain: "Open media",
-  policyUrl:
-    "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
-  browse: [
-    { id: "space", query: "NASA Earth space" },
-    { id: "nature", query: "Ansel Adams landscape" },
-    { id: "art", query: "painting public domain" },
-    { id: "places", query: "architecture public domain" },
-    { id: "history", query: "historical photograph" },
-  ],
-  capabilities: {
-    pagination: true,
-    localOriginals: true,
-    crop: true,
-    export: true,
-  },
-  async search(query, signal, offset = 0, limit = 12) {
-    if (Date.now() < blockedUntil)
-      throw new ProviderError("quota", blockedUntil - Date.now());
-    const url = new URL("https://commons.wikimedia.org/w/api.php");
-    url.search = new URLSearchParams({
-      action: "query",
-      format: "json",
-      formatversion: "2",
-      origin: "*",
-      generator: "search",
-      gsrsearch: `${query.slice(0, 160)} filetype:bitmap`,
-      gsrnamespace: "6",
-      gsrlimit: String(limit),
-      gsroffset: String(offset),
-      prop: "imageinfo",
-      iiprop: "url|size|mime|extmetadata",
-      iiurlwidth: "320",
-      iiextmetadatalanguage: "en",
-      iiextmetadatafilter:
-        "Artist|LicenseShortName|LicenseUrl|Copyrighted|Restrictions|AttributionRequired",
-    }).toString();
-    const response = await fetch(url, {
-      signal,
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    if (response.status === 429) {
-      const retry = response.headers.get("Retry-After") ?? "60";
-      const seconds = Number(retry);
-      const wait = Number.isFinite(seconds)
-        ? seconds * 1000
-        : Date.parse(retry) - Date.now();
-      blockedUntil =
-        Date.now() + Math.max(1000, Number.isFinite(wait) ? wait : 60000);
-      throw new ProviderError("quota", blockedUntil - Date.now());
-    }
-    if (!response.ok) throw new ProviderError("unavailable");
-    const parsed = responseSchema.safeParse(await response.json());
-    if (!parsed.success || parsed.data.error)
-      throw new ProviderError("invalid");
-    const images: ProviderImage[] = [];
-    for (const page of (parsed.data.query?.pages ?? []).sort(
-      (first, second) => (first.index ?? 0) - (second.index ?? 0),
-    )) {
-      const info = page.imageinfo?.[0];
-      if (!info) continue;
-      const meta = info.extmetadata;
-      const license = meta.LicenseShortName?.value;
-      if (license !== "CC0" && license !== "Public domain") continue;
-      if (
-        meta.Copyrighted?.value !== "False" ||
-        meta.Restrictions?.value ||
-        meta.AttributionRequired?.value === "true"
-      )
-        continue;
-      if (
-        !["image/jpeg", "image/png", "image/webp"].includes(info.mime) ||
-        info.size > 20000000 ||
-        info.width * info.height > 40000000
-      )
-        continue;
-      if (
-        !safeUrl(info.url, "upload.wikimedia.org") ||
-        (!safeUrl(info.thumburl ?? info.url, "upload.wikimedia.org") &&
-          !safeUrl(info.thumburl ?? info.url, "thumb.wikimedia.org")) ||
-        !safeUrl(info.descriptionurl, "commons.wikimedia.org")
-      )
-        continue;
-      const licenseUrl =
-        meta.LicenseUrl?.value ||
-        "https://commons.wikimedia.org/wiki/Commons:Public_domain";
-      if (
-        !safeUrl(licenseUrl, "creativecommons.org") &&
-        !safeUrl(licenseUrl, "commons.wikimedia.org")
-      )
-        continue;
-      images.push({
-        provider: "commons",
-        id: String(page.pageid),
-        title: page.title.replace(/^File:/, "").replace(/\.[^.]+$/, ""),
-        sourcePage: info.descriptionurl,
-        creator: plainText(meta.Artist?.value ?? ""),
-        license,
-        licenseUrl,
-        thumbnail: info.thumburl ?? info.url,
-        original: {
-          url: info.url,
-          width: info.width,
-          height: info.height,
-          mime: info.mime,
-          size: info.size,
-        },
+export const commons = cacheImageProvider(
+  fillImagePages({
+    id: "commons",
+    name: "Wikimedia Commons",
+    domain: "Open media",
+    policyUrl:
+      "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+    browse: [
+      { id: "space", query: "NASA Earth space" },
+      { id: "nature", query: "Ansel Adams landscape" },
+      { id: "art", query: "painting public domain" },
+      { id: "places", query: "architecture public domain" },
+      { id: "history", query: "historical photograph" },
+    ],
+    capabilities: {
+      pagination: true,
+      localOriginals: true,
+      crop: true,
+      export: true,
+    },
+    async search(query, signal, offset = 0, limit = 12) {
+      if (Date.now() < blockedUntil)
+        throw new ProviderError("quota", blockedUntil - Date.now());
+      const url = new URL("https://commons.wikimedia.org/w/api.php");
+      url.search = new URLSearchParams({
+        action: "query",
+        format: "json",
+        formatversion: "2",
+        origin: "*",
+        generator: "search",
+        gsrsearch: `${query.slice(0, 160)} filetype:bitmap`,
+        gsrnamespace: "6",
+        gsrlimit: String(limit),
+        gsroffset: String(offset),
+        prop: "imageinfo",
+        iiprop: "url|size|mime|extmetadata",
+        iiurlwidth: "320",
+        iiextmetadatalanguage: "en",
+        iiextmetadatafilter:
+          "Artist|LicenseShortName|LicenseUrl|Copyrighted|Restrictions|AttributionRequired",
+      }).toString();
+      const response = await fetch(url, {
+        signal,
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
       });
-    }
-    return { images, next: parsed.data.continue?.gsroffset };
-  },
-});
+      if (response.status === 429) {
+        const retry = response.headers.get("Retry-After") ?? "60";
+        const seconds = Number(retry);
+        const wait = Number.isFinite(seconds)
+          ? seconds * 1000
+          : Date.parse(retry) - Date.now();
+        blockedUntil =
+          Date.now() + Math.max(1000, Number.isFinite(wait) ? wait : 60000);
+        throw new ProviderError("quota", blockedUntil - Date.now());
+      }
+      if (!response.ok) throw new ProviderError("unavailable");
+      const parsed = responseSchema.safeParse(await response.json());
+      if (!parsed.success || parsed.data.error)
+        throw new ProviderError("invalid");
+      const images: ProviderImage[] = [];
+      for (const page of (parsed.data.query?.pages ?? []).sort(
+        (first, second) => (first.index ?? 0) - (second.index ?? 0),
+      )) {
+        const info = page.imageinfo?.[0];
+        if (!info) continue;
+        const meta = info.extmetadata;
+        const license = meta.LicenseShortName?.value;
+        if (license !== "CC0" && license !== "Public domain") continue;
+        if (
+          meta.Copyrighted?.value !== "False" ||
+          meta.Restrictions?.value ||
+          meta.AttributionRequired?.value === "true"
+        )
+          continue;
+        if (
+          !["image/jpeg", "image/png", "image/webp"].includes(info.mime) ||
+          info.size > 20000000 ||
+          info.width * info.height > 40000000
+        )
+          continue;
+        if (
+          !safeUrl(info.url, "upload.wikimedia.org") ||
+          (!safeUrl(info.thumburl ?? info.url, "upload.wikimedia.org") &&
+            !safeUrl(info.thumburl ?? info.url, "thumb.wikimedia.org")) ||
+          !safeUrl(info.descriptionurl, "commons.wikimedia.org")
+        )
+          continue;
+        const licenseUrl =
+          meta.LicenseUrl?.value ||
+          "https://commons.wikimedia.org/wiki/Commons:Public_domain";
+        if (
+          !safeUrl(licenseUrl, "creativecommons.org") &&
+          !safeUrl(licenseUrl, "commons.wikimedia.org")
+        )
+          continue;
+        images.push({
+          provider: "commons",
+          id: String(page.pageid),
+          title: page.title.replace(/^File:/, "").replace(/\.[^.]+$/, ""),
+          sourcePage: info.descriptionurl,
+          creator: plainText(meta.Artist?.value ?? ""),
+          license,
+          licenseUrl,
+          thumbnail: info.thumburl ?? info.url,
+          original: {
+            url: info.url,
+            width: info.width,
+            height: info.height,
+            mime: info.mime,
+            size: info.size,
+          },
+        });
+      }
+      return { images, next: parsed.data.continue?.gsroffset };
+    },
+  }),
+);
 
 const museumTopics: ImageProvider["browse"] = [
   { id: "paintings", query: "painting" },
@@ -395,7 +421,7 @@ const metSearchSchema = z.object({
 });
 const metObjectSchema = z.object({
   objectID: z.number().int().positive(),
-  isPublicDomain: z.literal(true),
+  isPublicDomain: z.boolean(),
   title: z.string().min(1),
   artistDisplayName: z.string(),
   primaryImage: z.url(),
@@ -404,71 +430,81 @@ const metObjectSchema = z.object({
   rightsAndReproduction: z.string().optional(),
 });
 
-export const met = fillImagePages({
-  id: "met",
-  name: "The Met",
-  domain: "Art and cultural collections",
-  policyUrl:
-    "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
-  browse: museumTopics,
-  capabilities: commons.capabilities,
-  async search(query, signal, offset = 0, limit = 12) {
-    limit = Math.min(limit, 10000 - offset);
-    if (limit <= 0) return { images: [] };
-    const url = new URL(
-      "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
-    );
-    url.search = new URLSearchParams({
-      q: query.slice(0, 160),
-      hasImages: "true",
-      offset: String(offset),
-      limit: String(limit),
-    }).toString();
-    const parsed = metSearchSchema.safeParse(await metJson(url, signal));
-    if (!parsed.success) throw new ProviderError("invalid");
-    const images: ProviderImage[] = [];
-    for (const id of parsed.data.objectIDs ?? []) {
-      const object = metObjectSchema.safeParse(
-        await metJson(
-          new URL(
-            `https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`,
-          ),
-          signal,
-        ),
+export const met = cacheImageProvider(
+  fillImagePages({
+    id: "met",
+    name: "The Met",
+    domain: "Art and cultural collections",
+    policyUrl:
+      "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
+    browse: museumTopics,
+    capabilities: commons.capabilities,
+    async search(query, signal, offset = 0, limit = 12) {
+      limit = Math.min(limit, 10000 - offset);
+      if (limit <= 0) return { images: [] };
+      const url = new URL(
+        "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
       );
-      if (!object.success) continue;
-      const item = object.data;
-      if (
-        item.objectID !== id ||
-        item.rightsAndReproduction?.trim() ||
-        !safeUrl(item.primaryImage, "images.metmuseum.org") ||
-        !safeUrl(item.primaryImageSmall, "images.metmuseum.org") ||
-        !safeUrl(item.objectURL, "www.metmuseum.org")
-      )
-        continue;
-      images.push({
-        provider: "met",
-        id: String(id),
-        title: item.title.slice(0, 120),
-        sourcePage: item.objectURL,
-        creator: plainText(item.artistDisplayName),
-        license: "CC0",
-        licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
-        thumbnail: item.primaryImageSmall,
-        original: { url: item.primaryImage, mime: "image/jpeg" },
-      });
-    }
-    const count = parsed.data.objectIDs?.length ?? 0;
-    const next = offset + count;
-    return {
-      images,
-      next:
-        count > 0 && next < Math.min(parsed.data.total, 10000)
-          ? next
-          : undefined,
-    };
-  },
-});
+      url.search = new URLSearchParams({
+        q: query.slice(0, 160),
+        hasImages: "true",
+        offset: String(offset),
+        limit: String(limit),
+      }).toString();
+      const parsed = metSearchSchema.safeParse(await metJson(url, signal));
+      if (!parsed.success) throw new ProviderError("invalid");
+      const images: ProviderImage[] = [];
+      for (const id of parsed.data.objectIDs ?? []) {
+        const item = await providerQuery(
+          ["provider-object", "met", id],
+          async (requestSignal) => {
+            const parsed = metObjectSchema.safeParse(
+              await metJson(
+                new URL(
+                  `https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`,
+                ),
+                requestSignal,
+              ),
+            );
+            return parsed.success ? parsed.data : null;
+          },
+          signal,
+          (data) => (data ? providerFreshTime : 0),
+        );
+        if (!item) continue;
+        if (
+          !item.isPublicDomain ||
+          item.objectID !== id ||
+          item.rightsAndReproduction?.trim() ||
+          !safeUrl(item.primaryImage, "images.metmuseum.org") ||
+          !safeUrl(item.primaryImageSmall, "images.metmuseum.org") ||
+          !safeUrl(item.objectURL, "www.metmuseum.org")
+        )
+          continue;
+        images.push({
+          provider: "met",
+          id: String(id),
+          title: item.title.slice(0, 120),
+          sourcePage: item.objectURL,
+          creator: plainText(item.artistDisplayName),
+          license: "CC0",
+          licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+          thumbnail: item.primaryImageSmall,
+          original: { url: item.primaryImage, mime: "image/jpeg" },
+        });
+      }
+      const count = parsed.data.objectIDs?.length ?? 0;
+      const next = offset + count;
+      return {
+        images,
+        next:
+          count > 0 && next < Math.min(parsed.data.total, 10000)
+            ? next
+            : undefined,
+      };
+    },
+  }),
+);
 
 export const imageProviders: readonly ImageProvider[] = [commons, met];
 
