@@ -4,3 +4,6 @@ playwright-report/
 dist/
 exports/
 .DS_Store
+.env
+.env.*
+!.env.example

@@ -1,5 +1,11 @@
 # Image Provider Compatibility
 
+## Credentials Checklist
+
+See [.env.example](../.env.example) for blank credentials and registration links for all credentialed image-provider candidates in the roadmap, plus a separate optional sign-in section. Keyless providers are listed without unnecessary credentials. Copy it to a local `.env`; real environment files are Git-ignored, while the example remains tracked.
+
+The example is a preparation checklist, not runtime configuration: only Commons is implemented, it is keyless, and filling in other credentials does not enable integrations. Reserved variable names can change when those integrations are built. Credentialed integrations still require terms/rights review and approved backend/gateway hosting. Never add a `VITE_` prefix to secrets: those variables are exposed in browser builds, and GitHub Pages cannot keep them private. Do not send secrets in chats, screenshots or commits.
+
 ## Wikimedia Commons
 
 Checked November 2, 2026. Initial integration: public-domain and CC0 JPEG, PNG and WebP files only. Other licenses, SVG, animation, unclear copyright, required attribution and nonempty restrictions are excluded. API access is not a warranty of rights: users must review the linked source page, especially for privacy, personality, trademark and jurisdiction-specific restrictions.
