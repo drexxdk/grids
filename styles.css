@@ -345,7 +345,7 @@ h2 {
 .asset-library {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 17px 10px;
+  gap: 10px;
   align-content: start;
 }
 .asset {
@@ -890,9 +890,6 @@ output {
   }
   .asset-panel {
     padding: 22px 12px;
-  }
-  .asset-library {
-    gap: 13px 8px;
   }
   .asset-name {
     font-size: 9px;

@@ -379,11 +379,23 @@ test("multiline caption geometry grows shared bands without changing image ratio
   ).toMatchObject({
     aspectRatio: 4 / 3,
     imageHeight: 450,
-    captionHeight: 482,
-    imageTop: 16,
-    captionTop: 0,
-    height: 482,
+    captionHeight: 150,
+    imageTop: 0,
+    captionTop: 300,
+    height: 450,
   });
+  for (const imageAspect of ["portrait", "landscape", "square"])
+    for (const captionRows of [1, 6, 40]) {
+      const geometry = model.cellGeometry(
+        { ...style, imageAspect, captionPlacement: "overlay" },
+        600,
+        captionRows,
+      );
+      expect(geometry.height).toBe(geometry.imageHeight);
+      expect(
+        geometry.imageHeight - geometry.captionHeight,
+      ).toBeGreaterThanOrEqual(300);
+    }
 });
 
 test("grid appearance settings roundtrip and share cell geometry", () => {

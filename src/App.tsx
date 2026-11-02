@@ -44,7 +44,11 @@ import { LibraryImage } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
 import { ImageSourceSelect } from "./components/ui/ImageTabs";
 import { OnlineImages } from "./components/OnlineImages";
-import { downloadProviderImage, type ProviderImage } from "./providers";
+import {
+  downloadProviderImage,
+  imageProviders,
+  type ProviderImage,
+} from "./providers";
 import {
   fontOptions,
   fontWeightOptions,
@@ -228,6 +232,12 @@ export default function App() {
   const [imageTarget, setImageTarget] = useState<string | null>(null);
   const [librarySource, setLibrarySource] = useState("imported");
   const [pickerSource, setPickerSource] = useState("imported");
+  const libraryProvider = imageProviders.find(
+    (provider) => provider.id === librarySource,
+  );
+  const pickerProvider = imageProviders.find(
+    (provider) => provider.id === pickerSource,
+  );
   const closeImagePicker = () => {
     setImageTarget(null);
   };
@@ -693,6 +703,15 @@ export default function App() {
       throw error;
     }
   };
+  const importDroppedImage = (image: ProviderImage, targetCellId: string) => {
+    void importProviderImage(
+      image,
+      new AbortController().signal,
+      targetCellId,
+    ).catch(() => {
+      toast.error(t("library.search.failed"));
+    });
+  };
   const touchDrag = (
     source: CardDragSource,
     visual: CardDragVisual,
@@ -707,6 +726,9 @@ export default function App() {
     const validTarget = board.cells.some((cell) => cell.id === targetId);
     if (finished || cancelled) {
       setCardDrag(null);
+      if (!cancelled && validTarget && source.kind === "provider") {
+        importDroppedImage(source.image, targetId!);
+      }
       if (!cancelled && validTarget && source.kind === "asset") {
         placeAsset(source.assetId, targetId!);
         if (imageTarget) closeImagePicker();
@@ -732,7 +754,7 @@ export default function App() {
       source,
       visual,
       targetId:
-        validTarget && (source.kind === "asset" || source.cellId !== targetId)
+        validTarget && (source.kind !== "cell" || source.cellId !== targetId)
           ? targetId
           : null,
     });
@@ -741,6 +763,10 @@ export default function App() {
     event.preventDefault();
     setCardDrag(null);
     event.currentTarget.classList.remove("drag-over");
+    if (cardDrag?.source.kind === "provider") {
+      importDroppedImage(cardDrag.source.image, board.cells[index].id);
+      return;
+    }
     const assetId =
       event.dataTransfer.getData("application/x-gridroom-asset") ||
       (cardDrag?.source.kind === "asset" ? cardDrag.source.assetId : "");
@@ -958,10 +984,10 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pt-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
+                <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1 [&_.field-label]:mt-0!">
                     <ImageSourceSelect
                       id="sidebar-image-source"
                       value={librarySource}
@@ -970,8 +996,18 @@ export default function App() {
                   </div>
                   {drawerToggle}
                 </div>
-                {librarySource === "online" && (
+                {libraryProvider && (
                   <OnlineImages
+                    key={libraryProvider.id}
+                    provider={libraryProvider}
+                    gridStyle={board}
+                    captionRows={captionRows}
+                    moving={cardDrag !== null}
+                    dragSource={cardDrag?.source}
+                    onMoveStart={(source, visual) =>
+                      setCardDrag({ source, visual, targetId: null })
+                    }
+                    onTouchDrag={touchDrag}
                     onImport={(image, signal) =>
                       importProviderImage(image, signal)
                     }
@@ -1243,7 +1279,7 @@ export default function App() {
                 data-sidebar-content
                 className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="flex flex-col gap-6 py-4">
+                <div className="flex flex-col gap-6 pb-4">
                   <fieldset
                     className="m-0 min-w-0 border-0 p-0"
                     aria-label={t("settings.canvas")}
@@ -1756,8 +1792,14 @@ export default function App() {
               />
             </div>
           </div>
-          {pickerSource === "online" && (
+          {pickerProvider && (
             <OnlineImages
+              key={pickerProvider.id}
+              provider={pickerProvider}
+              gridStyle={board}
+              captionRows={captionRows}
+              selectionOnly
+              gridClassName={pickerGridClassName}
               onImport={async (image, signal) => {
                 await importProviderImage(image, signal, imageTarget);
                 closeImagePicker();

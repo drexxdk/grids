@@ -1,10 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Download,
-  ExternalLink,
-  LoaderCircle,
   Orbit,
   Leaf,
   Palette,
@@ -14,11 +11,13 @@ import {
 } from "lucide-react";
 import { t } from "../i18n";
 import {
-  imageProviders,
+  type ImageProvider,
   ProviderError,
   type ProviderImage,
 } from "../providers";
-import { Button, SelectField } from "./ui/controls";
+import { Button } from "./ui/controls";
+import { LibraryImage } from "./LibraryImage";
+import type { CardDragSource } from "./GridCell";
 
 const topicIcons = {
   space: Orbit,
@@ -29,14 +28,24 @@ const topicIcons = {
 };
 
 export function OnlineImages({
+  provider,
   onImport,
+  selectionOnly = false,
+  gridClassName = "grid grid-cols-2 gap-2.5",
+  dragSource,
+  ...cardProps
 }: {
+  provider: ImageProvider;
   onImport: (image: ProviderImage, signal: AbortSignal) => Promise<void>;
-}) {
-  const provider = imageProviders[0]!;
-  const providerId = useId();
-  const searchLabelId = useId();
+  selectionOnly?: boolean;
+  gridClassName?: string;
+  dragSource?: CardDragSource;
+} & Pick<
+  ComponentProps<typeof LibraryImage>,
+  "gridStyle" | "captionRows" | "moving" | "onMoveStart" | "onTouchDrag"
+>) {
   const [query, setQuery] = useState("");
+  const [filtering, setFiltering] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(
     provider.browse[0]?.id ?? null,
   );
@@ -54,8 +63,43 @@ export function OnlineImages({
   const [importing, setImporting] = useState<string | null>(null);
   const importController = useRef<AbortController | null>(null);
   useEffect(() => () => importController.current?.abort(), []);
+  const importImage = async (image: ProviderImage) => {
+    const controller = new AbortController();
+    importController.current = controller;
+    setImporting(image.id);
+    setError("");
+    try {
+      await onImport(image, controller.signal);
+    } catch {
+      if (!controller.signal.aborted) setError(t("library.search.failed"));
+    } finally {
+      if (!controller.signal.aborted) setImporting(null);
+    }
+  };
   useEffect(() => {
-    if (!request) return;
+    if (selectedTopic !== null) return;
+    const timer = window.setTimeout(() => {
+      const filter = query.trim();
+      const fallback = provider.browse[0];
+      const nextRequest = filter
+        ? { query: filter, offset: 0 }
+        : fallback
+          ? { query: fallback.query, offset: 0 }
+          : null;
+      setFiltering(false);
+      setLoading(nextRequest !== null);
+      setHistory([]);
+      if (!filter) setSelectedTopic(fallback?.id ?? null);
+      setRequest(nextRequest);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [provider, query, selectedTopic]);
+  useEffect(() => {
+    if (!request) {
+      setImages([]);
+      setNext(undefined);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError("");
@@ -85,65 +129,47 @@ export function OnlineImages({
   }, [provider, request]);
 
   return (
-    <section aria-label={t("library.source.online")} className="min-w-0">
-      <SelectField
-        id={providerId}
-        label={t("library.search.provider")}
-        value={provider.id}
-        onChange={() => {}}
-        options={imageProviders.map((item) => ({
-          value: item.id,
-          label: item.name,
-        }))}
-      />
-      <p className="my-2 text-xs leading-5 text-(--muted)">
-        {t("library.search.privacy")}
-      </p>
-      <form
-        className="mb-3 flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!query.trim()) return;
-          setHistory([]);
-          setSelectedTopic(null);
-          setRequest({ query: query.trim(), offset: 0 });
-        }}
-      >
-        <div className="min-w-0 flex-1 text-sm">
-          <span id={searchLabelId}>{t("library.search.query")}</span>
-          <input
-            type="search"
-            aria-labelledby={searchLabelId}
-            value={query}
-            maxLength={160}
-            onChange={(event) => setQuery(event.target.value)}
-            className="mt-1 min-h-11 w-full min-w-0 focus:outline-none! focus:border-(--accent)"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={!query.trim()}
-          title={t("library.search.submit")}
-          aria-label={t("library.search.submit")}
-          className="size-11! shrink-0 p-0!"
-        >
-          <Search aria-hidden="true" />
-        </Button>
-      </form>
+    <section
+      aria-label={t("library.source.online")}
+      aria-busy={loading || filtering}
+      className="min-w-0"
+    >
+      <div className="relative mb-2">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-3 size-4! -translate-y-1/2 text-(--muted)"
+        />
+        <input
+          type="search"
+          aria-label={t("library.search.query")}
+          placeholder={t("library.search.query")}
+          value={query}
+          maxLength={160}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSelectedTopic(null);
+            setFiltering(true);
+            setError("");
+          }}
+          className="min-h-11 w-full min-w-0 pl-10! focus:outline-none! focus:border-(--accent)"
+        />
+      </div>
       <div
         role="group"
         aria-label={t("library.browse.title")}
-        className="mb-3 flex flex-wrap gap-2"
+        className="mb-3 flex flex-wrap gap-1"
       >
         {provider.browse.map((topic) => {
           const Icon = topicIcons[topic.id];
           return (
             <Button
               key={topic.id}
+              title={t(`library.browse.${topic.id}`)}
               aria-pressed={selectedTopic === topic.id}
               disabled={selectedTopic === topic.id && !error}
-              className="min-h-11 gap-1! px-2! text-xs! aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!"
+              className="size-8! p-0! aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!"
               onClick={() => {
+                setFiltering(false);
                 setSelectedTopic(topic.id);
                 setQuery("");
                 setHistory([]);
@@ -151,14 +177,11 @@ export function OnlineImages({
               }}
             >
               <Icon aria-hidden="true" />
-              {t(`library.browse.${topic.id}`)}
+              <span className="sr-only">{t(`library.browse.${topic.id}`)}</span>
             </Button>
           );
         })}
       </div>
-      <p className="mb-3 text-xs text-(--muted)">
-        {t("library.search.rights")}
-      </p>
       {error && (
         <p role="alert" className="text-sm">
           {error}
@@ -171,69 +194,53 @@ export function OnlineImages({
             ? t("library.search.empty")
             : ""}
       </div>
-      <div className="grid grid-cols-2 gap-3 min-[700px]:in-data-modal-scroll:grid-cols-3">
+      <div className={gridClassName}>
         {images.map((image) => (
-          <article
+          <LibraryImage
             key={image.id}
-            className="min-w-0 overflow-hidden rounded-md border border-solid border-(--line)"
-          >
-            <img
-              src={image.thumbnail}
-              alt={image.title}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              className="block aspect-square w-full object-contain bg-(--bg)"
-            />
-            <div className="p-2">
-              <h3 className="m-0 text-sm! leading-5! wrap-break-word">
-                {image.title}
-              </h3>
-              {image.creator && (
-                <p className="my-1 text-xs text-(--muted) wrap-break-word">
-                  {image.creator}
-                </p>
-              )}
-              <a
-                href={image.sourcePage}
-                target="_blank"
-                rel="noreferrer"
-                className="my-2 flex items-center gap-1 text-xs text-(--accent)"
-              >
-                <ExternalLink aria-hidden="true" className="size-3! shrink-0" />
-                {t("library.search.source")}
-              </a>
-              <span className="block text-xs text-(--muted)">
-                {image.license} &middot; {image.original.width} &times;{" "}
-                {image.original.height}
-              </span>
-              <Button
-                aria-label={t("library.search.import", { value1: image.title })}
-                title={t("library.search.import", { value1: image.title })}
-                disabled={importing !== null}
-                className="mt-2 min-h-11 w-full"
-                onClick={async () => {
-                  const controller = new AbortController();
-                  importController.current = controller;
-                  setImporting(image.id);
-                  setError("");
-                  try {
-                    await onImport(image, controller.signal);
-                  } catch {
-                    if (!controller.signal.aborted)
-                      setError(t("library.search.failed"));
-                  } finally {
-                    if (!controller.signal.aborted) setImporting(null);
+            {...cardProps}
+            asset={{
+              id: `provider:${image.provider}:${image.id}`,
+              category: "",
+              title: image.title,
+              src: image.thumbnail,
+              provenance: {
+                provider: image.provider,
+                entityId: image.id,
+                sourcePage: image.sourcePage,
+                originalUrl: image.original.url,
+                creator: image.creator,
+                license: image.license,
+                licenseUrl: image.licenseUrl,
+              },
+            }}
+            className="w-full"
+            disabled={importing !== null}
+            onTitle={(title) =>
+              setImages((current) =>
+                current.map((item) =>
+                  item.id === image.id ? { ...item, title } : item,
+                ),
+              )
+            }
+            onDelete={() => {}}
+            onImport={() => {
+              void importImage(image);
+            }}
+            onSelect={
+              selectionOnly
+                ? () => {
+                    void importImage(image);
                   }
-                }}
-              >
-                {importing === image.id ? (
-                  <LoaderCircle aria-hidden="true" className="animate-spin" />
-                ) : (
-                  <Download aria-hidden="true" />
-                )}
-              </Button>
-            </div>
-          </article>
+                : undefined
+            }
+            source={{ kind: "provider", image }}
+            dragAffected={
+              dragSource?.kind === "provider" &&
+              dragSource.image.provider === image.provider &&
+              dragSource.image.id === image.id
+            }
+          />
         ))}
       </div>
       {request && !loading && (

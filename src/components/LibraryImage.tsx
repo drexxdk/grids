@@ -16,6 +16,8 @@ export function LibraryImage({
   moving,
   dragAffected,
   onSelect,
+  onImport,
+  source,
   className = "max-[900px]:w-20.5 max-[900px]:shrink-0",
 }: {
   asset: Asset;
@@ -35,6 +37,8 @@ export function LibraryImage({
   moving?: boolean;
   dragAffected?: boolean;
   onSelect?: () => void;
+  onImport?: () => void;
+  source?: CardDragSource;
   className?: string;
 }) {
   return (
@@ -64,7 +68,7 @@ export function LibraryImage({
         onChoose={() => {}}
         onUpload={() => {}}
         onDrop={(event) => event.preventDefault()}
-        library={{ onDelete, disabled, onSelect }}
+        library={{ onDelete, disabled, onSelect, onImport, source }}
         onMoveStart={onMoveStart}
         onTouchDrag={onTouchDrag}
         moving={moving}

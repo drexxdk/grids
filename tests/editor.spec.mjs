@@ -486,12 +486,13 @@ async function mockCommons(page) {
   };
 }
 
-async function searchCommons(page, query) {
+async function searchCommons(page, query, waitForResults = true) {
   const online = page.getByRole("region", { name: "Online", exact: true });
   await online
     .getByRole("searchbox", { name: "Search images", exact: true })
     .fill(query);
-  await online.getByRole("button", { name: "Search", exact: true }).click();
+  if (waitForResults)
+    await expect(online).toHaveAttribute("aria-busy", "false");
   return online;
 }
 
@@ -507,7 +508,7 @@ for (const [mode, providerTest] of [
       await expect(page.locator("#board-grid")).toBeVisible();
       if (mode === "desktop") {
         await openSidebarPanel(page, "Images");
-        await selectField(page, "sidebar-image-source", "online");
+        await selectField(page, "sidebar-image-source", "commons");
         await expect(page.locator("#asset-library")).toBeHidden();
       } else {
         await page
@@ -520,15 +521,31 @@ for (const [mode, providerTest] of [
         expect(
           await page.evaluate(() => document.activeElement?.tagName),
         ).not.toBe("INPUT");
-        await selectField(page, "picker-image-source", "online");
+        await selectField(page, "picker-image-source", "commons");
       }
       const online = page.getByRole("region", { name: "Online", exact: true });
+      await expect(
+        online.locator("button[aria-haspopup='listbox']"),
+      ).toHaveCount(0);
+      await expect(
+        page.locator(
+          mode === "desktop" ? "#sidebar-image-source" : "#picker-image-source",
+        ),
+      ).toHaveText("Wikimedia Commons");
       const searchbox = online.getByRole("searchbox", {
         name: "Search images",
         exact: true,
       });
       await expect(searchbox).toHaveValue("");
-      await expect(online.locator("article")).toHaveCount(1);
+      await expect(online.locator("[data-library-image]")).toHaveCount(1);
+      await expect(online.locator("article")).toHaveCount(0);
+      await expect(
+        online.getByText("Public domain and CC0", { exact: true }),
+      ).toHaveCount(0);
+      await expect(online.locator("[data-library-thumbnail]")).toHaveJSProperty(
+        "draggable",
+        mode === "desktop",
+      );
       await expect(
         online.getByRole("button", { name: "Space", exact: true }),
       ).toHaveAttribute("aria-pressed", "true");
@@ -537,24 +554,52 @@ for (const [mode, providerTest] of [
           request.query.startsWith("NASA Earth space"),
         ),
       ).toBe(true);
-      const searchCaption = online.getByText("Search images", { exact: true });
-      await searchCaption.click();
-      await expect(searchbox).not.toBeFocused();
-      await expect(searchCaption.locator("..")).toHaveCSS(
-        "outline-style",
-        "none",
-      );
+      await expect(searchbox).toHaveAttribute("placeholder", "Search images");
+      await expect(
+        online.getByText("Search images", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        online.getByText(/Searches and image requests are sent/),
+      ).toHaveCount(0);
+      await expect(
+        online.getByRole("button", { name: "Search", exact: true }),
+      ).toHaveCount(0);
+      const fieldBounds = await searchbox.boundingBox();
+      const iconBounds = await searchbox
+        .locator("..")
+        .locator("svg")
+        .boundingBox();
+      expect(iconBounds.x).toBeGreaterThan(fieldBounds.x);
+      expect(iconBounds.x + iconBounds.width).toBeLessThan(fieldBounds.x + 40);
+      const topics = online.getByRole("group", {
+        name: "Browse topics",
+        exact: true,
+      });
+      for (const topic of await topics.getByRole("button").all()) {
+        const bounds = await topic.boundingBox();
+        expect(bounds.width).toBe(32);
+        expect(bounds.height).toBe(32);
+        await expect(topic).toHaveAttribute("title", /\S/);
+        await expect(topic.locator("span")).toHaveClass("sr-only");
+      }
       await searchbox.click();
       await expect(searchbox).toBeFocused();
       await expect(searchbox).toHaveCSS("outline-style", "none");
       await expect(searchbox).toHaveCSS("box-shadow", "none");
-      await expect(searchCaption.locator("..")).toHaveCSS(
-        "outline-style",
-        "none",
-      );
       await page.screenshot({
         path: testInfo.outputPath(`commons-${mode}-browse.png`),
       });
+      const beforeFilter = mock.requests.length;
+      await searchbox.fill("ear");
+      await searchCommons(page, "earth");
+      expect(mock.requests.slice(beforeFilter)).toHaveLength(1);
+      expect(mock.requests.at(-1).query).toMatch(/^earth/);
+      await searchCommons(page, "");
+      await expect(
+        online.getByRole("button", { name: "Space", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(mock.requests.at(-1).query).toMatch(/^NASA Earth space/);
+      await searchbox.fill("cancelled-filter");
       await online.getByRole("button", { name: "Nature", exact: true }).click();
       await expect(
         online.getByRole("button", { name: "Nature", exact: true }),
@@ -568,26 +613,46 @@ for (const [mode, providerTest] of [
         .toBe(true);
       await expect(searchbox).toHaveValue("");
       await expect(searchbox).not.toBeFocused();
-      await expect(online.locator("article")).toHaveCount(1);
+      await expect(online.locator("[data-library-image]")).toHaveCount(1);
       await searchCommons(page, "earth");
-      await expect(online.locator("article")).toHaveCount(1);
-      await expect(online.locator("article")).toContainText("Fixture creator");
-      await expect(online.locator("article img")).toHaveJSProperty(
+      expect(
+        mock.requests.some((request) =>
+          request.query.startsWith("cancelled-filter"),
+        ),
+      ).toBe(false);
+      await expect(online.locator("[data-library-image]")).toHaveCount(1);
+      await expect(
+        online.getByRole("link", { name: "Source and rights" }),
+      ).toHaveAttribute("title", "Fixture creator - Public domain");
+      await expect(online.locator("[data-library-image] img")).toHaveJSProperty(
         "naturalWidth",
         1200,
       );
       await online
         .getByRole("button", { name: "Next results", exact: true })
         .click();
-      await expect(online.locator("article")).toContainText("Moon");
+      await expect(online.locator(".library-heading")).toHaveValue("Moon");
       await online
         .getByRole("button", { name: "Previous results", exact: true })
         .click();
-      await expect(online.locator("article")).toContainText("Earth");
+      await expect(online.locator(".library-heading")).toHaveValue("Earth");
+      const importResult = async () => {
+        if (mode === "mobile") {
+          await online
+            .getByRole("button", { name: "Use Earth", exact: true })
+            .tap({ position: { x: 5, y: 5 } });
+        } else {
+          await page.mouse.move(0, 0);
+          await online
+            .getByRole("button", { name: "Image options: Earth", exact: true })
+            .hover({ position: { x: 5, y: 5 } });
+          await online
+            .getByRole("button", { name: "Import Earth", exact: true })
+            .click();
+        }
+      };
       mock.failDownload(true);
-      await online
-        .getByRole("button", { name: "Import Earth", exact: true })
-        .click();
+      await importResult();
       await expect(online.getByRole("alert")).toHaveText(
         "Could not import this image. Try another result.",
       );
@@ -596,9 +661,7 @@ for (const [mode, providerTest] of [
       await page.screenshot({
         path: testInfo.outputPath(`commons-${mode}-results.png`),
       });
-      await online
-        .getByRole("button", { name: "Import Earth", exact: true })
-        .click();
+      await importResult();
       if (mode === "desktop") {
         await selectField(page, "sidebar-image-source", "imported");
         await expect(
@@ -679,23 +742,208 @@ for (const [mode, providerTest] of [
   );
 }
 
+test("Commons cards share imported settings and support native mouse and touch drops", async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1080 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  try {
+    const mock = await mockCommons(page);
+    await page.goto("./");
+    await selectField(page, "sidebar-image-source", "commons");
+    const online = page.getByRole("region", { name: "Online", exact: true });
+    const remote = online.locator("[data-library-thumbnail]");
+    const cells = page.locator(".grid-cell");
+    await expect(remote).toHaveJSProperty("draggable", true);
+    await expect(online.locator("img")).toHaveJSProperty("naturalWidth", 1200);
+    await remote.dragTo(cells.nth(0).locator(".cell-image-button"), {
+      sourcePosition: { x: 5, y: 5 },
+    });
+    await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Earth");
+    await expect
+      .poll(async () => (await localDatabase(page)).images.length)
+      .toBe(1);
+
+    await openSidebarPanel(page, "Settings");
+    await selectField(page, "cell-font", "Boogaloo");
+    await page.locator("#cell-font-weight").press("End");
+    await page.locator("#cell-text-color-value").fill("#40b4aa");
+    await page.locator("#cell-text-color-value").press("Enter");
+    await page.locator("#cell-background-color-value").fill("#304050");
+    await page.locator("#cell-background-color-value").press("Enter");
+    await openSidebarPanel(page, "Images");
+    await page.evaluate(() => document.fonts.ready);
+    const metrics = (element) => {
+      const bounds = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const caption = getComputedStyle(
+        element.querySelector(".library-heading"),
+      );
+      const image = element
+        .querySelector("[data-card-image]")
+        .getBoundingClientRect();
+      const frame = getComputedStyle(
+        element.querySelector("[data-cell-image-frame] rect"),
+      );
+      return {
+        width: Math.round(bounds.width * 100) / 100,
+        height: Math.round(bounds.height * 100) / 100,
+        imageRatio: Math.round((image.width / image.height) * 100) / 100,
+        radius: style.borderRadius,
+        border: style.border,
+        font: caption.fontFamily,
+        weight: caption.fontWeight,
+        size: caption.fontSize,
+        color: caption.color,
+        background: caption.backgroundColor,
+        captionTop: caption.top,
+        captionHeight: caption.height,
+        padding: caption.padding,
+        frameStroke: frame.strokeWidth,
+        frameDash: frame.strokeDasharray,
+      };
+    };
+    const dimensions = new Set();
+    for (const [shape, ratio] of [
+      ["portrait", 0.75],
+      ["landscape", 1.33],
+      ["square", 1],
+    ]) {
+      await selectField(page, "image-shape", shape);
+      for (const position of [
+        "above",
+        "below",
+        "overlay-top",
+        "overlay-bottom",
+      ]) {
+        await selectField(page, "caption-position", position);
+        await selectField(page, "sidebar-image-source", "imported");
+        const imported = page.locator("#asset-library .asset");
+        await expect(imported.locator("img")).toHaveJSProperty(
+          "naturalWidth",
+          1200,
+        );
+        const expected = await imported.evaluate(metrics);
+        expect(Math.abs(expected.imageRatio - ratio)).toBeLessThan(0.02);
+        expect(expected.font).toContain("Boogaloo");
+        expect(expected.weight).toBe("700");
+        expect(expected.color).toBe("rgb(64, 180, 170)");
+        await selectField(page, "sidebar-image-source", "commons");
+        await expect(remote).toBeVisible();
+        await expect
+          .poll(() => online.locator(".asset").evaluate(metrics))
+          .toEqual(expected);
+        dimensions.add(expected.height);
+      }
+    }
+    expect(dimensions.size).toBeGreaterThan(2);
+    await remote.dragTo(cells.nth(1).locator(".cell-image-button"), {
+      sourcePosition: { x: 5, y: 5 },
+    });
+    await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Earth");
+    expect((await localDatabase(page)).images).toHaveLength(1);
+    await page.screenshot({
+      path: testInfo.outputPath("commons-shared-card-settings.png"),
+    });
+
+    await online
+      .getByRole("button", { name: "Next results", exact: true })
+      .click();
+    await expect(online.locator(".library-heading")).toHaveValue("Moon");
+    mock.failDownload(true);
+    await remote.dragTo(cells.nth(2).locator(".cell-image-button"), {
+      sourcePosition: { x: 5, y: 5 },
+    });
+    await expect(page.locator("[data-sonner-toast]")).toContainText(
+      "Could not import this image",
+    );
+    await expect(cells.nth(2).locator("img")).toHaveCount(0);
+    expect((await localDatabase(page)).images).toHaveLength(1);
+    mock.failDownload(false);
+    const session = await context.newCDPSession(page);
+    const touchDrop = async (cancel) => {
+      await remote.tap({ position: { x: 5, y: 5 } });
+      const handle = online.getByRole("button", {
+        name: "Drag image",
+        exact: true,
+      });
+      await expect(handle).toBeVisible();
+      const source = await handle.boundingBox();
+      const target = await cells
+        .nth(2)
+        .locator(".cell-image-button")
+        .boundingBox();
+      const start = {
+        x: source.x + source.width / 2,
+        y: source.y + source.height / 2,
+      };
+      const end = { x: target.x + 10, y: target.y + 10 };
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ ...start, id: 1 }],
+      });
+      for (let step = 1; step <= 8; step++)
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [
+            {
+              x: start.x + ((end.x - start.x) * step) / 8,
+              y: start.y + ((end.y - start.y) * step) / 8,
+              id: 1,
+            },
+          ],
+        });
+      await expect(page.locator("[data-drag-floating]")).toBeVisible();
+      await expect(cells.nth(2)).toHaveClass(/drag-over/);
+      await session.send("Input.dispatchTouchEvent", {
+        type: cancel ? "touchCancel" : "touchEnd",
+        touchPoints: [],
+      });
+      await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
+    };
+    await touchDrop(true);
+    await expect(cells.nth(2).locator("img")).toHaveCount(0);
+    expect((await localDatabase(page)).images).toHaveLength(1);
+    await touchDrop(false);
+    await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Moon");
+    await expect
+      .poll(async () => (await localDatabase(page)).images.length)
+      .toBe(2);
+    await expect(online.locator(".library-heading")).toHaveValue("Moon");
+    await page.reload();
+    await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Moon");
+    expect(
+      (await localDatabase(page)).document.assets
+        .map((asset) => asset.provenance.entityId)
+        .sort(),
+    ).toEqual(["1", "2"]);
+    await session.detach();
+  } finally {
+    await context.close();
+  }
+});
+
 test("Commons ignores stale searches and isolates empty malformed quota and offline failures", async ({
   page,
 }) => {
   const mock = await mockCommons(page);
   await page.goto("./");
   await openSidebarPanel(page, "Images");
-  await selectField(page, "sidebar-image-source", "online");
-  const online = await searchCommons(page, "slow");
+  await selectField(page, "sidebar-image-source", "commons");
+  const online = await searchCommons(page, "slow", false);
   await expect
     .poll(() =>
       mock.requests.some((request) => request.query.startsWith("slow")),
     )
     .toBe(true);
   await searchCommons(page, "earth");
-  await expect(online.locator("article")).toContainText("Earth");
+  await expect(online.locator(".library-heading")).toHaveValue("Earth");
   page.emit("commons-release");
-  await expect(online.locator("article")).not.toContainText("Stale");
+  await expect(online.locator(".library-heading")).not.toHaveValue("Stale");
   await searchCommons(page, "empty");
   await expect(online.getByRole("status")).toHaveText(
     "No eligible images found. Try another search.",
@@ -711,7 +959,7 @@ test("Commons ignores stale searches and isolates empty malformed quota and offl
   await expect(online.getByRole("alert")).toContainText("rate limiting");
   expect(mock.requests).toHaveLength(requestsBefore);
   await page.context().setOffline(true);
-  await searchCommons(page, "earth");
+  await searchCommons(page, "offline");
   await expect(online.getByRole("alert")).toHaveText(
     "You are offline. Imported images are still available.",
   );
@@ -1149,7 +1397,7 @@ test("settings have open sections and joined appearance radio grids", async ({
   }
 });
 
-test("header actions stay top right with branding in the aside and panel-open and close toggles", async ({
+test("header actions stay top right with responsive branding and panel-open and close toggles", async ({
   page,
 }, testInfo) => {
   await setEditorViewport(page, { width: 1440, height: 900 });
@@ -1172,11 +1420,12 @@ test("header actions stay top right with branding in the aside and panel-open an
     sidebar.getByRole("button", { name: "Export grid", exact: true }),
   ).toHaveCount(0);
   await expect(sidebar.getByRole("tab")).toHaveCount(2);
-  const brand = sidebar.getByRole("link", { name: "Grids", exact: true });
+  const brand = header.getByRole("link", { name: "Grids", exact: true });
   await expect(brand).toBeVisible();
+  await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(
-    header.getByRole("link", { name: "Grids", exact: true }),
-  ).toHaveCount(0);
+    page.getByRole("link", { name: "Grids", exact: true }),
+  ).toHaveCount(1);
   await expect(
     sidebar.getByRole("tab", { name: "Images", exact: true }),
   ).toHaveJSProperty("disabled", true);
@@ -1194,9 +1443,7 @@ test("header actions stay top right with branding in the aside and panel-open an
   ).toBe(900);
   await expect(exportButton.locator("span")).toBeVisible();
   await expect(exportButton).toHaveText("Export grid");
-  expect((await brand.boundingBox()).x).toBe(
-    (await sidebar.boundingBox()).x + 17,
-  );
+  expect((await brand.boundingBox()).x).toBe(headerBounds.x + 12);
   expect(
     (await exportButton.boundingBox()).x +
       (await exportButton.boundingBox()).width +
@@ -1223,7 +1470,7 @@ test("header actions stay top right with branding in the aside and panel-open an
   await expect(show.locator("svg")).toHaveClass(/lucide-panel-right-open/);
   expect(await show.boundingBox()).toEqual(oldToggle);
   expect(await header.boundingBox()).toEqual(headerBounds);
-  await expect(brand).toHaveCount(0);
+  await expect(brand).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("desktop-toolbar-sidebar-closed.png"),
   });
@@ -1256,7 +1503,6 @@ test("header actions stay top right with branding in the aside and panel-open an
     const settings = page.locator("[data-editor-settings]");
     await expect(settings).toBeVisible();
     const toolbar = settings.locator("[data-sidebar-sticky]");
-    await expect(toolbar).toBeVisible();
     await expect(settings.locator("[data-modal-toolbar]")).toHaveCount(0);
     await expect(
       settings.getByRole("button", { name: "Close sidebar", exact: true }),
@@ -1274,10 +1520,6 @@ test("header actions stay top right with branding in the aside and panel-open an
       settings.getByRole("button", { name: "Close dialog", exact: true }),
     ).toHaveCount(0);
     await expect(settings.getByRole("tab")).toHaveCount(0);
-    expect((await toolbar.boundingBox()).y).toBeCloseTo(
-      beforeHeader.y + beforeHeader.height,
-      1,
-    );
     const mobileBrand = toolbar.getByRole("link", {
       name: "Grids",
       exact: true,
@@ -1286,12 +1528,27 @@ test("header actions stay top right with branding in the aside and panel-open an
       name: "Export grid",
       exact: true,
     });
-    await expect(mobileBrand).toBeVisible();
     await expect(mobileExport).toHaveCount(0);
-    expect((await mobileBrand.boundingBox()).x).toBeCloseTo(
-      (await settings.boundingBox()).x + 17,
-      1,
-    );
+    await expect(
+      page.getByRole("link", { name: "Grids", exact: true }),
+    ).toHaveCount(1);
+    if (width !== 390) {
+      await expect(brand).toBeVisible();
+      await expect(toolbar).toBeEmpty();
+      await expect(settings.locator("[data-sidebar-brand]")).toHaveCount(0);
+    } else {
+      await expect(brand).toHaveCount(0);
+      await expect(toolbar).toBeVisible();
+      await expect(mobileBrand).toBeVisible();
+      expect((await toolbar.boundingBox()).y).toBeCloseTo(
+        beforeHeader.y + beforeHeader.height,
+        1,
+      );
+      expect((await mobileBrand.boundingBox()).x).toBeCloseTo(
+        (await settings.boundingBox()).x + 17,
+        1,
+      );
+    }
     const mobileToggle = header.getByRole("button", {
       name: "Close sidebar",
       exact: true,
@@ -1456,7 +1713,7 @@ test("mobile sidebar keeps the header opaque throughout opening and closing", as
         opacity *= Number(getComputedStyle(element).opacity);
       window.toolbarFrames.push({
         opacity,
-        brand: Boolean(header?.querySelector(".brand")),
+        brand: header?.dataset.brandPlacement === "header",
         aside: Boolean(document.querySelector("[data-editor-settings]")),
         bounds: header?.getBoundingClientRect().toJSON(),
       });
@@ -1485,11 +1742,11 @@ test("mobile sidebar keeps the header opaque throughout opening and closing", as
       ),
   );
   expect(frames.length).toBeGreaterThan(1);
-  expect(frames.every((frame) => frame.opacity === 1 && !frame.brand)).toBe(
+  expect(frames.every((frame) => frame.opacity === 1 && frame.brand)).toBe(
     true,
   );
   expect(frames.some((frame) => frame.aside)).toBe(true);
-  expect(frames.some((frame) => !frame.aside && !frame.brand)).toBe(true);
+  expect(frames.some((frame) => !frame.aside && frame.brand)).toBe(true);
   expect(
     frames.every(
       (frame) =>
@@ -1503,14 +1760,14 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
 }, testInfo) => {
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
-  const header = sidebar.locator("[data-sidebar-sticky] > div").first();
+  const header = page.locator("[data-canvas-header]");
   const commands = sidebar.getByRole("tablist", {
     name: "Editor panels",
     exact: true,
   });
   await expect(sidebar.getByRole("tablist")).toHaveCount(1);
-  await expect(header.getByRole("button")).toHaveCount(0);
   await expect(header.getByRole("tab")).toHaveCount(0);
+  await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(
     header.getByRole("link", { name: "Grids", exact: true }),
   ).toBeVisible();
@@ -1531,15 +1788,15 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
   ]) {
     await expect(control).toHaveAttribute("title", title);
     await expect(control.locator("svg")).toHaveCount(1);
-    await expect(control).toHaveCSS("height", "80px");
-    await expect(control).toHaveCSS("flex-direction", "column");
+    await expect(control).toHaveCSS("height", "44px");
+    await expect(control).toHaveCSS("flex-direction", "row");
     await expect(control.locator("span")).toHaveCSS("position", "static");
     expect(
       await control.evaluate((element) => {
         const icon = element.querySelector("svg").getBoundingClientRect();
         const label = element.querySelector("span");
         return (
-          icon.bottom <= label.getBoundingClientRect().top &&
+          icon.right <= label.getBoundingClientRect().left &&
           label.scrollWidth <= label.clientWidth
         );
       }),
@@ -1817,8 +2074,11 @@ test("sticky padded sidebar controls stay above scrolling images", async ({
   const sticky = sidebar.locator("[data-sidebar-sticky]");
   const controls = sidebar.locator("[data-panel-controls]");
   await expect(
-    sticky.getByRole("link", { name: "Grids", exact: true }),
+    page
+      .locator("[data-canvas-header]")
+      .getByRole("link", { name: "Grids", exact: true }),
   ).toBeVisible();
+  await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(controls).toHaveCSS("padding-top", "16px");
   await expect(controls).toHaveCSS("padding-bottom", "16px");
   await expect(sidebar).toHaveCSS("overflow-y", "auto");
@@ -2039,6 +2299,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
 test("right sidebar switches images and settings with an image source dropdown", async ({
   page,
 }) => {
+  await mockCommons(page);
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
   const images = sidebar.getByRole("tab", { name: "Images", exact: true });
@@ -2062,8 +2323,36 @@ test("right sidebar switches images and settings with an image source dropdown",
       .boundingBox();
     expect(workspace.x).toBe(0);
     expect(workspace.width).toBe(width - 350);
+    const sourceBounds = await page
+      .locator("#sidebar-image-source")
+      .boundingBox();
+    const imagesBounds = await page.locator("#asset-library").boundingBox();
+    expect(imagesBounds.y - sourceBounds.y - sourceBounds.height).toBeCloseTo(
+      16,
+      1,
+    );
+    await expect(page.locator("#asset-library")).toHaveCSS("row-gap", "10px");
+    await expect(page.locator("#asset-library")).toHaveCSS(
+      "column-gap",
+      "10px",
+    );
+    expect(
+      await page.locator("#sidebar-image-source").evaluate((element) => {
+        const content = element.closest("[data-sidebar-content]");
+        const label = content.querySelector(".field-label");
+        const controls = document.querySelector("[data-panel-controls]");
+        return (
+          label.getBoundingClientRect().top -
+          controls.getBoundingClientRect().bottom
+        );
+      }),
+    ).toBe(0);
   }
   await page.locator("#sidebar-image-source").click();
+  await expect(page.getByRole("option")).toHaveText([
+    "Imported",
+    "Wikimedia Commons",
+  ]);
   await expect(
     page.getByRole("option", { name: "Imported", exact: true }),
   ).toBeVisible();
@@ -2071,8 +2360,8 @@ test("right sidebar switches images and settings with an image source dropdown",
     page.getByRole("option", { name: "Imported", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("option", { name: "Online", exact: true }),
-  ).toBeDisabled();
+    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("listbox").press("Escape");
   await page.locator("#upload").setInputFiles({
     name: "panel-image.svg",
@@ -2082,8 +2371,29 @@ test("right sidebar switches images and settings with an image source dropdown",
     ),
   });
   await expect(sidebar.locator(".asset")).toHaveCount(1);
+  await selectField(page, "sidebar-image-source", "commons");
+  await expect(
+    page.getByRole("region", { name: "Online", exact: true }),
+  ).toBeVisible();
+  await expect(
+    sidebar.locator("button[aria-haspopup='listbox']:visible"),
+  ).toHaveCount(1);
+  await selectField(page, "sidebar-image-source", "imported");
+  await expect(sidebar.locator(".asset")).toBeVisible();
   await settings.click();
   await expect(page.locator("#sidebar-image-source")).toBeHidden();
+  expect(
+    await sidebar
+      .getByRole("group", { name: "Canvas style", exact: true })
+      .locator("h3")
+      .evaluate(
+        (element) =>
+          element.getBoundingClientRect().top -
+          document
+            .querySelector("[data-panel-controls]")
+            .getBoundingClientRect().bottom,
+      ),
+  ).toBe(0);
   await page.locator("#background-value").fill("#112233");
   await page.locator("#background-value").press("Enter");
   await images.click();
@@ -2125,6 +2435,16 @@ test("header hides Export text before wrapping only when the buttons no longer f
   page,
 }, testInfo) => {
   await page.goto("./");
+  await expect(page.locator("[data-canvas-header]")).toHaveAttribute(
+    "data-brand-placement",
+    "header",
+  );
+  await expect(
+    page
+      .locator("[data-canvas-header]")
+      .getByRole("link", { name: "Grids", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("[data-sidebar-brand]")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Close sidebar", exact: true })
     .click();
@@ -2147,9 +2467,10 @@ test("header hides Export text before wrapping only when the buttons no longer f
     Math.max(...initialBounds.map((bounds) => bounds.x + bounds.width)) -
     Math.min(...initialBounds.map((bounds) => bounds.x));
   const modes = new Set();
+  const brandPlacements = new Set();
   for (const width of [
-    760, 700, 691, 650, 600, 520, 500, 480, 440, 390, 260, 390, 440, 480, 500,
-    520, 600, 650, 691, 700, 760,
+    760, 700, 691, 650, 600, 520, 500, 480, 440, 390, 320, 260, 320, 390, 440,
+    480, 500, 520, 600, 650, 691, 700, 760,
   ]) {
     await setEditorViewport(page, { width, height: 720 });
     const mode = await header.getAttribute("data-header-layout");
@@ -2161,6 +2482,42 @@ test("header hides Export text before wrapping only when the buttons no longer f
         element.getBoundingClientRect().left + element.clientWidth / 2,
     );
     const requiredRight = center + controlsWidth / 2 + 8;
+    const brandBounds = await header
+      .locator("[data-header-brand]")
+      .boundingBox();
+    const brandLimit =
+      mode === "wrapped" ? actionBounds.x : center - controlsWidth / 2;
+    const fitsBrand =
+      mode !== "shifted" && brandBounds.x + brandBounds.width + 8 <= brandLimit;
+    await expect(header).toHaveAttribute(
+      "data-brand-placement",
+      fitsBrand ? "header" : "aside",
+    );
+    brandPlacements.add(await header.getAttribute("data-brand-placement"));
+    const visibleBrand = header.getByRole("link", {
+      name: "Grids",
+      exact: true,
+    });
+    if (fitsBrand) {
+      await expect(visibleBrand).toBeVisible();
+      expect(brandBounds.x).toBeCloseTo((await header.boundingBox()).x + 12, 1);
+      expect(brandBounds.x + brandBounds.width + 8).toBeLessThanOrEqual(
+        brandLimit,
+      );
+    } else await expect(visibleBrand).toHaveCount(0);
+    if (mode !== "shifted") {
+      const bounds = await Promise.all(
+        buttons.map((button) => button.boundingBox()),
+      );
+      expect(
+        Math.abs(
+          (Math.min(...bounds.map((bound) => bound.x)) +
+            Math.max(...bounds.map((bound) => bound.x + bound.width))) /
+            2 -
+            center,
+        ),
+      ).toBeLessThan(1);
+    }
     const leftRequiredRight =
       (await controls.boundingBox()).x + 12 + controlsWidth + 8;
     if (mode === "wrapped") {
@@ -2197,12 +2554,13 @@ test("header hides Export text before wrapping only when the buttons no longer f
       }
     }
     await expect(exporter).toHaveAccessibleName("Export grid");
-    if ([700, 600, 520, 440, 390].includes(width))
+    if ([700, 600, 520, 440, 390, 320, 260].includes(width))
       await header.screenshot({
         path: testInfo.outputPath(`header-${width}.png`),
       });
   }
   expect([...modes].sort()).toEqual(["full", "icon", "shifted", "wrapped"]);
+  expect([...brandPlacements].sort()).toEqual(["aside", "header"]);
 });
 
 test("canvas preview fits both row and column changes without resizing controls", async ({
@@ -4845,7 +5203,7 @@ test("precise image frames and thin caption feedback stay independent", async ({
   }
 });
 
-test("captions wrap at a fixed size and share height across canvas, library and export", async ({
+test("captions share external bands and fit individual overlays across canvas, library and export", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -4880,7 +5238,7 @@ test("captions wrap at a fixed size and share height across canvas, library and 
       });
   for (const width of [960, 780]) {
     await setEditorViewport(page, { width, height: 1080 });
-    for (const placement of ["above", "below", "overlay-bottom"]) {
+    for (const placement of ["above", "below"]) {
       await selectField(page, "caption-position", placement);
       await expect
         .poll(() =>
@@ -4936,6 +5294,36 @@ test("captions wrap at a fixed size and share height across canvas, library and 
       }
       await expect(page.locator(".cell-heading").nth(1)).toHaveValue(multiline);
     }
+    for (const shape of ["portrait", "landscape", "square"]) {
+      await selectField(page, "image-shape", shape);
+      for (const position of ["overlay-top", "overlay-bottom"]) {
+        await selectField(page, "caption-position", position);
+        const captions = page.locator(".cell-heading");
+        await expect
+          .poll(() =>
+            captions
+              .nth(1)
+              .evaluate(
+                (field) => field.scrollHeight <= field.clientHeight + 1,
+              ),
+          )
+          .toBe(true);
+        const short = await captions.first().boundingBox();
+        const long = await captions.nth(1).boundingBox();
+        expect(short.height).toBeLessThan(long.height);
+        const card = await page.locator(".grid-cell").nth(1).boundingBox();
+        expect(card.height - long.height).toBeGreaterThanOrEqual(
+          card.width * 0.5 - 1,
+        );
+        if (shape === "landscape") {
+          const font = await captions
+            .nth(1)
+            .evaluate((field) => parseFloat(getComputedStyle(field).fontSize));
+          expect(font).toBeLessThan(long.width * 0.11);
+        }
+      }
+    }
+    await selectField(page, "image-shape", "square");
     await selectField(page, "caption-position", "above");
     await page.screenshot({
       path: testInfo.outputPath(`multiline-cards-${width}.png`),
@@ -4980,6 +5368,38 @@ test("captions wrap at a fixed size and share height across canvas, library and 
       (entry) => entry.text === "Short" && parseFloat(entry.font) === 16.5,
     ),
   ).toBe(true);
+  await selectField(page, "image-shape", "landscape");
+  for (const position of ["overlay-top", "overlay-bottom"]) {
+    await selectField(page, "caption-position", position);
+    const expectedFont = await page
+      .locator(".cell-heading")
+      .nth(1)
+      .evaluate(
+        (field) =>
+          (parseFloat(getComputedStyle(field).fontSize) /
+            field.getBoundingClientRect().width) *
+          150,
+      );
+    await page.evaluate(() => {
+      window.captionDrawing = [];
+    });
+    await downloadBoard(page);
+    const overlayDrawing = await page.evaluate(() => window.captionDrawing);
+    for (const line of multiline.split("\n")) {
+      const entry = overlayDrawing.find((entry) => entry.text === line);
+      expect(entry).toBeTruthy();
+      expect(
+        Math.abs(Number(entry.font.match(/([\d.]+)px/)[1]) - expectedFont) *
+          multiline.split("\n").length *
+          1.05,
+      ).toBeLessThan(1);
+    }
+    expect(
+      overlayDrawing.some(
+        (entry) => entry.text === "Short" && parseFloat(entry.font) === 16.5,
+      ),
+    ).toBe(true);
+  }
 });
 
 test("small library caption clicks retain caret focus after image hover", async ({
@@ -6990,7 +7410,7 @@ touchTest(
     await expect(sources).toHaveCSS("border-radius", "4px");
     await sources.click();
     await expect(
-      page.getByRole("option", { name: "Online", exact: true }),
+      page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
     ).toBeEnabled();
     await page.getByRole("listbox").press("Escape");
     await expect(picker.locator("[data-upload-tile]")).toBeVisible();
@@ -7420,6 +7840,66 @@ test("touch cell overlays target the tapped image without autofocus", async ({
       path: testInfo.outputPath(`cell-${position}-hover.png`),
     });
   }
+  const caption = page.locator(".grid-cell").nth(2).locator(".cell-heading");
+  await caption.fill("One\nTwo\nThree\nFour\nFive\nSix");
+  for (const shape of ["portrait", "landscape", "square"]) {
+    await selectField(page, "image-shape", shape);
+    for (const position of ["overlay-top", "overlay-bottom"]) {
+      await selectField(page, "caption-position", position);
+      const bounds = await image.boundingBox();
+      await image.tap({
+        position: {
+          x: 5,
+          y: position === "overlay-top" ? bounds.height - 5 : 5,
+        },
+      });
+      await expect(tools).toBeVisible();
+      const buttons = await tools.locator("button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x, y, width, height };
+        }),
+      );
+      expect(buttons).toHaveLength(4);
+      const heading = await caption.boundingBox();
+      for (const [index, button] of buttons.entries()) {
+        expect(button.width).toBeGreaterThan(bounds.width * 0.15);
+        if (position === "overlay-top")
+          expect(button.y - heading.y - heading.height).toBeGreaterThan(
+            bounds.width * 0.04 - 1,
+          );
+        else
+          expect(heading.y - button.y - button.height).toBeGreaterThan(
+            bounds.width * 0.04 - 1,
+          );
+        for (const other of buttons.slice(index + 1)) {
+          const horizontal = Math.max(
+            0,
+            button.x - other.x - other.width,
+            other.x - button.x - button.width,
+          );
+          const vertical = Math.max(
+            0,
+            button.y - other.y - other.height,
+            other.y - button.y - button.height,
+          );
+          expect(Math.hypot(horizontal, vertical)).toBeGreaterThan(
+            bounds.width * 0.04 - 1,
+          );
+        }
+      }
+      await expect
+        .poll(() =>
+          caption.evaluate(
+            (field) => field.scrollHeight <= field.clientHeight + 1,
+          ),
+        )
+        .toBe(true);
+    }
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("capped-caption-tools-mobile.png"),
+  });
   await context.close();
 });
 
@@ -7441,8 +7921,8 @@ test("image source dropdown fits narrow panels without category filters", async 
   await expect(source).toHaveText("Imported");
   await source.click();
   await expect(
-    page.getByRole("option", { name: "Online", exact: true }),
-  ).toBeDisabled();
+    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("listbox").press("Escape");
   const assertContained = async () => {
     await expect
@@ -10112,8 +10592,8 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
   await expect(picker.locator("#picker-image-source")).toHaveText("Imported");
   await picker.locator("#picker-image-source").click();
   await expect(
-    page.getByRole("option", { name: "Online", exact: true }),
-  ).toBeDisabled();
+    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("listbox").press("Escape");
   await expect(picker.getByRole("tab", { name: /Choose|Library/ })).toHaveCount(
     0,

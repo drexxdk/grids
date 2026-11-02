@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { t } from "../../i18n";
+import { imageProviders } from "../../providers";
 import { SelectField } from "./controls";
 
 export function ImageSourceSelect({
@@ -19,11 +20,11 @@ export function ImageSourceSelect({
       onChange={onChange ?? (() => {})}
       options={[
         { value: "imported", label: t("library.source.imported") },
-        {
-          value: "online",
-          label: t("library.source.online"),
+        ...imageProviders.map((provider) => ({
+          value: provider.id,
+          label: provider.name,
           disabled: !onChange,
-        },
+        })),
       ]}
     />
   );

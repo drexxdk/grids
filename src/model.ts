@@ -137,7 +137,8 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
         ? 4 / 3
         : 1;
   const imageHeight = Math.round(width / aspectRatio);
-  const captionHeight =
+  const placement = style.captionPlacement ?? "below";
+  const requestedCaptionHeight =
     captionRows === 0
       ? 0
       : Math.max(
@@ -147,8 +148,14 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
               (((style.cellFontSize ?? 11) / 100) * 1.05 * captionRows + 0.11),
           ),
         );
-  const overlayHeight = Math.max(imageHeight, captionHeight);
-  const placement = style.captionPlacement ?? "below";
+  const captionHeight =
+    placement === "overlay"
+      ? Math.min(
+          requestedCaptionHeight,
+          Math.max(0, imageHeight - Math.ceil(width * 0.5)),
+        )
+      : requestedCaptionHeight;
+  const overlayHeight = imageHeight;
   const captionTop =
     placement === "above"
       ? 0

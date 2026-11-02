@@ -91,19 +91,43 @@ export function layoutCaption(
   width: number,
   sizePercent = 11,
   fontWeight = 400,
+  maximumHeight = Infinity,
 ) {
-  const fontSize = (width * sizePercent) / 100;
+  let fontSize = (width * sizePercent) / 100;
   context.letterSpacing = "0px";
   context.font = `${fontWeight} ${fontSize}px "${font}"`;
-  return {
-    fontSize,
-    lines: wrapTitle(
+  let lines = wrapTitle(
+    context,
+    title,
+    width - captionPadding(width).horizontal * 2,
+    true,
+  );
+  if (lines.length * fontSize * 1.05 > maximumHeight) {
+    let lower = 0;
+    let upper = fontSize;
+    for (let iteration = 0; iteration < 16; iteration++) {
+      const candidate = (lower + upper) / 2;
+      context.font = `${fontWeight} ${candidate}px "${font}"`;
+      const candidateLines = wrapTitle(
+        context,
+        title,
+        width - captionPadding(width).horizontal * 2,
+        true,
+      );
+      if (candidateLines.length * candidate * 1.05 <= maximumHeight)
+        lower = candidate;
+      else upper = candidate;
+    }
+    fontSize = lower;
+    context.font = `${fontWeight} ${fontSize}px "${font}"`;
+    lines = wrapTitle(
       context,
       title,
       width - captionPadding(width).horizontal * 2,
       true,
-    ),
-  };
+    );
+  }
+  return { fontSize, lines };
 }
 export function sharedCaptionRows(
   item: Board,
@@ -174,7 +198,15 @@ function drawTitle(
 ) {
   context.letterSpacing = "0.5px";
   const { fontSize, lines } = caption
-    ? layoutCaption(context, title, font, width, captionSizePercent, fontWeight)
+    ? layoutCaption(
+        context,
+        title,
+        font,
+        width,
+        captionSizePercent,
+        fontWeight,
+        height - padding.vertical * 2,
+      )
     : fitTitle(
         context,
         title,
@@ -266,7 +298,18 @@ export async function createExport(
     const geometry = cellGeometry(
       item,
       size,
-      entry.title.trim() ? captionRows : 0,
+      entry.title.trim()
+        ? item.captionPlacement === "overlay"
+          ? layoutCaption(
+              context,
+              entry.title,
+              item.cellFont,
+              size,
+              item.cellFontSize,
+              resolveFontWeight(item.cellFont, item.cellFontWeight),
+            ).lines.length
+          : captionRows
+        : 0,
     );
     const left = padding + (index % item.columns) * (size + gap);
     const top =

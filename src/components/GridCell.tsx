@@ -1,6 +1,7 @@
 import { t } from "../i18n";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { Crop, ImagePlus, Move, Trash2 } from "lucide-react";
+import { Crop, Download, ImagePlus, Move, Trash2 } from "lucide-react";
+import type { ProviderImage } from "../providers";
 import { useDrag } from "@use-gesture/react";
 import {
   useEffect,
@@ -44,7 +45,8 @@ export function useCoarsePointer() {
 
 export type CardDragSource =
   | { kind: "cell"; gridId: string; cellId: string }
-  | { kind: "asset"; assetId: string };
+  | { kind: "asset"; assetId: string }
+  | { kind: "provider"; image: ProviderImage };
 
 export type CardDragVisual = {
   cell: Cell;
@@ -93,7 +95,13 @@ export function GridCell({
   onUpload: () => void;
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   canChoose: boolean;
-  library?: { onDelete: () => void; disabled: boolean; onSelect?: () => void };
+  library?: {
+    onDelete: () => void;
+    disabled: boolean;
+    onSelect?: () => void;
+    onImport?: () => void;
+    source?: CardDragSource;
+  };
   captionRows?: number;
   onMoveStart?: (source: CardDragSource, visual: CardDragVisual) => void;
   onTouchDrag?: (
@@ -113,6 +121,7 @@ export function GridCell({
   const trigger = useRef<HTMLButtonElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
+  const [overlayCaptionRows, setOverlayCaptionRows] = useState(1);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   const touchDragged = useRef(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -128,7 +137,7 @@ export function GridCell({
       const notify = () =>
         onTouchDrag(
           library
-            ? { kind: "asset", assetId: asset.id }
+            ? (library.source ?? { kind: "asset", assetId: asset.id })
             : { kind: "cell", gridId, cellId: cell.id },
           {
             cell,
@@ -193,7 +202,11 @@ export function GridCell({
   useEffect(() => {
     if (cropTarget && cropTarget !== asset?.id) setCropTarget(null);
   }, [asset?.id, cropTarget]);
-  const geometry = cellGeometry(gridStyle, 600, captionRows);
+  const geometry = cellGeometry(
+    gridStyle,
+    600,
+    gridStyle.captionPlacement === "overlay" ? overlayCaptionRows : captionRows,
+  );
   const cropRectangle =
     cell.crop && imageSize.width && imageSize.height
       ? sourceRectangle(
@@ -244,6 +257,17 @@ export function GridCell({
       if (!context) return;
       const bounds = field.getBoundingClientRect();
       const padding = captionPadding(bounds.width);
+      if (overlay)
+        setOverlayCaptionRows(
+          layoutCaption(
+            context,
+            cell.title || "Add heading",
+            gridStyle.cellFont,
+            600,
+            gridStyle.cellFontSize,
+            resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
+          ).lines.length,
+        );
       const { fontSize, lines } = layoutCaption(
         context,
         cell.title || "Add heading",
@@ -251,6 +275,7 @@ export function GridCell({
         bounds.width,
         gridStyle.cellFontSize,
         resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
+        overlay ? bounds.height - padding.vertical * 2 : Infinity,
       );
       field.style.fontSize = `${fontSize}px`;
       field.style.paddingLeft =
@@ -278,6 +303,8 @@ export function GridCell({
     gridStyle.cellFontWeight,
     geometry.height,
     geometry.captionTop,
+    geometry.captionHeight,
+    overlay,
   ]);
   return (
     <Popover
@@ -493,7 +520,10 @@ export function GridCell({
                     });
                     onMoveStart?.(
                       library
-                        ? { kind: "asset", assetId: asset.id }
+                        ? (library.source ?? {
+                            kind: "asset",
+                            assetId: asset.id,
+                          })
                         : { kind: "cell", gridId, cellId: cell.id },
                       {
                         cell,
@@ -515,6 +545,9 @@ export function GridCell({
                   <img
                     className="pointer-events-none rounded-none! border-0!"
                     src={asset.src}
+                    referrerPolicy={
+                      asset.provenance ? "no-referrer" : undefined
+                    }
                     alt={cell.title || asset.title}
                     onLoad={(event) =>
                       setImageSize({
@@ -604,6 +637,7 @@ export function GridCell({
                         overlay && alignment === "bottom"
                           ? "4.5cqw"
                           : "var(--card-tool-inset)",
+                      "--cell-tool-space": `calc((${(toolSpace / 600) * 100}cqw - var(--card-tool-top-inset) - var(--card-tool-bottom-inset) - 4.5cqw) / 2)`,
                       top: `${(toolTop / geometry.imageHeight) * 100}%`,
                       bottom: `${(toolBottom / geometry.imageHeight) * 100}%`,
                     } as React.CSSProperties
@@ -663,28 +697,37 @@ export function GridCell({
                       variant="icon"
                       className={`pointer-events-auto absolute right-(--card-tool-inset) top-(--card-tool-top-inset) ${library ? "size-11!" : "size-[min(25cqw,var(--cell-tool-space))]!"} p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white backdrop-blur-sm enabled:hover:bg-black/75! [&_svg]:size-[40%]!`}
                       aria-label={
-                        library
-                          ? t("cell.actions.deleteImage", {
-                              value1: asset?.title,
-                            })
-                          : t("cell.actions.clear")
+                        library?.onImport
+                          ? t("library.search.import", { value1: asset?.title })
+                          : library
+                            ? t("cell.actions.deleteImage", {
+                                value1: asset?.title,
+                              })
+                            : t("cell.actions.clear")
                       }
                       disabled={library?.disabled}
                       title={
-                        library
-                          ? t("cell.actions.deleteImage", {
-                              value1: asset?.title,
-                            })
-                          : t("cell.actions.clear")
+                        library?.onImport
+                          ? t("library.search.import", { value1: asset?.title })
+                          : library
+                            ? t("cell.actions.deleteImage", {
+                                value1: asset?.title,
+                              })
+                            : t("cell.actions.clear")
                       }
                       onClick={() => {
                         setHoverTools(false);
                         close();
-                        if (library) library.onDelete();
+                        if (library?.onImport) library.onImport();
+                        else if (library) library.onDelete();
                         else onClear();
                       }}
                     >
-                      <Trash2 aria-hidden="true" />
+                      {library?.onImport ? (
+                        <Download aria-hidden="true" />
+                      ) : (
+                        <Trash2 aria-hidden="true" />
+                      )}
                     </Button>
                   )}
                 </PopoverPanel>

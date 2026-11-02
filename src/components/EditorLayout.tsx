@@ -57,6 +57,8 @@ export function EditorLayout({
   const [headerHeight, setHeaderHeight] = useState(76);
   const headerActions = useRef<HTMLDivElement>(null);
   const resizeControls = useRef<HTMLDivElement>(null);
+  const headerBrand = useRef<HTMLDivElement>(null);
+  const [brandInHeader, setBrandInHeader] = useState(false);
   const expandedExportSpacing = useRef(0);
   const [headerLayout, setHeaderLayout] = useState<
     "full" | "icon" | "shifted" | "wrapped"
@@ -64,13 +66,22 @@ export function EditorLayout({
   useLayoutEffect(() => {
     const controls = resizeControls.current;
     const actions = headerActions.current;
+    const branding = headerBrand.current;
     const wrapper = controls?.parentElement;
     const exportButton = actions?.querySelector<HTMLButtonElement>(
       "#export-grid-header",
     );
     const label = exportButton?.querySelector("span");
     const icon = exportButton?.querySelector("svg");
-    if (!controls || !actions || !wrapper || !exportButton || !label || !icon)
+    if (
+      !controls ||
+      !actions ||
+      !branding ||
+      !wrapper ||
+      !exportButton ||
+      !label ||
+      !icon
+    )
       return;
     const measure = () => {
       setHeaderHeight(
@@ -114,20 +125,28 @@ export function EditorLayout({
         parseFloat(getComputedStyle(controls).paddingLeft) +
         controlsWidth;
       const iconWidth = exportButton.getBoundingClientRect().height;
-      setHeaderLayout(
-        fits(fullExportWidth)
-          ? "full"
-          : fits(iconWidth)
-            ? "icon"
-            : actionBounds.right - otherActionsWidth - iconWidth >=
-                leftControlsRight + gap
-              ? "shifted"
-              : "wrapped",
+      const nextLayout = fits(fullExportWidth)
+        ? "full"
+        : fits(iconWidth)
+          ? "icon"
+          : actionBounds.right - otherActionsWidth - iconWidth >=
+              leftControlsRight + gap
+            ? "shifted"
+            : "wrapped";
+      setHeaderLayout(nextLayout);
+      const controlsLeft = controlsRight - controlsWidth;
+      const brandLimit =
+        nextLayout === "wrapped"
+          ? actionBounds.right - otherActionsWidth - fullExportWidth
+          : controlsLeft;
+      setBrandInHeader(
+        nextLayout !== "shifted" &&
+          branding.getBoundingClientRect().right + gap <= brandLimit,
       );
     };
     measure();
     const observer = new ResizeObserver(measure);
-    for (const element of [wrapper, controls, actions, label])
+    for (const element of [wrapper, controls, actions, label, branding])
       observer.observe(element);
     document.fonts.addEventListener("loadingdone", measure);
     return () => {
@@ -164,6 +183,15 @@ export function EditorLayout({
   );
   const canvasActions = (
     <div className="relative flex w-full min-w-0 flex-col gap-2">
+      <div
+        ref={headerBrand}
+        data-header-brand
+        aria-hidden={!brandInHeader}
+        inert={!brandInHeader}
+        className={`absolute top-0 left-3 flex h-11 items-center ${brandInHeader ? "" : "pointer-events-none invisible"}`}
+      >
+        {brand}
+      </div>
       <div
         ref={resizeControls}
         data-canvas-controls
@@ -214,6 +242,7 @@ export function EditorLayout({
       ref={headerElement}
       data-canvas-header
       data-header-layout={headerLayout}
+      data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={
         headerLayout === "icon" || headerLayout === "shifted" ? true : undefined
       }
@@ -280,9 +309,14 @@ export function EditorLayout({
                   data-sidebar-sticky
                   className="sticky top-0 z-20 bg-(--panel)"
                 >
-                  <div className="flex min-h-19 items-center border-0 border-b border-solid border-(--line) px-4 py-3">
-                    {brand}
-                  </div>
+                  {!brandInHeader && (
+                    <div
+                      data-sidebar-brand
+                      className="flex min-h-19 items-center border-0 border-b border-solid border-(--line) px-4 py-3"
+                    >
+                      {brand}
+                    </div>
+                  )}
                   {!compact && (
                     <div
                       data-panel-controls
