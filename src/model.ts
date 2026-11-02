@@ -20,12 +20,31 @@ export function resolveFontWeight(font: string, weight = 400) {
 export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
+export const provenanceSchema = z.strictObject({
+  provider: z.literal("commons"),
+  entityId: z.string().regex(/^\d+$/),
+  sourcePage: z.url({
+    protocol: /^https$/,
+    hostname: /^commons\.wikimedia\.org$/,
+  }),
+  originalUrl: z.url({
+    protocol: /^https$/,
+    hostname: /^upload\.wikimedia\.org$/,
+  }),
+  creator: z.string().max(1000),
+  license: z.enum(["CC0", "Public domain"]),
+  licenseUrl: z.url({
+    protocol: /^https$/,
+    hostname: /^(creativecommons\.org|commons\.wikimedia\.org)$/,
+  }),
+});
 export interface Asset {
   id: string;
   category: string;
   title: string;
   src: string;
   source?: string;
+  provenance?: z.infer<typeof provenanceSchema>;
   trashedAt?: number;
   libraryHidden?: boolean;
 }
@@ -527,6 +546,7 @@ export const workspaceSchema = z
         title: z.string(),
         src: z.string().min(1),
         source: z.string().min(1).optional(),
+        provenance: provenanceSchema.optional(),
         trashedAt: z.number().int().nonnegative().optional(),
         libraryHidden: z.boolean().optional(),
       }),

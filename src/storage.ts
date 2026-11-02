@@ -230,11 +230,20 @@ export class LocalWorkspaceStore {
       grid: workspace.grid,
       exportSettings: workspace.exportSettings,
       assets: workspace.assets.map(
-        ({ id, category, title, source, trashedAt, libraryHidden }) => ({
+        ({
+          id,
+          category,
+          title,
+          source,
+          provenance,
+          trashedAt,
+          libraryHidden,
+        }) => ({
           id,
           category,
           title,
           ...(source ? { source } : {}),
+          ...(provenance ? { provenance } : {}),
           ...(trashedAt !== undefined ? { trashedAt } : {}),
           ...(libraryHidden ? { libraryHidden } : {}),
         }),

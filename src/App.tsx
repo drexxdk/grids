@@ -43,6 +43,8 @@ import { EditorLayout } from "./components/EditorLayout";
 import { LibraryImage } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
 import { ImageSourceSelect } from "./components/ui/ImageTabs";
+import { OnlineImages } from "./components/OnlineImages";
+import { downloadProviderImage, type ProviderImage } from "./providers";
 import {
   fontOptions,
   fontWeightOptions,
@@ -224,6 +226,8 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
+  const [librarySource, setLibrarySource] = useState("imported");
+  const [pickerSource, setPickerSource] = useState("imported");
   const closeImagePicker = () => {
     setImageTarget(null);
   };
@@ -589,7 +593,10 @@ export default function App() {
     const batch = Array.from(files ?? []);
     if (!batch.length) return;
     const chooseImportedImage = batch.length > 1 && targetCellId !== null;
-    if (chooseImportedImage) setImageTarget(targetCellId);
+    if (chooseImportedImage) {
+      setPickerSource("imported");
+      setImageTarget(targetCellId);
+    }
     setImportProgress((current) => ({
       completed: current?.completed ?? 0,
       total: (current?.total ?? 0) + batch.length,
@@ -644,6 +651,46 @@ export default function App() {
           ? { ...current, pending: current.pending - 1 }
           : null,
       );
+    }
+  };
+  const importProviderImage = async (
+    image: ProviderImage,
+    signal: AbortSignal,
+    targetCellId: string | null = null,
+  ) => {
+    const store = localStore.current;
+    if (!store) throw new Error("Storage is unavailable");
+    const targetGridId = board.id;
+    const existing = activeAssets.find(
+      (asset) =>
+        asset.provenance?.provider === image.provider &&
+        asset.provenance.entityId === image.id,
+    );
+    if (existing) {
+      if (targetCellId) placeAsset(existing.id, targetCellId);
+      return;
+    }
+    const { blob, provenance } = await downloadProviderImage(image, signal);
+    let asset: Asset | null = null;
+    try {
+      signal.throwIfAborted();
+      if (localStore.current !== store) throw new Error("Storage changed");
+      asset = store.createAsset(blob, image.title);
+      asset.provenance = provenance;
+      const decoded = await loadImage(asset.src);
+      if (decoded.naturalWidth * decoded.naturalHeight > 40000000)
+        throw new Error("Image dimensions are too large");
+      signal.throwIfAborted();
+      if (localStore.current !== store) throw new Error("Storage changed");
+      dispatchDocument({
+        type: "assets/import",
+        gridId: targetGridId,
+        cellId: targetCellId,
+        assets: [asset],
+      });
+    } catch (error) {
+      if (asset) store.releaseAsset(asset.id);
+      throw error;
     }
   };
   const touchDrag = (
@@ -915,11 +962,26 @@ export default function App() {
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <ImageSourceSelect id="sidebar-image-source" />
+                    <ImageSourceSelect
+                      id="sidebar-image-source"
+                      value={librarySource}
+                      onChange={setLibrarySource}
+                    />
                   </div>
                   {drawerToggle}
                 </div>
-                <div id="asset-library" className="asset-library">
+                {librarySource === "online" && (
+                  <OnlineImages
+                    onImport={(image, signal) =>
+                      importProviderImage(image, signal)
+                    }
+                  />
+                )}
+                <div
+                  id="asset-library"
+                  className={`asset-library ${librarySource !== "imported" ? "hidden!" : ""}`}
+                  hidden={librarySource !== "imported"}
+                >
                   <UploadTile
                     ref={addImagesButton}
                     progress={importProgress}
@@ -970,17 +1032,19 @@ export default function App() {
                   hidden
                   onChange={(event) => upload(event)}
                 />
-                {toolsExpanded && activeAssets.length > 0 && (
-                  <Button
-                    className="mt-2 min-h-11 w-full"
-                    onClick={() =>
-                      deleteImages(activeAssets.map((asset) => asset.id))
-                    }
-                  >
-                    <Trash2 aria-hidden="true" />
-                    {t("library.clearAll")}
-                  </Button>
-                )}
+                {librarySource === "imported" &&
+                  toolsExpanded &&
+                  activeAssets.length > 0 && (
+                    <Button
+                      className="mt-2 min-h-11 w-full"
+                      onClick={() =>
+                        deleteImages(activeAssets.map((asset) => asset.id))
+                      }
+                    >
+                      <Trash2 aria-hidden="true" />
+                      {t("library.clearAll")}
+                    </Button>
+                  )}
               </div>
             </aside>
           )}
@@ -1685,10 +1749,26 @@ export default function App() {
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div className="w-60 max-w-full">
-              <ImageSourceSelect id="picker-image-source" />
+              <ImageSourceSelect
+                id="picker-image-source"
+                value={pickerSource}
+                onChange={setPickerSource}
+              />
             </div>
           </div>
-          <div role="region" aria-label={t("library.source.imported")}>
+          {pickerSource === "online" && (
+            <OnlineImages
+              onImport={async (image, signal) => {
+                await importProviderImage(image, signal, imageTarget);
+                closeImagePicker();
+              }}
+            />
+          )}
+          <div
+            role="region"
+            aria-label={t("library.source.imported")}
+            hidden={pickerSource !== "imported"}
+          >
             <div className={pickerGridClassName}>
               <UploadTile
                 progress={importProgress}

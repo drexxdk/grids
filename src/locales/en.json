@@ -57,6 +57,33 @@
     }
   },
   "library": {
+    "browse": {
+      "title": "Explore",
+      "space": "Space",
+      "nature": "Nature",
+      "art": "Art",
+      "places": "Places",
+      "history": "History"
+    },
+    "search": {
+      "provider": "Provider",
+      "query": "Search images",
+      "submit": "Search",
+      "privacy": "Searches and image requests are sent to Wikimedia Commons. Local uploads stay in this browser.",
+      "rights": "Public domain and CC0",
+      "loading": "Searching...",
+      "empty": "No eligible images found. Try another search.",
+      "quota": "Wikimedia Commons is rate limiting requests. Try again shortly.",
+      "unavailable": "Wikimedia Commons is unavailable. Try again later.",
+      "invalid": "Wikimedia Commons returned an unexpected response.",
+      "offline": "You are offline. Imported images are still available.",
+      "failed": "Could not import this image. Try another result.",
+      "import": "Import {value1}",
+      "importing": "Importing...",
+      "source": "Source and rights",
+      "previous": "Previous results",
+      "next": "Next results"
+    },
     "dropZone": "Image library drop zone",
     "clearAll": "Clear all images",
     "empty": "No images yet.",

@@ -27,6 +27,44 @@ test.beforeAll(async () => {
   );
 });
 
+test("provider provenance validates safe source URLs and stays out of settings", () => {
+  const workspace = model.makeWorkspace();
+  const provenance = {
+    provider: "commons",
+    entityId: "123",
+    sourcePage: "https://commons.wikimedia.org/wiki/File:Earth.jpg",
+    originalUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/test/Earth.jpg",
+    creator: "Creator",
+    license: "Public domain",
+    licenseUrl: "https://commons.wikimedia.org/wiki/Commons:Public_domain",
+  };
+  workspace.assets.push({
+    id: crypto.randomUUID(),
+    title: "Earth",
+    category: "Imported",
+    src: "blob:local",
+    provenance,
+  });
+  expect(model.workspaceSchema.safeParse(workspace).success).toBe(true);
+  expect(JSON.stringify(model.getEditorSettings(workspace))).not.toContain(
+    "provenance",
+  );
+  expect(JSON.stringify(model.getEditorSettings(workspace))).not.toContain(
+    "wikimedia",
+  );
+  for (const patch of [
+    { sourcePage: "javascript:alert(1)" },
+    { originalUrl: "https://example.com/image.jpg" },
+    { license: "CC BY-SA 4.0" },
+    { provider: "unsupported" },
+    { entityId: "../private" },
+  ])
+    expect(
+      model.provenanceSchema.safeParse({ ...provenance, ...patch }).success,
+    ).toBe(false);
+});
+
 test("English messages have short grouped keys and single-key plurals", async () => {
   const en = JSON.parse(
     await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"),

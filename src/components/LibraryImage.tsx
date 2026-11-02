@@ -1,4 +1,6 @@
 import type { Asset, Cell, GridStyle } from "../model";
+import { ExternalLink } from "lucide-react";
+import { t } from "../i18n";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
 
 export function LibraryImage({
@@ -69,6 +71,18 @@ export function LibraryImage({
         dragAffected={dragAffected}
         dragSource={dragAffected}
       />
+      {asset.provenance && (
+        <a
+          href={asset.provenance.sourcePage}
+          target="_blank"
+          rel="noreferrer"
+          title={`${asset.provenance.creator} - ${asset.provenance.license}`}
+          className="mt-1 flex min-h-11 items-center gap-1 text-xs text-(--accent) wrap-break-word"
+        >
+          <ExternalLink aria-hidden="true" className="size-3! shrink-0" />
+          {t("library.search.source")}
+        </a>
+      )}
     </div>
   );
 }

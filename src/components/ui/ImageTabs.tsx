@@ -2,20 +2,27 @@ import type { LucideIcon } from "lucide-react";
 import { t } from "../../i18n";
 import { SelectField } from "./controls";
 
-export function ImageSourceSelect({ id }: { id: string }) {
+export function ImageSourceSelect({
+  id,
+  value = "imported",
+  onChange,
+}: {
+  id: string;
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
   return (
     <SelectField
       id={id}
       label={t("library.source.label")}
-      value="imported"
-      onChange={() => {}}
+      value={value}
+      onChange={onChange ?? (() => {})}
       options={[
         { value: "imported", label: t("library.source.imported") },
         {
           value: "online",
           label: t("library.source.online"),
-          disabled: true,
-          title: t("library.source.unavailable"),
+          disabled: !onChange,
         },
       ]}
     />
