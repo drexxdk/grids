@@ -379,7 +379,7 @@ test("provider previews choose bounded cover renditions for every shape and dens
     { ...image.original, width: 3000, height: 6000 },
     { ...image.original, width: 6000, height: 6000 },
   ]) {
-    for (const cardWidth of [128, 160, 320]) {
+    for (const cardWidth of [128, 160, 200]) {
       for (const density of [1, 2, 3]) {
         const url = new URL(
           providers.providerPreviewUrl(
@@ -410,6 +410,9 @@ test("provider previews choose bounded cover renditions for every shape and dens
     }
   }
   expect(providers.providerPreviewUrl(image, 320)).toContain("/960px-");
+  expect(providers.providerPreviewUrl(image, 320)).toBe(
+    providers.providerPreviewUrl(image, 200),
+  );
   expect(providers.providerPreviewUrl(image, 160)).toContain("/500px-");
   expect(
     providers.providerPreviewUrl(
@@ -428,8 +431,8 @@ test("provider previews choose bounded cover renditions for every shape and dens
   ).toBe(image.thumbnail);
   expect(
     providers.providerPreviewUrl({ ...image, provider: "met" }, 320, 2, {
-      width: 480,
-      height: 640,
+      width: 240,
+      height: 320,
     }),
   ).toBe(image.original.url);
   expect(

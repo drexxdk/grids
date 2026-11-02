@@ -246,6 +246,9 @@ const responseSchema = z.object({
     .optional(),
   query: z
     .object({
+      searchinfo: z
+        .object({ totalhits: z.number().int().nonnegative() })
+        .optional(),
       pages: z.array(
         z.object({
           pageid: z.number().int().positive(),
@@ -343,6 +346,7 @@ export const commons = cacheImageProvider(
         generator: "search",
         gsrsearch: `${text} filetype:bitmap haslicense:unrestricted`.trim(),
         gsrnamespace: "6",
+        gsrinfo: "totalhits",
         gsrlimit: String(limit),
         gsroffset: String(offset),
         prop: "imageinfo",
@@ -449,7 +453,16 @@ export const commons = cacheImageProvider(
           },
         });
       }
-      return { images, next: parsed.data.continue?.gsroffset };
+      const rawCount = parsed.data.query?.pages.length ?? 0;
+      const totalHits = parsed.data.query?.searchinfo?.totalhits ?? 0;
+      return {
+        images,
+        next:
+          parsed.data.continue?.gsroffset ??
+          (rawCount === limit && totalHits > offset + rawCount
+            ? offset + rawCount
+            : undefined),
+      };
     },
   }),
 );

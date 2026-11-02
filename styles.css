@@ -526,25 +526,31 @@ h1 {
   outline-offset: 3px;
   z-index: 1;
 }
-.image-card:not(.asset)[data-image-hovered]:not([data-drag-source]),
+.image-card:is(
+    [data-drop-placeholder],
+    [data-upload-tile]
+  )[data-image-hovered]:not([data-drag-source]),
 .image-card[data-upload-tile]:focus-visible,
-.image-card:not(.asset):not([data-drag-source]):has(
+.image-card[data-drop-placeholder]:not([data-drag-source]):has(
     [data-card-image] button:focus-visible
   ),
-.image-card:not(.asset)[data-drag-affected]:not([data-drag-source]),
+.grid-cell[data-drag-affected]:not([data-drag-source]),
 .grid-cell.drag-over {
   background: transparent !important;
   border-color: transparent !important;
 }
-.image-card:not(.asset)[data-image-hovered]:not([data-drag-source])
+.image-card:is(
+    [data-drop-placeholder],
+    [data-upload-tile]
+  )[data-image-hovered]:not([data-drag-source])
   > [data-card-content],
 .image-card[data-upload-tile]:focus-visible > [data-card-content],
-.image-card:not(.asset):not([data-drag-source]):has(
+.image-card[data-drop-placeholder]:not([data-drag-source]):has(
     [data-card-image] button:focus-visible
   )
   > [data-card-content],
-.image-card:not(.asset)[data-drag-affected]:not([data-drag-source])
-  > [data-card-content] {
+.grid-cell[data-drag-affected]:not([data-drag-source]) > [data-card-content],
+.grid-cell.drag-over > [data-card-content] {
   --card-paint-inset: calc(
     var(--card-frame-edge) + var(--card-frame-stroke) + var(--card-frame-gap)
   );

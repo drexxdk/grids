@@ -530,14 +530,20 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
                 ? [result(2, "Moon")]
                 : first;
       const next = offset + limit;
+      const historyOnly = query.startsWith("pagedhistory") && limit < 10;
       return route.fulfill({
         json: {
-          ...(next < catalog.length
+          ...(next < catalog.length && !historyOnly
             ? { continue: { gsroffset: next, continue: "-||" } }
             : {
                 continue: { iistart: "2024-07-31T01:29:44Z", continue: "||" },
               }),
-          query: { pages: catalog.slice(offset, next) },
+          query: {
+            ...(query.startsWith("pagedhistory")
+              ? { searchinfo: { totalhits: catalog.length } }
+              : {}),
+            pages: catalog.slice(offset, next),
+          },
         },
       });
     },
@@ -1462,10 +1468,29 @@ test("Commons cards share imported settings and support native mouse and touch d
     const cells = page.locator(".grid-cell");
     await expect(remote).toHaveJSProperty("draggable", true);
     await expect(online.locator("img")).toHaveJSProperty("naturalWidth", 1200);
+    let releaseDownload;
+    const downloadGate = new Promise((resolve) => {
+      releaseDownload = resolve;
+    });
+    const originalUrl =
+      "https://upload.wikimedia.org/wikipedia/commons/test/1.jpg";
+    await page.route(originalUrl, async (route) => {
+      await downloadGate;
+      await route.fallback();
+    });
     await remote.dragTo(cells.nth(0).locator(".cell-image-button"), {
       sourcePosition: { x: 5, y: 5 },
     });
+    await expect(cells.nth(0)).toHaveAttribute("aria-busy", "true");
+    await expect(
+      cells.nth(0).getByRole("status", { name: "Importing..." }),
+    ).toBeVisible();
+    await expect(cells.nth(0).locator("img")).toHaveCount(0);
+    releaseDownload();
     await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Earth");
+    await expect(cells.nth(0)).not.toHaveAttribute("aria-busy");
+    await expect(cells.nth(0).getByRole("status")).toHaveCount(0);
+    await page.unroute(originalUrl);
     await expect
       .poll(async () => (await localDatabase(page)).images.length)
       .toBe(1);
@@ -1562,6 +1587,8 @@ test("Commons cards share imported settings and support native mouse and touch d
       "Could not import this image",
     );
     await expect(cells.nth(2).locator("img")).toHaveCount(0);
+    await expect(cells.nth(2)).not.toHaveAttribute("aria-busy");
+    await expect(cells.nth(2).getByRole("status")).toHaveCount(0);
     expect((await localDatabase(page)).images).toHaveLength(1);
     mock.failDownload(false);
     const session = await context.newCDPSession(page);
@@ -2327,6 +2354,40 @@ for (const [mode, pickerTest] of [
     },
   );
 }
+
+test("Commons paginates cached full pages when image-history continuation omits the search cursor", async ({
+  page,
+}) => {
+  const mock = await mockCommons(page);
+  await page.goto("./?panel=images&source=commons&topic=all&q=pagedhistory");
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  const next = online.getByRole("button", {
+    name: "Next results",
+    exact: true,
+  });
+  const headings = online.locator(".library-heading");
+  await expect(headings).toHaveCount(10);
+  await expect(headings.last()).toHaveValue("Open 18");
+  await expect(next).toBeEnabled();
+  expect(mock.requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual(
+    [
+      { offset: 0, limit: 10 },
+      { offset: 10, limit: 3 },
+    ],
+  );
+  await next.click();
+  await expect(headings).toHaveCount(3);
+  await expect(headings.first()).toHaveValue("Moon");
+  await expect(headings.last()).toHaveValue("Open 20");
+  await expect(next).toBeDisabled();
+  expect(mock.requests.at(-1)).toMatchObject({ offset: 13, limit: 10 });
+  await online
+    .getByRole("button", { name: "Previous results", exact: true })
+    .click();
+  await expect(headings).toHaveCount(10);
+  await expect(next).toBeEnabled();
+  expect(mock.requests).toHaveLength(3);
+});
 
 test("Commons keeps collected images when the final batch has only image-history continuation", async ({
   page,
@@ -6115,7 +6176,7 @@ test("caption hover and focus are distinct without changing field geometry", asy
         (element) => getComputedStyle(element).backgroundColor,
       );
       expect(focusColor).toBe(idleColor);
-      if (selector === ".asset") {
+      if (await card.locator("img").count()) {
         await expectSolidLibraryCard(card);
         await expect(card).toHaveCSS(
           "border-top-color",
@@ -6172,22 +6233,11 @@ test("hovering another header clears the previous card outline without moving fo
       const cards = page.locator(selector);
       const image = cards.nth(0).locator("[data-card-image] > button");
       const header = cards.nth(1).locator("textarea");
-      const firstFrame =
-        selector === ".asset"
-          ? cards.nth(0)
-          : cards.nth(0).locator("[data-cell-image-frame]");
-      const secondFrame =
-        selector === ".asset"
-          ? cards.nth(1)
-          : cards.nth(1).locator("[data-cell-image-frame]");
-      const property =
-        selector === ".asset" ? "border-top-color" : "--frame-color";
-      const activeColor =
-        selector === ".asset" ? await paletteColor(page, "accent") : "#d8f36a";
-      const idleColor =
-        selector === ".asset"
-          ? await paletteColor(page, "line")
-          : "transparent";
+      const firstFrame = cards.nth(0);
+      const secondFrame = cards.nth(1);
+      const property = "border-top-color";
+      const activeColor = await paletteColor(page, "accent");
+      const idleColor = await paletteColor(page, "line");
       await header.click();
       await image.hover({ position: { x: 5, y: 5 } });
       await expect(firstFrame).toHaveCSS(property, activeColor);
@@ -6336,10 +6386,11 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
       const beforeDragGeometry = await pageGeometry();
       const sourceBounds = await source.boundingBox();
       await source.hover({ position: { x: 8, y: sourceBounds.height / 2 } });
-      const sourceFrame = cells
-        .nth(0)
-        .locator(":scope > [data-cell-image-frame]");
-      await expect(sourceFrame).toHaveCSS("--frame-color", "#d8f36a");
+      await expectSolidLibraryCard(cells.nth(0));
+      await expect(cells.nth(0)).toHaveCSS(
+        "border-top-color",
+        await paletteColor(page, "accent"),
+      );
       const transfer = await page.evaluateHandle(() => new DataTransfer());
       await source.dispatchEvent("dragstart", {
         dataTransfer: transfer,
@@ -6365,7 +6416,7 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
       await expect(
         cells.nth(0).locator(":scope > [data-card-content]"),
       ).toHaveCSS("clip-path", "none");
-      await expect(sourceFrame).toHaveCSS("--frame-color", "transparent");
+      await expectSolidLibraryCard(cells.nth(0));
       await expect(cells.nth(0)).toHaveCSS(
         "border-top-color",
         await paletteColor(page, "line"),
@@ -6426,7 +6477,10 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
       ).toHaveCSS("opacity", "1");
       await expect(page.locator("[data-drag-affected]")).toHaveCount(2);
       expect(await contents()).toEqual(before);
-      await expect(sourceFrame).toHaveCSS("--frame-color", "transparent");
+      await expect(cells.nth(0)).toHaveCSS(
+        "border-top-color",
+        await paletteColor(page, "line"),
+      );
       expect((await localDatabase(page)).document).toEqual(original);
       await page.screenshot({
         path: testInfo.outputPath(`faded-cards-${width}-${placement}.png`),
@@ -6561,7 +6615,7 @@ test("drag feedback keeps stationary contents and suppresses source hover while 
   await recoveredCopy.dispose();
 });
 
-test("precise image frames and thin caption feedback stay independent", async ({
+test("precise empty image frames remain independent of hidden captions", async ({
   page,
 }) => {
   await page.goto("./");
@@ -6569,7 +6623,7 @@ test("precise image frames and thin caption feedback stay independent", async ({
   const image = cell.locator(".cell-image-button");
   const caption = cell.locator(".cell-heading");
   const frames = cell.locator("[data-cell-image-frame]");
-  await caption.fill("Caption");
+  await expect(caption).toBeHidden();
   for (const placement of ["above", "below", "overlay-bottom", "overlay-top"]) {
     await selectField(page, "caption-position", placement);
     await page.mouse.move(1, 1);
@@ -6580,18 +6634,9 @@ test("precise image frames and thin caption feedback stay independent", async ({
       );
     const before = await cell.boundingBox();
     const imageBounds = await image.boundingBox();
-    const captionBounds = await caption.boundingBox();
     const surface = cell.locator("[data-card-content]");
     const surfaceBounds = await surface.boundingBox();
-    await image.hover({
-      position: {
-        x: 8,
-        y:
-          captionBounds.y <= imageBounds.y
-            ? captionBounds.y + captionBounds.height - imageBounds.y + 5
-            : 5,
-      },
-    });
+    await image.hover({ position: { x: 8, y: 5 } });
     for (const frame of await frames.all()) {
       await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
       await expect(frame.locator("rect")).toHaveAttribute(
@@ -6637,63 +6682,67 @@ test("precise image frames and thin caption feedback stay independent", async ({
     await expect(cell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     expect(await surface.boundingBox()).toEqual(surfaceBounds);
     expect(await image.boundingBox()).toEqual(imageBounds);
-    expect(await caption.boundingBox()).toEqual(captionBounds);
-    await expect(caption).toHaveCSS("outline-style", "none");
-    const idleBackground = await caption.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    );
-    await caption.hover();
-    await expect(caption).toHaveCSS("outline-style", "none");
-    await expect
-      .poll(() =>
-        caption.evaluate(
-          (element) => getComputedStyle(element).backgroundColor,
-        ),
-      )
-      .toBe(idleBackground);
-    await expect(cell).toHaveCSS(
-      "border-top-color",
-      await paletteColor(page, "line"),
-    );
-    const spacing = await caption.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return {
-        width: element.clientWidth,
-        left: parseFloat(style.paddingLeft),
-        right: parseFloat(style.paddingRight),
-        top: parseFloat(style.paddingTop),
-        bottom: parseFloat(style.paddingBottom),
-      };
-    });
-    expect(spacing.left).toBeCloseTo(spacing.width * 0.06, 1);
-    expect(spacing.right).toBeCloseTo(spacing.width * 0.06, 1);
-    expect(spacing.top).toBeGreaterThanOrEqual(spacing.width * 0.05 - 1);
-    expect(spacing.bottom).toBeGreaterThanOrEqual(spacing.width * 0.05 - 1);
+    await expect(caption).toBeHidden();
+    await expect(cell.locator("[data-caption-feedback]")).toBeHidden();
+    await page.mouse.move(0, 0);
     for (const frame of await frames.all())
       await expect(frame).toHaveCSS("--frame-color", idleColor);
     await image.focus();
     await image.press("Tab");
-    await caption.press("Shift+Tab");
+    await expect(caption).not.toBeFocused();
+    await page.keyboard.press("Shift+Tab");
     await expect(image).toBeFocused();
     for (const frame of await frames.all()) {
       await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
     }
-    await image.press("Tab");
-    await expect(caption).toBeFocused();
-    await expect(caption).toHaveCSS("outline-style", "none");
-    await expect
-      .poll(() =>
-        caption.evaluate(
-          (element) => getComputedStyle(element).backgroundColor,
-        ),
-      )
-      .toBe(idleBackground);
-    for (const frame of await frames.all())
-      await expect(frame).toHaveCSS("--frame-color", idleColor);
     expect(await cell.boundingBox()).toEqual(before);
-    await caption.fill("Still editable");
-    await expect(caption).toHaveValue("Still editable");
   }
+});
+
+test("empty cells hide captions and dropped replacements use the incoming image title", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["First", "Second"].map((title) => ({
+      name: `${title}.svg`,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="white"/></svg>',
+      ),
+    })),
+  );
+  const cell = page.locator(".grid-cell").first();
+  const caption = cell.locator(".cell-heading");
+  await expect(caption).toBeHidden();
+  await expect(cell.locator("[data-caption-feedback]")).toBeHidden();
+  await page
+    .locator("[data-library-thumbnail]")
+    .nth(0)
+    .dragTo(cell.locator(".cell-image-button"));
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveValue("First");
+  await caption.fill("Custom caption");
+  await page
+    .locator("[data-library-thumbnail]")
+    .nth(1)
+    .dragTo(cell.locator(".cell-image-button"));
+  await expect(caption).toHaveValue("Second");
+  await reloadWorkspace(page);
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveValue("Second");
+  await cell.locator(".cell-image-button").hover({ position: { x: 5, y: 5 } });
+  await cell.getByRole("button", { name: "Clear cell", exact: true }).click();
+  await expect(caption).toBeHidden();
+  await expect(cell.locator("[data-caption-feedback]")).toBeHidden();
+  await reloadWorkspace(page);
+  await expect(caption).toBeHidden();
+  await page
+    .locator("[data-library-thumbnail]")
+    .nth(0)
+    .dragTo(cell.locator(".cell-image-button"));
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveValue("First");
 });
 
 test("captions share external bands and fit individual overlays across canvas, library and export", async ({
@@ -7346,7 +7395,11 @@ test("dropping a card clears stale source hover until the pointer returns", asyn
   await page.locator(".asset").dragTo(source.locator(".cell-image-button"));
   await source.locator(".cell-image-button").hover();
   const frame = source.locator("[data-cell-image-frame]");
-  await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
+  await expectSolidLibraryCard(source);
+  await expect(source).toHaveCSS(
+    "border-top-color",
+    await paletteColor(page, "accent"),
+  );
   const transfer = await page.evaluateHandle(() => new DataTransfer());
   const bounds = await target.locator(".cell-image-button").boundingBox();
   await source.locator(".cell-image-button").dispatchEvent("dragstart", {
@@ -7378,8 +7431,9 @@ test("dropping a card clears stale source hover until the pointer returns", asyn
     "Add or drop an image",
   );
   await page.getByRole("button", { name: "Export grid" }).hover();
-  await source.locator(".cell-heading").focus();
-  await source.locator(".cell-heading").press("Shift+Tab");
+  await expect(source.locator(".cell-heading")).toBeHidden();
+  await target.locator(".cell-image-button").focus();
+  await target.locator(".cell-image-button").press("Shift+Tab");
   await expect(source.locator(".cell-image-button")).toBeFocused();
   await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
 });
@@ -7440,11 +7494,8 @@ for (const viewportWidth of [1440, 780]) {
     expect(before.grid.cells[0].crop).toBeDefined();
     await expect(images.nth(0)).toHaveCSS("overflow", "hidden");
     const picture = await images.nth(0).boundingBox();
-    const frame = page
-      .locator(".grid-cell")
-      .first()
-      .locator("[data-cell-image-frame]")
-      .first();
+    const frame = page.locator(".grid-cell").first();
+    await expectSolidLibraryCard(frame);
     const frameBounds = await frame.boundingBox();
     const headingBounds = await page
       .locator(".cell-heading")
@@ -7458,13 +7509,9 @@ for (const viewportWidth of [1440, 780]) {
         return document.elementFromPoint(bounds.x + 8, bounds.y + y) === button;
       }, bottomY),
     ).toBe(true);
-    await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
-    const cardBounds = await page.locator(".grid-cell").first().boundingBox();
-    const frameEdge = (cardBounds.width - 2) * 0.0025;
-    expect(frameBounds.x).toBeCloseTo(cardBounds.x + 1 + frameEdge, 1);
-    expect(frameBounds.width).toBeCloseTo(
-      cardBounds.width - 2 - frameEdge * 2,
-      1,
+    await expect(frame).toHaveCSS(
+      "border-top-color",
+      await paletteColor(page, "accent"),
     );
     const screenshot = await page.screenshot({
       clip: {
@@ -7545,7 +7592,10 @@ for (const viewportWidth of [1440, 780]) {
     );
     await expect(headings.nth(0)).toHaveValue("");
     await expect(headings.nth(2)).toHaveValue("First item");
-    await expect(frame).toHaveCSS("--frame-color", "transparent");
+    await expect(frame.locator("[data-cell-image-frame]")).toHaveCSS(
+      "--frame-color",
+      "transparent",
+    );
     await expect(
       page
         .locator(".grid-cell")
@@ -7571,9 +7621,11 @@ for (const viewportWidth of [1440, 780]) {
     await images.nth(2).dragTo(images.nth(1));
     await expect(headings.nth(1)).toHaveValue("First item");
     await expect(headings.nth(2)).toHaveValue("Second item");
-    await expect(
-      page.locator(".grid-cell").nth(2).locator("[data-cell-image-frame]"),
-    ).toHaveCSS("--frame-color", "transparent");
+    await expectSolidLibraryCard(page.locator(".grid-cell").nth(2));
+    await expect(page.locator(".grid-cell").nth(2)).toHaveCSS(
+      "border-top-color",
+      await paletteColor(page, "line"),
+    );
     await expect(
       page
         .locator(".grid-cell")
@@ -7734,7 +7786,7 @@ test("single-item previews stay capped with header controls on large monitors", 
           .locator(".grid-cell")
           .evaluate((cell) => cell.getBoundingClientRect().width),
       )
-      .toBeCloseTo(320, 1);
+      .toBeCloseTo(200, 1);
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -7788,7 +7840,18 @@ test("single-item previews stay capped with header controls on large monitors", 
         .first()
         .evaluate((cell) => cell.getBoundingClientRect().width),
     )
-    .toBeCloseTo(320, 1);
+    .toBeCloseTo(200, 1);
+  await page.locator("#upload").setInputFiles({
+    name: "Removed.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="white"/></svg>',
+    ),
+  });
+  await page
+    .locator("[data-library-thumbnail]")
+    .first()
+    .dragTo(page.locator(".cell-image-button").nth(1));
   await setEditorViewport(page, { width: 260, height: 844 });
   await expect
     .poll(() =>
@@ -9074,13 +9137,11 @@ test("cell toolbar overlays the image and never selects a cell", async ({
     const button = tools.getByRole("button", { name, exact: true });
     const before = await button.boundingBox();
     await button.hover();
-    for (const frame of await page
-      .locator(".grid-cell")
-      .first()
-      .locator("[data-cell-image-frame]")
-      .all()) {
-      await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
-    }
+    await expectSolidLibraryCard(page.locator(".grid-cell").first());
+    await expect(page.locator(".grid-cell").first()).toHaveCSS(
+      "border-top-color",
+      await paletteColor(page, "accent"),
+    );
     await expect(button).toHaveCSS("border-top-color", "rgb(216, 243, 106)");
     expect(await button.boundingBox()).toEqual(before);
   }
@@ -12166,7 +12227,7 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     expect(layout.columns).toBe(expectedColumns);
     for (const cardWidth of layout.cardWidths) {
       expect(cardWidth).toBeGreaterThanOrEqual(Math.min(128, layout.width));
-      expect(cardWidth).toBeLessThanOrEqual(320);
+      expect(cardWidth).toBeLessThanOrEqual(200);
     }
     if (width !== 780)
       await page.screenshot({
@@ -12729,7 +12790,7 @@ touchTest(
   },
 );
 
-test("drop-target inset and solid library hover and focus surfaces keep rounded corners", async ({
+test("empty drop-target inset and filled card solid hover and focus surfaces keep rounded corners", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -12752,7 +12813,11 @@ test("drop-target inset and solid library hover and focus surfaces keep rounded 
   await openSidebarPanel(page, "Images");
   for (const width of [1440, 1900]) {
     await setEditorViewport(page, { width, height: 1080 });
-    for (const selector of [".grid-cell", ".asset"]) {
+    for (const selector of [
+      ".grid-cell:not(:has(img))",
+      ".grid-cell:has(img)",
+      ".asset",
+    ]) {
       const card = page.locator(selector).first();
       const image = card.locator("[data-card-image] > button");
       await image.hover({ position: { x: 5, y: 5 } });
@@ -12763,7 +12828,7 @@ test("drop-target inset and solid library hover and focus surfaces keep rounded 
           await image.press("Tab");
           await page.keyboard.press("Shift+Tab");
         }
-        if (selector === ".asset") {
+        if (await card.locator("img").count()) {
           await expectSolidLibraryCard(card);
           await expect(card).toHaveCSS(
             "border-top-color",
@@ -12830,7 +12895,9 @@ test("drop-target inset and solid library hover and focus surfaces keep rounded 
       }
       if (width === 1440)
         await card.screenshot({
-          path: testInfo.outputPath(`rounded-${selector.slice(1)}.png`),
+          path: testInfo.outputPath(
+            `rounded-${selector === ".asset" ? "library" : selector.includes(":not") ? "empty" : "filled"}.png`,
+          ),
         });
     }
   }

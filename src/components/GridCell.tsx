@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   ImagePlus,
+  LoaderCircle,
   Move,
   Trash2,
 } from "lucide-react";
@@ -117,6 +118,7 @@ export function GridCell({
   dragAffected = false,
   dragSource = false,
   previewOnly = false,
+  importing = false,
 }: {
   cell: Cell;
   asset?: Asset;
@@ -151,8 +153,10 @@ export function GridCell({
   dragAffected?: boolean;
   dragSource?: boolean;
   previewOnly?: boolean;
+  importing?: boolean;
 }) {
   const coarsePointer = useCoarsePointer();
+  const dropPlaceholder = !asset && !library;
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
@@ -354,7 +358,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${library ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -364,7 +368,9 @@ export function GridCell({
         } as React.CSSProperties
       }
       data-index={index}
+      aria-busy={importing || undefined}
       data-cell-id={cell.id}
+      data-drop-placeholder={dropPlaceholder ? "" : undefined}
       data-image-hovered={imageHovered && !moving ? "" : undefined}
       data-drag-affected={dragAffected ? "" : undefined}
       data-drag-source={dragSource ? "" : undefined}
@@ -793,7 +799,7 @@ export function GridCell({
             </div>
             <textarea
               ref={caption}
-              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 min-h-0! field-sizing-fixed! placeholder:text-(--muted)/35 hover:placeholder:text-(--muted)/80 focus:placeholder:text-(--muted)/80 outline-none!`}
+              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} ${asset ? "" : "hidden!"} peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 min-h-0! field-sizing-fixed! placeholder:text-(--muted)/35 hover:placeholder:text-(--muted)/80 focus:placeholder:text-(--muted)/80 outline-none!`}
               style={
                 {
                   top: `${(geometry.captionTop / geometry.height) * 100}%`,
@@ -842,7 +848,7 @@ export function GridCell({
             <span
               aria-hidden="true"
               data-caption-feedback
-              className="pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)"
+              className={`${asset ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)`}
               style={
                 {
                   "--caption-feedback-inset": "0px",
@@ -872,7 +878,19 @@ export function GridCell({
               }
             />
           </div>
-          {!library && <CardFrame />}
+          {dropPlaceholder && <CardFrame />}
+          {importing && (
+            <span
+              role="status"
+              aria-label={t("library.search.importing")}
+              className="pointer-events-none absolute inset-0 z-60 flex items-center justify-center rounded-[inherit] bg-black/40"
+            >
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-[18cqw]! animate-spin motion-reduce:animate-none"
+              />
+            </span>
+          )}
           {asset && cropTarget === asset.id && (
             <CropEditor
               asset={asset}

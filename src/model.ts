@@ -153,7 +153,7 @@ export function gridSpacing(style: GridStyle, width: number) {
   };
 }
 export const previewCardMinWidth = 128;
-export const previewCardMaxWidth = 320;
+export const previewCardMaxWidth = 200;
 
 export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
   const aspectRatio =

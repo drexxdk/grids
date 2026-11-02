@@ -299,6 +299,9 @@ export default function App() {
     pending: number;
   } | null>(null);
   const [saveStatus, setSaveStatus] = useState("Saved locally");
+  const [pendingProviderDrops, setPendingProviderDrops] = useState<
+    Record<string, number>
+  >({});
   const { format, resolution, quality } = workspace.exportSettings;
   const patchExport = (patch: Partial<ExportSettings>) =>
     dispatchDocument({ type: "export/patch", patch });
@@ -713,13 +716,22 @@ export default function App() {
     }
   };
   const importDroppedImage = (image: ProviderImage, targetCellId: string) => {
-    void importProviderImage(
-      image,
-      new AbortController().signal,
-      targetCellId,
-    ).catch(() => {
-      toast.error(t("library.search.failed"));
-    });
+    setPendingProviderDrops((current) => ({
+      ...current,
+      [targetCellId]: (current[targetCellId] ?? 0) + 1,
+    }));
+    void importProviderImage(image, new AbortController().signal, targetCellId)
+      .catch(() => {
+        toast.error(t("library.search.failed"));
+      })
+      .finally(() => {
+        setPendingProviderDrops((current) => {
+          const next = { ...current };
+          if (next[targetCellId] > 1) next[targetCellId] -= 1;
+          else delete next[targetCellId];
+          return next;
+        });
+      });
   };
   const touchDrag = (
     source: CardDragSource,
@@ -1219,6 +1231,7 @@ export default function App() {
                               gridId={board.id}
                               gridStyle={board}
                               captionRows={captionRows}
+                              importing={Boolean(pendingProviderDrops[item.id])}
                               moving={cardDrag !== null}
                               dragSource={isSource}
                               dragAffected={
