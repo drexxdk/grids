@@ -6,7 +6,8 @@ import { createInstance } from "i18next";
 import ICU from "i18next-icu";
 
 let model;
-test.beforeAll(async () => {
+let providers;
+async function loadModule(relativePath) {
   const result = await build({
     configFile: false,
     logLevel: "error",
@@ -14,7 +15,7 @@ test.beforeAll(async () => {
       write: false,
       minify: false,
       lib: {
-        entry: fileURLToPath(new URL("../src/model.ts", import.meta.url)),
+        entry: fileURLToPath(new URL(relativePath, import.meta.url)),
         formats: ["es"],
         fileName: "model",
       },
@@ -22,9 +23,144 @@ test.beforeAll(async () => {
   });
   const output = (Array.isArray(result) ? result[0] : result).output;
   const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
-  model = await import(
+  return import(
     `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`
   );
+}
+test.beforeAll(async () => {
+  [model, providers] = await Promise.all([
+    loadModule("../src/model.ts"),
+    loadModule("../src/providers/index.ts"),
+  ]);
+});
+
+test("provider pages fill twelve unique eligible images without skipping overflow", async () => {
+  const requests = [];
+  const image = (id) => ({ id: String(id) });
+  const batches = {
+    0: { images: [image(1), image(2)], next: 12 },
+    12: { images: [image(2), image(3), image(4)], next: 22 },
+    22: {
+      images: Array.from({ length: 8 }, (_, index) => image(index + 5)),
+      next: 30,
+    },
+    30: { images: [image(13)] },
+  };
+  const provider = providers.fillImagePages({
+    ...providers.commons,
+    search: async (_query, _signal, offset, limit) => {
+      requests.push({ offset, limit });
+      return batches[offset];
+    },
+  });
+  const page = await provider.search("query", new AbortController().signal);
+  expect(page.images.map((image) => image.id)).toEqual(
+    Array.from({ length: 12 }, (_, index) => String(index + 1)),
+  );
+  expect(requests).toEqual([
+    { offset: 0, limit: 12 },
+    { offset: 12, limit: 10 },
+    { offset: 22, limit: 8 },
+  ]);
+  expect(page.next).toBe(30);
+  expect(
+    await provider.search("query", new AbortController().signal, page.next),
+  ).toEqual({ images: [image(13)], next: undefined });
+});
+
+test("provider pages follow empty eligible batches and stop at API exhaustion", async () => {
+  const requests = [];
+  const provider = providers.fillImagePages({
+    ...providers.commons,
+    search: async (_query, _signal, offset) => {
+      requests.push(offset);
+      return offset === 0
+        ? { images: [], next: 12 }
+        : { images: [{ id: "last" }] };
+    },
+  });
+  expect(await provider.search("query", new AbortController().signal)).toEqual({
+    images: [{ id: "last" }],
+    next: undefined,
+  });
+  expect(requests).toEqual([0, 12]);
+  const empty = providers.fillImagePages({
+    ...providers.commons,
+    search: async () => ({ images: [] }),
+  });
+  expect(await empty.search("query", new AbortController().signal)).toEqual({
+    images: [],
+    next: undefined,
+  });
+});
+
+test("provider pages bound replacement batches and reject looping cursors", async () => {
+  const requests = [];
+  const provider = providers.fillImagePages({
+    ...providers.commons,
+    search: async (_query, _signal, offset) => {
+      requests.push(offset);
+      return { images: [{ id: String(offset) }], next: offset + 12 };
+    },
+  });
+  const page = await provider.search("query", new AbortController().signal);
+  expect(page.images).toHaveLength(5);
+  expect(page.next).toBe(60);
+  expect(requests).toEqual([0, 12, 24, 36, 48]);
+  for (const next of [0, -12, NaN, 1.5]) {
+    const looping = providers.fillImagePages({
+      ...providers.commons,
+      search: async () => ({ images: [], next }),
+    });
+    expect(await looping.search("query", new AbortController().signal)).toEqual(
+      { images: [], next: undefined },
+    );
+  }
+});
+
+test("provider pages preserve completed results and cursor at the shared deadline", async () => {
+  const deadline = new AbortController();
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = () => deadline.signal;
+  try {
+    const provider = providers.fillImagePages({
+      ...providers.commons,
+      search: async (_query, signal, offset) => {
+        if (offset === 0) return { images: [{ id: "first" }], next: 12 };
+        deadline.abort(new DOMException("Deadline", "TimeoutError"));
+        signal.throwIfAborted();
+      },
+    });
+    expect(
+      await provider.search("query", new AbortController().signal),
+    ).toEqual({ images: [{ id: "first" }], next: 12 });
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
+});
+
+test("provider pages discard cancelled work and propagate replacement service failures", async () => {
+  const controller = new AbortController();
+  const cancelled = providers.fillImagePages({
+    ...providers.commons,
+    search: async () => {
+      controller.abort();
+      return { images: [{ id: "stale" }], next: 12 };
+    },
+  });
+  await expect(
+    cancelled.search("query", controller.signal),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  const failed = providers.fillImagePages({
+    ...providers.commons,
+    search: async (_query, _signal, offset) => {
+      if (offset === 0) return { images: [{ id: "first" }], next: 12 };
+      throw new providers.ProviderError("quota", 1000);
+    },
+  });
+  await expect(
+    failed.search("query", new AbortController().signal),
+  ).rejects.toMatchObject({ kind: "quota" });
 });
 
 test("provider provenance validates safe source URLs and stays out of settings", () => {

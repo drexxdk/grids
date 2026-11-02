@@ -60,6 +60,64 @@ export class ProviderError extends Error {
   }
 }
 
+type BatchSearch = (
+  query: string,
+  signal: AbortSignal,
+  offset: number,
+  limit: number,
+) => ReturnType<ImageProvider["search"]>;
+
+export function fillImagePages(
+  provider: Omit<ImageProvider, "search"> & { search: BatchSearch },
+): ImageProvider {
+  return {
+    ...provider,
+    async search(query, signal, offset = 0) {
+      const deadline = AbortSignal.timeout(15000);
+      const requestSignal = AbortSignal.any([signal, deadline]);
+      const images: ProviderImage[] = [];
+      const seen = new Set<string>();
+      let next: number | undefined = offset;
+      for (
+        let batch = 0;
+        batch < 5 && next !== undefined && images.length < 12;
+        batch++
+      ) {
+        signal.throwIfAborted();
+        const cursor: number = next;
+        const remaining = 12 - images.length;
+        try {
+          const result = await provider.search(
+            query,
+            requestSignal,
+            cursor,
+            remaining,
+          );
+          signal.throwIfAborted();
+          if (result.images.length > remaining)
+            throw new ProviderError("invalid");
+          for (const image of result.images) {
+            if (seen.has(image.id)) continue;
+            seen.add(image.id);
+            images.push(image);
+          }
+          next =
+            result.next !== undefined &&
+            Number.isSafeInteger(result.next) &&
+            result.next > cursor
+              ? result.next
+              : undefined;
+        } catch (error) {
+          signal.throwIfAborted();
+          if (deadline.aborted && images.length) break;
+          throw error;
+        }
+      }
+      return { images, next };
+    },
+  };
+}
+
 const metadata = z.record(z.string(), z.object({ value: z.string() }));
 const responseSchema = z.object({
   error: z.unknown().optional(),
@@ -112,7 +170,7 @@ function plainText(value: string) {
 
 let blockedUntil = 0;
 
-export const commons: ImageProvider = {
+export const commons = fillImagePages({
   id: "commons",
   name: "Wikimedia Commons",
   domain: "Open media",
@@ -131,7 +189,7 @@ export const commons: ImageProvider = {
     crop: true,
     export: true,
   },
-  async search(query, signal, offset = 0) {
+  async search(query, signal, offset = 0, limit = 12) {
     if (Date.now() < blockedUntil)
       throw new ProviderError("quota", blockedUntil - Date.now());
     const url = new URL("https://commons.wikimedia.org/w/api.php");
@@ -143,7 +201,7 @@ export const commons: ImageProvider = {
       generator: "search",
       gsrsearch: `${query.slice(0, 160)} filetype:bitmap`,
       gsrnamespace: "6",
-      gsrlimit: "12",
+      gsrlimit: String(limit),
       gsroffset: String(offset),
       prop: "imageinfo",
       iiprop: "url|size|mime|extmetadata",
@@ -153,7 +211,7 @@ export const commons: ImageProvider = {
         "Artist|LicenseShortName|LicenseUrl|Copyrighted|Restrictions|AttributionRequired",
     }).toString();
     const response = await fetch(url, {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+      signal,
       credentials: "omit",
       referrerPolicy: "no-referrer",
     });
@@ -227,7 +285,7 @@ export const commons: ImageProvider = {
     }
     return { images, next: parsed.data.continue?.gsroffset };
   },
-};
+});
 
 const museumTopics: ImageProvider["browse"] = [
   { id: "paintings", query: "painting" },
@@ -298,7 +356,7 @@ const metObjectSchema = z.object({
   rightsAndReproduction: z.string().optional(),
 });
 
-export const met: ImageProvider = {
+export const met = fillImagePages({
   id: "met",
   name: "The Met",
   domain: "Art and cultural collections",
@@ -306,8 +364,9 @@ export const met: ImageProvider = {
     "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
   browse: museumTopics,
   capabilities: commons.capabilities,
-  async search(query, signal, offset = 0) {
-    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+  async search(query, signal, offset = 0, limit = 12) {
+    limit = Math.min(limit, 10000 - offset);
+    if (limit <= 0) return { images: [] };
     const url = new URL(
       "https://collectionapi.metmuseum.org/public/collection/v1.1/search",
     );
@@ -315,9 +374,9 @@ export const met: ImageProvider = {
       q: query.slice(0, 160),
       hasImages: "true",
       offset: String(offset),
-      limit: "12",
+      limit: String(limit),
     }).toString();
-    const parsed = metSearchSchema.safeParse(await metJson(url, requestSignal));
+    const parsed = metSearchSchema.safeParse(await metJson(url, signal));
     if (!parsed.success) throw new ProviderError("invalid");
     const images: ProviderImage[] = [];
     for (const id of parsed.data.objectIDs ?? []) {
@@ -326,7 +385,7 @@ export const met: ImageProvider = {
           new URL(
             `https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`,
           ),
-          requestSignal,
+          signal,
         ),
       );
       if (!object.success) continue;
@@ -351,18 +410,17 @@ export const met: ImageProvider = {
         original: { url: item.primaryImage, mime: "image/jpeg" },
       });
     }
-    const next = offset + 12;
+    const count = parsed.data.objectIDs?.length ?? 0;
+    const next = offset + count;
     return {
       images,
       next:
-        (parsed.data.objectIDs?.length ?? 0) > 0 &&
-        next < Math.min(parsed.data.total, 10000) &&
-        next + 12 <= 10000
+        count > 0 && next < Math.min(parsed.data.total, 10000)
           ? next
           : undefined,
     };
   },
-};
+});
 
 export const imageProviders: readonly ImageProvider[] = [commons, met];
 

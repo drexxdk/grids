@@ -429,7 +429,8 @@ async function mockCommons(page) {
       const url = new URL(route.request().url());
       const query = url.searchParams.get("gsrsearch");
       const offset = Number(url.searchParams.get("gsroffset"));
-      requests.push({ query, offset });
+      const limit = Number(url.searchParams.get("gsrlimit"));
+      requests.push({ query, offset, limit });
       if (query.startsWith("quota"))
         return route.fulfill({
           status: 429,
@@ -449,23 +450,34 @@ async function mockCommons(page) {
         } catch {}
         return;
       }
+      const first = [
+        result(1, "Earth"),
+        result(3, "Copyrighted", {
+          LicenseShortName: { value: "CC BY-SA 4.0" },
+        }),
+        result(4, "Restricted", {
+          Restrictions: { value: "personality" },
+        }),
+        result(5, "Missing rights", { Copyrighted: { value: "" } }),
+      ];
+      const catalog = query.startsWith("paged")
+        ? [
+            ...first,
+            ...Array.from({ length: 11 }, (_, index) =>
+              result(index + 10, `Open ${index + 10}`),
+            ),
+            result(2, "Moon"),
+          ]
+        : query.startsWith("moon")
+          ? [result(2, "Moon")]
+          : first;
+      const next = offset + limit;
       return route.fulfill({
         json: {
-          ...(offset ? {} : { continue: { gsroffset: 12, continue: "-||" } }),
-          query: {
-            pages: offset
-              ? [result(2, "Moon")]
-              : [
-                  result(1, "Earth"),
-                  result(3, "Copyrighted", {
-                    LicenseShortName: { value: "CC BY-SA 4.0" },
-                  }),
-                  result(4, "Restricted", {
-                    Restrictions: { value: "personality" },
-                  }),
-                  result(5, "Missing rights", { Copyrighted: { value: "" } }),
-                ],
-          },
+          ...(next < catalog.length
+            ? { continue: { gsroffset: next, continue: "-||" } }
+            : {}),
+          query: { pages: catalog.slice(offset, next) },
         },
       });
     },
@@ -495,7 +507,7 @@ async function mockMet(page) {
   const object = (id, patch = {}) => ({
     objectID: id,
     isPublicDomain: true,
-    title: id === 2 ? "Vase" : "Iris",
+    title: id === 2 ? "Vase" : id >= 10 ? `Open ${id}` : "Iris",
     artistDisplayName: "<b>Fixture curator</b>",
     rightsAndReproduction: "",
     primaryImage: `https://images.metmuseum.org/CRDImages/ep/original/${id}.jpg`,
@@ -510,10 +522,12 @@ async function mockMet(page) {
       if (url.pathname.endsWith("/search")) {
         expect(url.pathname).toBe("/public/collection/v1.1/search");
         expect(url.searchParams.get("hasImages")).toBe("true");
-        expect(url.searchParams.get("limit")).toBe("12");
+        const limit = Number(url.searchParams.get("limit"));
+        expect(limit).toBeGreaterThan(0);
+        expect(limit).toBeLessThanOrEqual(12);
         const query = url.searchParams.get("q");
         const offset = Number(url.searchParams.get("offset"));
-        requests.push({ query, offset });
+        requests.push({ query, offset, limit });
         if (query === "quota")
           return route.fulfill({
             status: 429,
@@ -531,14 +545,26 @@ async function mockMet(page) {
           } catch {}
           return;
         }
+        const catalog =
+          query === "paged"
+            ? [
+                1,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                ...Array.from({ length: 11 }, (_, index) => index + 10),
+                2,
+              ]
+            : query === "painting"
+              ? [1, 3, 4, 5, 6, 7, 8]
+              : [1];
         return route.fulfill({
           json: {
-            total: 13,
-            objectIDs: offset
-              ? [2]
-              : query === "painting"
-                ? [1, 3, 4, 5, 6, 7, 8]
-                : [1],
+            total: catalog.length,
+            objectIDs: catalog.slice(offset, offset + limit),
           },
         });
       }
@@ -655,14 +681,9 @@ for (const [mode, providerTest] of [
       expect(mock.requests.some((request) => request.query === "iri")).toBe(
         false,
       );
-      await online
-        .getByRole("button", { name: "Next results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveValue("Vase");
-      await online
-        .getByRole("button", { name: "Previous results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveValue("Iris");
+      await expect(
+        online.getByRole("button", { name: "Next results", exact: true }),
+      ).toBeDisabled();
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
       ).toHaveAttribute("title", "Fixture curator - CC0");
@@ -932,14 +953,9 @@ for (const [mode, providerTest] of [
         "naturalWidth",
         1200,
       );
-      await online
-        .getByRole("button", { name: "Next results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveValue("Moon");
-      await online
-        .getByRole("button", { name: "Previous results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveValue("Earth");
+      await expect(
+        online.getByRole("button", { name: "Next results", exact: true }),
+      ).toBeDisabled();
       const importResult = async () => {
         if (mode === "mobile") {
           await online
@@ -1041,7 +1057,7 @@ for (const [mode, providerTest] of [
           () => document.documentElement.scrollWidth <= innerWidth,
         ),
       ).toBe(true);
-      expect(mock.requests.some((request) => request.offset === 12)).toBe(true);
+      expect(mock.requests.every((request) => request.offset === 0)).toBe(true);
     },
   );
 }
@@ -1154,9 +1170,7 @@ test("Commons cards share imported settings and support native mouse and touch d
       path: testInfo.outputPath("commons-shared-card-settings.png"),
     });
 
-    await online
-      .getByRole("button", { name: "Next results", exact: true })
-      .click();
+    await searchCommons(page, "moon");
     await expect(online.locator(".library-heading")).toHaveValue("Moon");
     mock.failDownload(true);
     await remote.dragTo(cells.nth(2).locator(".cell-image-button"), {
@@ -1230,6 +1244,66 @@ test("Commons cards share imported settings and support native mouse and touch d
     await context.close();
   }
 });
+
+for (const provider of ["commons", "met"]) {
+  test(`${provider} fills eligible pages and keeps exact next and previous cursors`, async ({
+    page,
+  }) => {
+    const mock = await (provider === "commons"
+      ? mockCommons(page)
+      : mockMet(page));
+    await page.goto("./");
+    await selectField(page, "sidebar-image-source", provider);
+    const online = await searchCommons(page, "paged");
+    const headings = online.locator(".library-heading");
+    const titles = [
+      provider === "commons" ? "Earth" : "Iris",
+      ...Array.from({ length: 11 }, (_, index) => `Open ${index + 10}`),
+    ];
+    await expect
+      .poll(() =>
+        headings.evaluateAll((elements) =>
+          elements.map((element) => element.value),
+        ),
+      )
+      .toEqual(titles);
+    expect(
+      mock.requests
+        .filter((request) => request.query.startsWith("paged"))
+        .map(({ offset, limit }) => ({ offset, limit })),
+    ).toEqual([
+      { offset: 0, limit: 12 },
+      { offset: 12, limit: provider === "commons" ? 3 : 6 },
+    ]);
+    await online
+      .getByRole("button", { name: "Next results", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        headings.evaluateAll((elements) =>
+          elements.map((element) => element.value),
+        ),
+      )
+      .toEqual([provider === "commons" ? "Moon" : "Vase"]);
+    expect(mock.requests.at(-1).offset).toBe(provider === "commons" ? 15 : 18);
+    await expect(
+      online.getByRole("button", { name: "Next results", exact: true }),
+    ).toBeDisabled();
+    await online
+      .getByRole("button", { name: "Previous results", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        headings.evaluateAll((elements) =>
+          elements.map((element) => element.value),
+        ),
+      )
+      .toEqual(titles);
+    await expect(
+      online.getByRole("button", { name: "Previous results", exact: true }),
+    ).toBeDisabled();
+  });
+}
 
 test("Commons ignores stale searches and isolates empty malformed quota and offline failures", async ({
   page,
