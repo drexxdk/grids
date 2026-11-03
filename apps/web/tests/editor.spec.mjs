@@ -20,6 +20,14 @@ const nativeTouchTest = scrollbarTest.extend({
   hasTouch: true,
 });
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/session", (route) =>
+    route.fulfill({
+      json: { user: null, providers: [], connections: [], pendingMerge: null },
+    }),
+  );
+});
+
 function sidebarToggle(page, expanded = false) {
   return page
     .getByRole("group", { name: "Editor panels", exact: true })
@@ -3363,9 +3371,6 @@ test("settings have open sections and joined appearance radio grids", async ({
 test("header actions stay top right with responsive branding and panel-open and close toggles", async ({
   page,
 }, testInfo) => {
-  await page.route("**/api/session", (route) => route.fulfill({
-    json: { user: null, providers: [], connections: [], pendingMerge: null },
-  }));
   await setEditorViewport(page, { width: 1440, height: 900 });
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
@@ -4177,7 +4182,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
       name: "Editor panels",
       exact: true,
     });
-    await expect(commands.locator(":scope > button")).toHaveCount(2);
+    await expect(commands.locator(":scope > button")).toHaveCount(4);
     await expect(tools).toHaveAttribute("title", "Show sidebar");
     await expect(tools).toHaveCSS("width", "44px");
     await expect(tools).toHaveCSS("height", "44px");
@@ -4189,8 +4194,14 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
     });
     const settingsBounds = await tools.boundingBox();
     const exportBounds = await exportButton.boundingBox();
+    const loginBounds = await commands
+      .getByRole("button", { name: "Log in", exact: true })
+      .boundingBox();
     expect(
-      Math.abs(settingsBounds.x - exportBounds.x - exportBounds.width - 8),
+      Math.abs(loginBounds.x - exportBounds.x - exportBounds.width - 8),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs(settingsBounds.x - loginBounds.x - loginBounds.width - 8),
     ).toBeLessThan(1);
     await page.evaluate(() => {
       const probe = { running: true, panelFrames: 0, violations: [] };
@@ -4467,9 +4478,6 @@ test("right sidebar switches images and settings with an image source dropdown",
 test("header hides Export text before wrapping only when the buttons no longer fit", async ({
   page,
 }, testInfo) => {
-  await page.route("**/api/session", (route) => route.fulfill({
-    json: { user: null, providers: [], connections: [], pendingMerge: null },
-  }));
   await page.goto("./");
   await expect(page.locator("[data-canvas-header]")).toHaveAttribute(
     "data-brand-placement",
@@ -4915,7 +4923,7 @@ test("canvas preview fits both row and column changes without resizing controls"
       const headerActions = page.locator(
         '[data-canvas-header] [role="group"][aria-label="Editor panels"] button',
       );
-      await expect(headerActions).toHaveCount(2);
+      await expect(headerActions).toHaveCount(4);
       for (const button of await headerActions.all()) {
         await button.focus();
         await button.press("Tab");
@@ -9693,6 +9701,7 @@ test("mobile workspace stays horizontally fixed through nested modal open and cl
 touchTest(
   "mobile settings and image picker restore the right sidebar",
   async ({ page }, testInfo) => {
+    const twoRowHeaderHeight = 44 * 2 + 8 + 12 * 2 + 1;
     await page.goto(testInfo.project.use.baseURL);
     await expect(page.locator("[data-editor-drawer]")).toHaveCount(0);
     const drawer = page.locator("[data-canvas-header]");
@@ -9725,9 +9734,9 @@ touchTest(
         const bounds = await drawer.boundingBox();
         return bounds.y + bounds.height;
       })
-      .toBeLessThanOrEqual(84);
+      .toBeLessThanOrEqual(twoRowHeaderHeight);
     const compactBox = await drawer.boundingBox();
-    expect(compactBox.height).toBeLessThanOrEqual(84);
+    expect(compactBox.height).toBeLessThanOrEqual(twoRowHeaderHeight);
     expect(compactBox.y).toBe(0);
     expect(compactBox.width).toBe(390);
     await page

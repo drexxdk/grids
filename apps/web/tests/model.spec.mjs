@@ -842,6 +842,8 @@ test("English messages have short grouped keys and single-key plurals", async ()
             count: 2,
             value1: "Image {title}",
             value2: "Square",
+            value3: 3,
+            value4: 4,
           }),
         ).toBe("string");
       } else validate(message, fullKey);
