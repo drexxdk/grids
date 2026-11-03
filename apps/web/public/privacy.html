@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#171a1c" />
+    <meta name="description" content="How Gridz handles provider sign-in data, image references, local uploads, cookies and deletion requests." />
+    <link rel="canonical" href="https://gritz.pages.dev/privacy" />
+    <link rel="icon" href="./assets/grids-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./legal.css" />
+    <title>Privacy Policy - Gridz</title>
+  </head>
+  <body>
+    <header><div class="shell">
+      <a class="brand" href="./">Gridz</a>
+      <nav aria-label="Site information">
+        <a href="./terms.html">Terms</a>
+        <a href="./privacy.html" aria-current="page">Privacy</a>
+        <a href="./support.html">Support</a>
+      </nav>
+    </div></header>
+    <main class="shell">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Effective date: November 3, 2026</p>
+      <p class="summary">Image files are not uploaded to Gridz. Optional cloud saves contain references and editing data. Local uploads remain in your browser. Provider sign-in stores an account identifier and display name, not your provider password.</p>
+      <h2>Who is responsible</h2>
+      <p>The Gridz maintainer operates gritz.pages.dev and is responsible for the account data described here. Contact <a href="mailto:incrementish@gmail.com">incrementish@gmail.com</a> for privacy questions or requests.</p>
+      <h2>Information we process</h2>
+      <ul>
+        <li><strong>Optional sign-in:</strong> provider name, provider user ID and display name, plus an internal Gridz account ID and creation time. Discord sign-in requests only the <code>identify</code> scope, not email, messages, servers, friends or bot permissions. Google requests basic profile access; Facebook requests public profile access when enabled. We do not retain email addresses, provider access/refresh tokens or provider passwords. A provider may return additional basic profile fields; Gridz retains only the identifier and display name.</li>
+        <li><strong>Cloud saves:</strong> names, timestamps, grid layout, captions/headings, crops, style/export settings, supported image-provider references and opaque browser-local image IDs. Presets contain settings only. Saved grids are private. Presets are private unless you explicitly publish them; published preset names and settings are publicly readable.</li>
+        <li><strong>Browser storage:</strong> drafts, preferences, local image files and source references are stored on your device using IndexedDB/local storage. The offline app caches application assets, not provider image files or account API responses. Search terms and editor navigation may appear in the page URL and browser history; avoid putting sensitive information there.</li>
+        <li><strong>Authentication and security:</strong> session-token hashes and expiry times, temporary OAuth state and a PKCE verifier where supported. Network requests expose IP addresses and request metadata to the hosting infrastructure; the API uses IP addresses for short-lived abuse rate limits. Operational/error logs may contain request metadata, but are not intended to contain your image files or provider credentials.</li>
+        <li><strong>Support:</strong> your email address and any information you voluntarily send when contacting the maintainer. Do not send passwords, tokens or private image files.</li>
+      </ul>
+      <h2>Why we use it</h2>
+      <p>We use account and save data to provide the features you request, authenticate you, and let you manage your content. Security processing protects the service from abuse. Support messages are used to handle your request. Where applicable, these activities rely on providing the requested service, legitimate interests in security/support, and compliance with legal obligations. Publishing a preset is your explicit choice and can be reversed for the live copy.</p>
+      <p>Gridz does not sell personal data or use provider account data for advertising. Gridz does not add advertising trackers or analytics cookies.</p>
+      <h2>Cookies and local storage</h2>
+      <p>Sign-in uses essential HttpOnly session cookies lasting up to 30 days and a temporary OAuth cookie lasting up to 10 minutes. Production cookies are Secure and SameSite=Lax. Expired authentication records are cleaned up periodically. No account cookie is required for guest editing. Browser drafts/uploads persist until removed, site data is cleared or the browser evicts storage. Signing out or deleting your account does not erase browser data; clear Gridz site data separately on shared devices.</p>
+      <h2>Service providers and external requests</h2>
+      <p>Cloudflare serves the website and proxies account requests; Oracle Cloud hosts the API and database. These infrastructure providers process network data to deliver and secure the service. Your chosen authentication provider processes sign-in under its own policy. Images and searches connect directly to Wikimedia Commons, The Metropolitan Museum of Art or their image hosts, which receive your IP address and relevant requests. Gridz stores references, not copies of those image files.</p>
+      <p>Relevant policies: <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>, <a href="https://www.oracle.com/legal/privacy/">Oracle</a>, <a href="https://discord.com/privacy">Discord</a>, <a href="https://policies.google.com/privacy">Google</a>, <a href="https://www.facebook.com/privacy/policy/">Facebook</a>, <a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy">Wikimedia</a>, and <a href="https://www.metmuseum.org/policies/privacy-policy">The Met</a>. Support email is handled through Gmail. Providers may process data in countries other than your own under their applicable safeguards and policies.</p>
+      <h2>Retention and deletion</h2>
+      <p>Account data and cloud saves remain until you delete the item or account, or removal is necessary for service/legal reasons. Deleting your account removes the live account, sessions, saved grids and private/public presets. Copies of published presets already saved by others are not removed. Protected recovery backups are separate from the live database and may retain earlier copies after deletion; contact the maintainer about backup removal. Any legally required retention is limited to the applicable obligation. Support correspondence is retained only as needed to resolve requests and meet applicable obligations.</p>
+      <h2>Your choices and rights</h2>
+      <p>You can use guest editing, delete individual saves, unpublish presets or delete your account in <strong>Account and saved grids</strong>. You can also revoke Gridz in your provider's authorized-app settings; revocation alone does not delete your Gridz data. See <a href="./support.html#delete-data">data-deletion instructions</a>.</p>
+      <p>Depending on your location, you may have rights to access, correct, delete or obtain a copy of your personal data, restrict or object to processing, and complain to your local data-protection authority. Email <a href="mailto:incrementish@gmail.com">incrementish@gmail.com</a> to exercise these rights or if you cannot sign in. We may request reasonable proof of account control, but never your password or OAuth secret.</p>
+      <h2>Children and changes</h2>
+      <p>Gridz is not intended for children under 13 or anyone below the applicable minimum age. Contact us if a child has provided account data. Policy updates will be posted here with a revised effective date; material changes will be highlighted on the service where practical.</p>
+    </main>
+    <footer><div class="shell">Gridz · <a href="./">Back to the editor</a></div></footer>
+  </body>
+</html>

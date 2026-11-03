@@ -23,6 +23,7 @@ import { apiBase, apiRequest } from "../browser/api";
 import { t } from "../i18n";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/controls";
+import { LegalLinks } from "./LegalLinks";
 
 type GridSummary = z.infer<typeof itemSummarySchema>;
 type PresetSummary = z.infer<typeof presetSummarySchema>;
@@ -395,6 +396,7 @@ export function AccountDialog({
             <p className="mt-1 mb-0 text-xs leading-relaxed text-(--muted)">{t("account.privacy")}</p>
           </div>
         </aside>
+        <LegalLinks />
       </div>
     </Modal>
   );

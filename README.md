@@ -49,6 +49,22 @@ Sessions use random opaque HttpOnly, SameSite=Lax cookies (Secure in production)
 
 Signing out invalidates the server session but deliberately leaves the browser draft and uploads unchanged. Loading an account grid makes it the browser's current autosaved draft; this is one shared browser workspace, not a private local cache per account. Clear site data before handing a shared browser to someone else.
 
+### Public Policies And Discord
+
+Public, JavaScript-independent pages are available at [Terms of Service](https://gritz.pages.dev/terms), [Privacy Policy](https://gritz.pages.dev/privacy) and [Support/data deletion](https://gritz.pages.dev/support). Their source lives in `apps/web/public`; the editor sidebar and account dialog link to them in a new tab so opening a policy cannot interrupt unsaved editing. Cloudflare serves the `.html` pages at clean URLs. The service worker must not replace these pages with the editor shell.
+
+Discord uses server-side authorization-code sign-in with PKCE and only the `identify` scope. In the Discord Developer Portal, configure:
+
+- Terms of Service URL: `https://gritz.pages.dev/terms`
+- Privacy Policy URL: `https://gritz.pages.dev/privacy`
+- Production OAuth2 redirect: `https://gritz.pages.dev/api/auth/discord/callback`
+- Development OAuth2 redirect: `http://localhost:5841/api/auth/discord/callback`
+- Support URL, if requested: `https://gritz.pages.dev/support`
+
+Keep **Public Client** disabled: the API, not the browser, holds `DISCORD_CLIENT_SECRET`. No bot, bot permissions, interactions endpoint or linked-role verification endpoint is required. The URL generator is not the application's login flow; use Gridz's Continue with Discord action. Store `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` only in ignored local `.env` and protected production `deploy/api.env`, then restart the API. Do not put either secret into `VITE_*` variables or source control. Provider deauthorization does not delete Gridz data; the support page explains both steps.
+
+Review the policy text when data handling, infrastructure, contact details or retention practices change. Recovery backups are separate from live account deletion; the support contact must handle requests concerning those copies as described in the Privacy Policy.
+
 ## Build And Preview
 
 ```sh

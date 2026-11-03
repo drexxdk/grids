@@ -19,6 +19,7 @@ import {
 import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
 import { useEditorState } from "../browser/navigation";
+import { LegalLinks } from "./LegalLinks";
 
 const compactQuery = "(max-width: 900px)";
 function subscribeToViewport(onChange: () => void) {
@@ -362,6 +363,9 @@ export function EditorLayout({
                     {settings(null)}
                   </div>
                 </div>
+                <footer className="border-0 border-t border-solid border-(--line) px-4 py-2">
+                  <LegalLinks />
+                </footer>
               </aside>
             </MotionDiv>
           )}

@@ -1,4 +1,11 @@
 {
+  "legal": {
+    "navigation": "Policies and support",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "support": "Support",
+    "newTab": " (opens in a new tab)"
+  },
   "account": {
     "title": "Account and saved grids",
     "signInTitle": "A home for your grids",
