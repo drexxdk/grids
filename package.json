@@ -2,8 +2,13 @@
   "name": "grids-workspace",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22.12.0" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "npm run dev",
     "dev": "concurrently -k -n api,web \"npm run dev -w @grids/api\" \"npm run dev -w @grids/web\"",
@@ -25,6 +30,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "patch-package": "^8.0.1"
+    "patch-package": "^8.0.1",
+    "wrangler": "^4.157.0"
   }
 }

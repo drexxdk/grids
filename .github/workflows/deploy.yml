@@ -1,4 +1,4 @@
-name: Test And Deploy GitHub Pages
+name: Test Grids
 
 on:
   push:
@@ -26,18 +26,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build -- --base /${{ github.event.repository.name }}/
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+      - run: npm run build
       - uses: actions/upload-artifact@v7
         with:
           name: production-dist
           path: apps/web/dist
           retention-days: 1
-      - uses: actions/upload-pages-artifact@v5
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        with:
-          path: apps/web/dist
 
   model-tests:
     name: Model Tests
@@ -92,24 +86,6 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           retention-days: 7
-
-  deploy:
-    name: Deploy Main To Pages
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v6
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v5
 
   api-tests:
     name: API And Postgres Tests

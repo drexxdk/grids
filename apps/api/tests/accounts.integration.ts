@@ -94,6 +94,25 @@ test("guest editing needs no account; account writes enforce sessions, origins a
   assert.equal((await request("/auth/password/start")).status, 400);
 });
 
+test("the production proxy boundary rejects direct requests and accepts only the shared secret", async () => {
+  const secret = "a".repeat(64);
+  const guarded = createApp({ ...config, proxySecret: secret }, db).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => guarded.once("listening", resolve));
+  try {
+    const address = guarded.address();
+    if (!address || typeof address === "string") throw new Error("Server has no TCP address.");
+    const api = `http://127.0.0.1:${address.port}/api`;
+    assert.equal((await fetch(`${api}/health`)).status, 200);
+    assert.equal((await fetch(`${api}/session`)).status, 403);
+    assert.equal((await fetch(`${api}/session`, { headers: { "X-Grids-Proxy-Secret": "wrong" } })).status, 403);
+    const response = await fetch(`${api}/session`, { headers: { "X-Grids-Proxy-Secret": secret, Cookie: alice } });
+    assert.equal(response.status, 200);
+    assert.ok((await response.json()).user);
+  } finally {
+    await new Promise<void>((resolve, reject) => guarded.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
 test("saved grids persist references, enforce ownership and reject stale replacements", async () => {
   const document = toSavedGrid(makeWorkspace());
   const remoteId = randomUUID();

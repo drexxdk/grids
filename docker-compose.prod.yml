@@ -1,0 +1,54 @@
+name: grids-prod
+
+services:
+  api:
+    image: grids-api:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: deploy/api.env
+    environment:
+      NODE_ENV: production
+      PORT: "5841"
+      DATABASE_URL: postgresql://grids:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@grids-postgres:5432/grids
+      TRUST_PROXY_HOPS: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      default:
+      edge:
+        aliases: [grids-api]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grids
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: grids
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases: [grids-postgres]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grids -d grids"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-chatter-prod_default}
+
+volumes:
+  postgres_data:

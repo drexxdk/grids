@@ -3,6 +3,9 @@ test-results/
 playwright-report/
 dist/
 .vite/
+.wrangler/
+deploy/*.env
+backups/
 exports/
 .DS_Store
 .env

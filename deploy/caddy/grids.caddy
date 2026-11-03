@@ -1,0 +1,5 @@
+handle_path /grids-api/* {
+	reverse_proxy grids-api:5841 {
+		header_up X-Forwarded-For {http.request.header.X-Grids-Client-IP}
+	}
+}

@@ -111,6 +111,13 @@ test("all three code exchanges validate provider identities and discard access t
 });
 
 test("production configuration requires HTTPS and complete credentials", () => {
+  const production = {
+    DATABASE_URL: "test", NODE_ENV: "production",
+    WEB_URL: "https://gritz.pages.dev/", PUBLIC_API_URL: "https://gritz.pages.dev",
+  };
+  assert.throws(() => readConfig(production), /GRIDS_PROXY_SECRET/);
+  assert.throws(() => readConfig({ ...production, GRIDS_PROXY_SECRET: "short" }));
+  assert.equal(readConfig({ ...production, GRIDS_PROXY_SECRET: "a".repeat(64) }).secure, true);
   assert.throws(() => readConfig({ DATABASE_URL: "test", GOOGLE_CLIENT_ID: "half" }));
   assert.throws(() => readConfig({ DATABASE_URL: "test", NODE_ENV: "production" }));
   assert.throws(() => readConfig({ DATABASE_URL: "test", WEB_URL: "https://user:pass@example.com/" }));

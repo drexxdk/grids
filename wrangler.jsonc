@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gritz",
+  "pages_build_output_dir": "./apps/web/dist",
+  "compatibility_date": "2026-11-03",
+  "vars": {
+    "GRIDS_API_URL": "https://chatter-drexx-api.duckdns.org/grids-api",
+    "GRIDS_PUBLIC_ORIGIN": "https://gritz.pages.dev"
+  },
+  "env": {
+    "preview": {
+      "vars": {}
+    }
+  }
+}

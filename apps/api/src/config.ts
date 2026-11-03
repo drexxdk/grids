@@ -9,6 +9,7 @@ const envSchema = z.object({
   WEB_URL: httpUrl.default("http://localhost:5837/"),
   PUBLIC_API_URL: httpUrl.default("http://localhost:5841"),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  GRIDS_PROXY_SECRET: z.union([z.literal(""), z.string().min(43)]).default(""),
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   DISCORD_CLIENT_ID: z.string().default(""),
@@ -26,6 +27,9 @@ export function readConfig(environment: NodeJS.ProcessEnv) {
   if (api.pathname !== "/") throw new Error("PUBLIC_API_URL must be an origin without a path.");
   if (env.NODE_ENV === "production" && [web, api].some((url) => url.protocol !== "https:")) {
     throw new Error("Production requires HTTPS public URLs.");
+  }
+  if (env.NODE_ENV === "production" && !env.GRIDS_PROXY_SECRET) {
+    throw new Error("Production requires GRIDS_PROXY_SECRET for the Pages proxy.");
   }
   const credentials: Record<AuthProvider, { id: string; secret: string }> = {
     google: { id: env.GOOGLE_CLIENT_ID, secret: env.GOOGLE_CLIENT_SECRET },
@@ -45,6 +49,7 @@ export function readConfig(environment: NodeJS.ProcessEnv) {
     apiOrigin: api.origin,
     secure: env.NODE_ENV === "production",
     trustProxyHops: env.TRUST_PROXY_HOPS,
+    proxySecret: env.GRIDS_PROXY_SECRET,
     credentials,
   };
 }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import express, { type ErrorRequestHandler, type Request, type Response } from "express";
 import { parse, serialize } from "cookie";
 import helmet from "helmet";
@@ -34,6 +34,15 @@ export function createApp(
   app.use(helmet({ referrerPolicy: { policy: "no-referrer" } }));
   app.use("/api", (_req, res, next) => {
     res.set("Cache-Control", "no-store");
+    next();
+  });
+  app.use("/api", (req, _res, next) => {
+    if (!config.proxySecret || (req.path === "/health" && ["GET", "HEAD"].includes(req.method))) return next();
+    const supplied = req.get("X-Grids-Proxy-Secret");
+    if (!supplied || !timingSafeEqual(
+      Buffer.from(hash(supplied), "hex"),
+      Buffer.from(hash(config.proxySecret), "hex"),
+    )) return next(new HttpError(403, "Access through the Grids website is required."));
     next();
   });
   app.use("/api", (req, res, next) => {

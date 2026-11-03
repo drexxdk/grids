@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "../../packages"]
+  "include": ["src", "tests", "../../packages", "../../functions"]
 }

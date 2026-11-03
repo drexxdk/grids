@@ -90,17 +90,35 @@ The shared model separates layout/style/export settings from cell content and me
 
 All editor document changes use typed commands and a React reducer: grid/cell/export edits, placement/swaps/clearing, resizing/reset, and completed imports. Commands resolve current cell IDs rather than stale positions; resize/reset prepare new-cell IDs before dispatch so replay stays stable. Dialogs, save/export progress and pending image decoding remain outside the saved document. There is no undo feature.
 
-## Deploy To GitHub Pages
+## Deploy To Cloudflare Pages
 
-1. Push the project to the GitHub repository's `main` branch. The repository is already initialized with an `origin` remote.
-2. In the GitHub repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
-3. Push to `main`, or run **Test And Deploy GitHub Pages** manually from the **Actions** tab.
+The Git-connected Cloudflare Pages project is `gritz`, at **https://gritz.pages.dev/**. Production builds follow `main` in `incrementish/grids`, using repository root, Node 22, build command `npm run build:web` and output `apps/web/dist`. GitHub Actions independently runs builds, model/browser tests and API/Postgres tests; it no longer publishes a second GitHub Pages site. Pages deploys successful builds without waiting for those independent tests.
 
-The workflow installs locked dependencies and builds the site once. As before, a successful build permits deployment of `apps/web/dist/`; model tests, four browser-test shards and API/Postgres tests report independently and do not gate deployment. Pull requests run the same checks without deploying. The published URL is shown in the deployment environment, normally `https://<username>.github.io/<repository>/`. For a separately hosted same-site API, set the public repository Actions variable `VITE_API_URL` before building.
+Root [functions/api/[[path]].ts](functions/api/[[path]].ts) forwards only `/api` requests to the fixed Oracle upstream. All browser API calls remain same-origin; do not set `VITE_API_URL` to the DuckDNS host. This preserves secure SameSite=Lax cookies without relying on third-party cookies. Functions stream API JSON and redirects, never image files. [wrangler.jsonc](wrangler.jsonc) defines public production bindings. Set `GRIDS_PROXY_SECRET` as a **production-only encrypted Pages secret**, identical to the API secret. Preview builds are disabled and the function independently rejects other origins; do not give previews production secrets. Use separate infrastructure/secrets for preview accounts.
 
-No API keys or application secrets are needed for guest editing. Browser drafts belong to each browser origin. GitHub Pages hosts only the frontend, never the API or Postgres. Account hosting requires a separately running Node API and persistent Postgres with backups. Run `npm ci`, configure server environment and start `npm run start -w @grids/api`; the API applies migrations before listening. The Docker Compose file is local-development infrastructure, not an internet-facing production database setup.
+The isolated Oracle stack is `/opt/grids`, Compose project `grids-prod`. Its private Postgres volume is separate from Chatter's database; neither Grids container publishes a host port. Only the API additionally joins `chatter-prod_default` under alias `grids-api`. Chatter's API-host Caddy block imports `extras/*.caddy`; [deploy/caddy/grids.caddy](deploy/caddy/grids.caddy) owns only `/grids-api/*`. It forwards the trusted Pages client-IP header; all API endpoints except read-only health require the shared secret before rate limiting/session handling.
 
-Prefer a same-origin reverse proxy forwarding `/api` to the API while serving the static frontend. Alternatively use same-site HTTPS web/API subdomains and set the public `VITE_API_URL=https://api.example.com/api` in `apps/web/.env` (or the build environment). Rebuild when changing that URL. Set the server's `WEB_URL` and `PUBLIC_API_URL` to the deployed addresses and register the production callbacks. A `github.io` frontend with an unrelated API domain is cross-site: these SameSite=Lax sessions will not work there. Use a custom domain and same-site API, or a same-origin proxy, before enabling production login; do not weaken cookies to work around third-party-cookie blocking. Set `NODE_ENV=production` and the exact `TRUST_PROXY_HOPS` for your trusted reverse proxy; the default is zero. Limit unauthenticated access at the proxy, keep the database private, and back it up before migrations. Request-rate limits are process-local; run one API process or add a shared limiter before scaling. The service worker excludes `/api` navigation so sign-in redirects reach the server.
+### Oracle Deployment
+
+1. Copy the tracked repository files to `/opt/grids`, without copying local `.env`, `node_modules` or browser uploads. Keep server secrets, backups and volumes between releases.
+2. With `umask 077`, copy [deploy/stack.env.example](deploy/stack.env.example) to `deploy/stack.env` and [deploy/api.env.example](deploy/api.env.example) to `deploy/api.env`. Generate independent database and proxy secrets with `openssl rand -hex 32`. Never commit these files. The stack password must remain hexadecimal because Compose constructs `DATABASE_URL` from it.
+3. Ensure Chatter's tracked API Caddy block has `import extras/*.caddy`. Its deploy copies files without deleting the unmanaged `extras` directory, preserving Grids routing.
+4. Run `TAG=<release-id> bash deploy/deploy.sh`. It builds the ARM-compatible non-root API image, backs up an already-running Grids database before migration, waits for both containers to be healthy, validates Caddy and reloads only Caddy. It does not restart Chatter's application or database containers.
+5. Upload the proxy secret to Pages without displaying it: `npm exec -- wrangler pages secret put GRIDS_PROXY_SECRET --project-name gritz`. Set it only for production in the dashboard/API. Redeploy Pages after changing secrets or function bindings.
+
+The API applies transactional migrations on startup. Protected SQL backups are stored in `/opt/grids/backups`; copy them to separate protected storage, define retention and test restoration before relying on them. A named volume alone is not a backup. Request-rate limits are process-local; keep one API process until introducing a shared limiter.
+
+### Production Login Providers
+
+Create separate provider applications and put their paired credentials only in `/opt/grids/deploy/api.env`, then recreate the API with `docker compose --env-file deploy/stack.env -f docker-compose.prod.yml up -d --wait api`. Unconfigured providers remain hidden.
+
+- Google: `https://gritz.pages.dev/api/auth/google/callback`
+- Facebook: `https://gritz.pages.dev/api/auth/facebook/callback`
+- Discord: `https://gritz.pages.dev/api/auth/discord/callback`
+
+Google's authorized JavaScript origin is `https://gritz.pages.dev`. Register the exact callbacks above and complete each provider's consent/test-user/app-review requirements. Actual provider consent flows require configured credentials and manual checks.
+
+When changing the domain, update `GRIDS_PUBLIC_ORIGIN` in Wrangler, API `WEB_URL`/`PUBLIC_API_URL`, page metadata and all provider-console URLs together, then redeploy both services. Browser drafts/uploads belong to the old origin and do not automatically migrate to a new domain. Local Compose remains development-only.
 
 Review the rights to supplied images before publishing them in a public repository.
 
@@ -120,7 +138,7 @@ Review the rights to supplied images before publishing them in a public reposito
 - [packages/database](packages/database): Postgres pool and transactional SQL migration runner.
 - [docker-compose.yml](docker-compose.yml): local Postgres 16 service and persistent volume.
 - [apps/web/vite.config.mjs](apps/web/vite.config.mjs) and [apps/web/playwright.config.mjs](apps/web/playwright.config.mjs): web tooling.
-- `.github/workflows/deploy.yml`: test and GitHub Pages deployment workflow.
+- `.github/workflows/deploy.yml`: independent build and regression checks.
 
 ## Editing And Export
 
