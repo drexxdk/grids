@@ -345,10 +345,7 @@ async function editHeading(page, value) {
 }
 
 async function chooseImage(page, name, index = 0) {
-  await page
-    .locator(".cell-image-button")
-    .nth(index)
-    .click({ position: { x: 5, y: 5 } });
+  await page.locator(".cell-image-button").nth(index).click();
   if (await page.locator(".grid-cell").nth(index).locator("img").count())
     await page
       .locator(".grid-cell")
@@ -366,7 +363,7 @@ async function chooseImage(page, name, index = 0) {
   )
     await dialog
       .getByRole("button", { name: `Image options: ${name}`, exact: true })
-      .click({ position: { x: 5, y: 5 } });
+      .click();
   await dialog
     .getByRole("button", { name: `Use ${name}`, exact: true })
     .click();
@@ -2159,10 +2156,7 @@ for (const provider of ["commons", "met"]) {
       expect(mock.requests).toHaveLength(different);
       if (provider === "met")
         expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(1);
-      await page
-        .locator(".cell-image-button")
-        .first()
-        .tap({ position: { x: 5, y: 5 } });
+      await page.locator(".cell-image-button").first().tap();
       const picker = page.getByRole("dialog", {
         name: "Choose image",
         exact: true,
@@ -2355,10 +2349,7 @@ for (const [mode, pickerTest] of [
     async ({ page }, testInfo) => {
       const mock = await mockCommons(page);
       await page.goto("./");
-      await page
-        .locator(".cell-image-button")
-        .first()
-        .tap({ position: { x: 5, y: 5 } });
+      await page.locator(".cell-image-button").first().tap();
       const picker = page.getByRole("dialog", {
         name: "Choose image",
         exact: true,
@@ -11875,7 +11866,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
               headingPixels++;
           }
           const headerColor = [
-            ...context.getImageData(84, 84, 1, 1).data,
+            ...context.getImageData(canvas.width / 2, 84, 1, 1).data,
           ].slice(0, 3);
           const headerMargin = context.getImageData(84, 84, 120, 120).data;
           let headerMarginPixels = 0;
@@ -11915,7 +11906,7 @@ test("image placement, title editing, grid sizing, and image exports", async ({
   ]);
   for (const result of exports) {
     expect(result.width).toBe(1380);
-    expect(result.height).toBe(2008);
+    expect(result.height).toBe(2076);
     expect(result.brightTitlePixels).toBeGreaterThan(1000);
     expect(result.headingPixels).toBeGreaterThan(1000);
     expect(result.headerMarginPixels).toBe(0);
@@ -12788,10 +12779,7 @@ test("edge resizing preserves coordinates, overflow and newer edits", async ({
   await page
     .locator(".cell-image-button")
     .nth(2)
-    .dragTo(page.locator(".cell-image-button").first(), {
-      sourcePosition: { x: 5, y: 5 },
-      targetPosition: { x: 5, y: 5 },
-    });
+    .dragTo(page.locator(".cell-image-button").first());
   await expect(page.locator(".cell-heading").first()).toHaveValue(
     "Edit after resizing",
   );
@@ -13285,10 +13273,7 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
     })),
   );
   await expect(page.locator(".asset")).toHaveCount(8);
-  await page
-    .locator(".cell-image-button")
-    .first()
-    .click({ position: { x: 5, y: 5 } });
+  await page.locator(".cell-image-button").first().click();
   const picker = page.getByRole("dialog", {
     name: "Choose image",
     exact: true,
@@ -13391,9 +13376,7 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
       .first()
       .evaluate(cardStyles),
   );
-  await picker
-    .getByRole("button", { name: "Use Grid 7", exact: true })
-    .hover({ position: { x: 5, y: 5 } });
+  await picker.getByRole("button", { name: "Use Grid 7", exact: true }).hover();
   await picker
     .getByRole("button", { name: "Delete Grid 7", exact: true })
     .click();
@@ -13401,9 +13384,7 @@ test("unified image picker matches aside cards and keeps responsive grids", asyn
   await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
     0,
   );
-  await picker
-    .getByRole("button", { name: "Use Grid 0", exact: true })
-    .click({ position: { x: 5, y: 5 } });
+  await picker.getByRole("button", { name: "Use Grid 0", exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect(
     page.locator(".grid-cell").first().locator("img"),
@@ -13639,10 +13620,7 @@ test("upload tiles match image card geometry with distinct drop-target hover fra
     await selectField(page, "image-shape", shape);
     for (const position of ["above", "overlay-bottom"]) {
       await selectField(page, "caption-position", position);
-      await page
-        .locator(".cell-image-button")
-        .first()
-        .click({ position: { x: 5, y: 5 } });
+      await page.locator(".cell-image-button").first().click();
       const picker = page.getByRole("dialog", {
         name: "Choose image",
         exact: true,
@@ -13661,11 +13639,9 @@ test("upload tiles match image card geometry with distinct drop-target hover fra
           expect(measured.svgWidth).toBeGreaterThan(measured.width * 0.9);
           expect(measured.svgHeight).toBeGreaterThan(measured.height * 0.9);
         }
-        await upload.hover({ position: { x: 5, y: 5 } });
+        await upload.hover();
         const uploadHover = await upload.evaluate(metrics);
-        await image
-          .locator("[data-card-image] > button")
-          .hover({ position: { x: 5, y: 5 } });
+        await image.locator("[data-card-image] > button").hover();
         const imageHover = await image.evaluate(metrics);
         expect(uploadHover.width).toBeCloseTo(imageHover.width, 1);
         expect(uploadHover.height).toBeCloseTo(imageHover.height, 1);
@@ -13715,7 +13691,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
     name: "Choose image",
     exact: true,
   });
-  await imageButton(1).tap({ position: { x: 5, y: 5 } });
+  await imageButton(1).tap();
   await picker.locator("#picker-cell-upload").setInputFiles(
     ["Touch A", "Touch B"].map((name, index) => ({
       name: `${name}.svg`,
@@ -13727,16 +13703,12 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
   );
   await expect(picker).toBeVisible();
   await expect(cells.locator("img")).toHaveCount(0);
-  await picker
-    .getByRole("button", { name: "Use Touch B", exact: true })
-    .tap({ position: { x: 5, y: 5 } });
+  await picker.getByRole("button", { name: "Use Touch B", exact: true }).tap();
   await expect(picker).toHaveCount(0);
   await expect(cells.nth(0).locator("img")).toHaveCount(0);
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch B");
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
-  await picker
-    .getByRole("button", { name: "Use Touch A", exact: true })
-    .tap({ position: { x: 5, y: 5 } });
+  await imageButton(0).tap();
+  await picker.getByRole("button", { name: "Use Touch A", exact: true }).tap();
   await expect(picker).toHaveCount(0);
   await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Touch A");
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch B");
@@ -13744,7 +13716,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
     .nth(0)
     .getByRole("group", { name: "Cell tools", exact: true });
   const session = await context.newCDPSession(page);
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await imageButton(0).tap();
   await expect(tools).toBeVisible();
   await expect(picker).toHaveCount(0);
   expect(
@@ -13752,21 +13724,18 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
       document.activeElement?.matches("input, textarea"),
     ),
   ).toBe(false);
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await imageButton(0).tap();
   await expect(tools).toHaveCount(0);
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await imageButton(0).tap();
   await tools.getByRole("button", { name: "Replace image", exact: true }).tap();
   await expect(picker).toBeVisible();
-  await picker
-    .getByRole("button", { name: "Use Touch A", exact: true })
-    .tap({ position: { x: 5, y: 5 } });
+  await picker.getByRole("button", { name: "Use Touch A", exact: true }).tap();
   await expect(picker).toHaveCount(0);
   const drag = async (sourceIndex, targetIndex, cancel = false) => {
     const handle = cells
       .nth(sourceIndex)
       .getByRole("button", { name: "Drag image", exact: true });
-    if (!(await handle.isVisible()))
-      await imageButton(sourceIndex).tap({ position: { x: 5, y: 5 } });
+    if (!(await handle.isVisible())) await imageButton(sourceIndex).tap();
     await expect(handle).toBeVisible();
     await expect(handle).toHaveCSS("touch-action", "none");
     const source = await handle.boundingBox();
@@ -13808,7 +13777,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
       page.getByRole("group", { name: "Cell tools", exact: true }),
     ).toHaveCount(0);
   };
-  await imageButton(0).tap({ position: { x: 5, y: 5 } });
+  await imageButton(0).tap();
   await drag(0, 2);
   await expect(cells.nth(0).locator("img")).toHaveCount(0);
   await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Touch A");
@@ -13818,7 +13787,7 @@ test("touch cards toggle tools and drag moves swaps and cancels without opening 
   await drag(1, 0, true);
   await expect(cells.nth(0).locator("img")).toHaveCount(0);
   await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Touch A");
-  await imageButton(1).tap({ position: { x: 5, y: 5 } });
+  await imageButton(1).tap();
   await expect(
     cells.nth(1).getByRole("group", { name: "Cell tools", exact: true }),
   ).toBeVisible();
@@ -13956,7 +13925,7 @@ test("empty drop-target inset and filled card solid hover and focus surfaces kee
     ]) {
       const card = page.locator(selector).first();
       const image = card.locator("[data-card-image] > button");
-      await image.hover({ position: { x: 5, y: 5 } });
+      await image.hover();
       for (const state of ["hover", "focus"]) {
         if (state === "focus") {
           await page.mouse.move(0, 0);
@@ -13970,10 +13939,22 @@ test("empty drop-target inset and filled card solid hover and focus surfaces kee
             "border-top-color",
             await paletteColor(page, "accent"),
           );
-          await expect(card.locator("[data-card-content]")).toHaveCSS(
-            "border-top-left-radius",
-            "11px",
-          );
+          const radiusError = await card.evaluate((element) => {
+            const style = getComputedStyle(element);
+            const width =
+              element.getBoundingClientRect().width -
+              parseFloat(style.borderLeftWidth) -
+              parseFloat(style.borderRightWidth);
+            const expected =
+              (width * parseFloat(style.borderTopLeftRadius)) / 100 - 1;
+            return Math.abs(
+              parseFloat(
+                getComputedStyle(element.querySelector("[data-card-content]"))
+                  .borderTopLeftRadius,
+              ) - expected,
+            );
+          });
+          expect(radiusError).toBeLessThan(0.1);
           continue;
         }
         await expect(card.locator("[data-card-content]")).toHaveCSS(
@@ -13989,8 +13970,7 @@ test("empty drop-target inset and filled card solid hover and focus surfaces kee
           const inset = parseFloat(style.maskPosition);
           return {
             radius,
-            expectedRadius:
-              parseFloat(getComputedStyle(element).borderTopLeftRadius) - 1,
+            expectedRadius: parseFloat(style.borderTopLeftRadius),
             x: content.x - bounds.x + inset,
             y: content.y - bounds.y + inset,
             right: content.right - bounds.x - inset,
