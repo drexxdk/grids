@@ -170,6 +170,50 @@ export function GridCell({
   const trigger = useRef<HTMLButtonElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
+  const [captionScroll, setCaptionScroll] = useState<{
+    top: number;
+    height: number;
+    contentHeight: number;
+  } | null>(null);
+  const scrollbarOffset = useRef(0);
+  const captionFocused = captionScroll !== null;
+  useLayoutEffect(() => {
+    const field = caption.current;
+    if (!field || !captionFocused) return;
+    const update = () =>
+      setCaptionScroll({
+        top: field.scrollTop,
+        height: field.clientHeight,
+        contentHeight: field.scrollHeight,
+      });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(field);
+    field.addEventListener("scroll", update);
+    return () => {
+      observer.disconnect();
+      field.removeEventListener("scroll", update);
+    };
+  }, [captionFocused, cell.title]);
+  const scrollCaption = (pointerY: number, track: HTMLDivElement) => {
+    const field = caption.current;
+    if (!field) return;
+    const bounds = track.getBoundingClientRect();
+    const thumbHeight = Math.min(
+      bounds.height,
+      Math.max(16, (bounds.height * field.clientHeight) / field.scrollHeight),
+    );
+    field.scrollTop =
+      Math.max(
+        0,
+        Math.min(
+          1,
+          (pointerY - bounds.top - scrollbarOffset.current) /
+            Math.max(1, bounds.height - thumbHeight),
+        ),
+      ) *
+      (field.scrollHeight - field.clientHeight);
+  };
   const [overlayCaptionRows, setOverlayCaptionRows] = useState(1);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   const touchDragged = useRef(false);
@@ -299,7 +343,7 @@ export function GridCell({
   const toolSpace =
     overlay && alignment === "middle" ? freeImageHeight / 2 : freeImageHeight;
   const overlayColor = `${gridStyle.captionOverlayColor ?? "#000000"}${Math.round(
-    ((gridStyle.captionOverlayOpacity ?? 60) / 100) * 255,
+    ((gridStyle.captionOverlayOpacity ?? 70) / 100) * 255,
   )
     .toString(16)
     .padStart(2, "0")}`;
@@ -349,7 +393,7 @@ export function GridCell({
           ),
         );
       const fontSize = Math.min(
-        (bounds.width * (gridStyle.cellFontSize ?? 11)) / 100,
+        (bounds.width * (gridStyle.cellFontSize ?? 12)) / 100,
         Math.max(0, (bounds.height - padding.vertical * 2) / 1.05),
       );
       field.style.fontSize = `${fontSize}px`;
@@ -405,10 +449,12 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 rounded-(--card-radius)! border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
+          "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
+          borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
           "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
           backgroundColor: "var(--card-background)",
           borderColor: "var(--line)",
@@ -846,7 +892,7 @@ export function GridCell({
             </div>
             <textarea
               ref={caption}
-              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} ${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} opacity-0 focus:opacity-100 peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 min-h-0! field-sizing-fixed! placeholder:text-(--muted)/35 hover:placeholder:text-(--muted)/80 focus:placeholder:text-(--muted)/80 outline-none!`}
+              className={`${previewOnly ? "drag-preview-heading" : library ? "library-heading asset-name" : "cell-heading"} ${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} opacity-0 focus:opacity-100 peer/caption absolute inset-x-0 z-20 hover:z-40 focus:z-40 focus:overflow-y-auto! focus:overscroll-contain scrollbar-none [&::-webkit-scrollbar]:hidden min-h-0! field-sizing-fixed! placeholder:text-current placeholder:opacity-65 hover:placeholder:opacity-85 focus:placeholder:opacity-85 outline-none!`}
               style={captionStyle}
               title={cell.title}
               rows={1}
@@ -865,18 +911,24 @@ export function GridCell({
                 }
               }}
               onFocus={(event) => {
+                setCaptionScroll({
+                  top: event.currentTarget.scrollTop,
+                  height: event.currentTarget.clientHeight,
+                  contentHeight: event.currentTarget.scrollHeight,
+                });
                 if (open || hoverTools) {
                   setHoverTools(false);
                   close(event.currentTarget);
                 }
               }}
+              onBlur={() => setCaptionScroll(null)}
               onChange={(event) => onPatch({ title: event.target.value })}
             />
             <div
               aria-hidden="true"
               data-caption-preview
               data-library-caption-preview={library || undefined}
-              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center overflow-hidden text-center peer-focus/caption:hidden`}
+              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} ${!cell.title ? "[&>span]:opacity-65 peer-hover/caption:[&>span]:opacity-85" : ""} pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center overflow-hidden text-center peer-focus/caption:hidden`}
               style={{
                 ...captionStyle,
                 fontSize: "var(--library-caption-font-size)",
@@ -894,7 +946,7 @@ export function GridCell({
             <span
               aria-hidden="true"
               data-caption-feedback
-              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent peer-hover/caption:border-white/60 peer-focus/caption:border-2 peer-focus/caption:border-(--accent)`}
+              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent transition-colors peer-hover/caption:border-(--accent) peer-focus/caption:border-(--accent)`}
               style={
                 {
                   "--caption-feedback-inset": "0px",
@@ -924,6 +976,45 @@ export function GridCell({
               }
             />
           </div>
+          {captionScroll &&
+            captionScroll.contentHeight > captionScroll.height && (
+              <div
+                aria-hidden="true"
+                data-caption-scrollbar
+                className="absolute -right-3 z-50 w-2 touch-none rounded-sm bg-(--line) cursor-default!"
+                style={{
+                  top: `${(geometry.captionTop / geometry.height) * 100}%`,
+                  height: `${(geometry.captionHeight / geometry.height) * 100}%`,
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  const thumb =
+                    event.currentTarget.firstElementChild!.getBoundingClientRect();
+                  scrollbarOffset.current =
+                    event.target === event.currentTarget
+                      ? thumb.height / 2
+                      : event.clientY - thumb.top;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  scrollCaption(event.clientY, event.currentTarget);
+                }}
+                onPointerMove={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    scrollCaption(event.clientY, event.currentTarget);
+                }}
+                onPointerUp={(event) =>
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                }
+              >
+                <div
+                  className="absolute inset-x-0 rounded-sm bg-(--accent)"
+                  style={{
+                    height: `min(100%, max(16px, ${(captionScroll.height / captionScroll.contentHeight) * 100}%))`,
+                    top: `calc((100% - min(100%, max(16px, ${(captionScroll.height / captionScroll.contentHeight) * 100}%))) * ${captionScroll.top / (captionScroll.contentHeight - captionScroll.height)})`,
+                  }}
+                />
+              </div>
+            )}
           {dropPlaceholder && <CardFrame />}
           {importing && (
             <span

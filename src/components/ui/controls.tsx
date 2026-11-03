@@ -39,6 +39,66 @@ import {
   type Ref,
 } from "react";
 
+export function PercentField({
+  id,
+  label,
+  value,
+  min = 0,
+  max = 100,
+  step,
+  onChange,
+  disabled,
+  valueText,
+  outputId,
+  outputValue,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  valueText?: string;
+  outputId?: string;
+  outputValue?: ReactNode;
+}) {
+  const percent = Math.max(
+    0,
+    Math.min(100, ((value - min) / (max - min)) * 100),
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="field-label" htmlFor={id}>
+        {label}{" "}
+        <output id={outputId}>
+          {outputValue ?? `${Number(percent.toFixed(1))}%`}
+        </output>
+      </label>
+      <input
+        id={id}
+        type="range"
+        min="0"
+        max="100"
+        step={step === undefined ? 1 : (step / (max - min)) * 100}
+        value={percent}
+        disabled={disabled}
+        aria-valuetext={valueText}
+        onChange={(event) =>
+          onChange(
+            Number(
+              (min + (Number(event.target.value) / 100) * (max - min)).toFixed(
+                6,
+              ),
+            ),
+          )
+        }
+      />
+    </div>
+  );
+}
+
 export function MotionDiv({
   motionTransition,
   ...props

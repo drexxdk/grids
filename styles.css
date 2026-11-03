@@ -179,7 +179,8 @@ label:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-input:focus,
+input:not([type="range"]):focus,
+input[type="range"]:focus-visible,
 textarea:focus,
 select:focus {
   outline: 1px solid var(--accent);

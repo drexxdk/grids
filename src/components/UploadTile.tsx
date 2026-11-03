@@ -1,6 +1,6 @@
 import { t } from "../i18n";
 import { ImagePlus, LoaderCircle } from "lucide-react";
-import { useState, type Ref } from "react";
+import { useState, type CSSProperties, type Ref } from "react";
 import { cellGeometry, type GridStyle } from "../model";
 import { CardFrame } from "./CardFrame";
 
@@ -31,12 +31,16 @@ export function UploadTile({
       aria-label={t("common.actions.addImages", { count: 2 })}
       disabled={progress !== null}
       title={t("common.actions.addOrDropImages", { count: 2 })}
-      className={`image-card @container relative shrink-0 rounded-(--card-radius)! border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! disabled:text-(--text)! ${className}`}
-      style={{
-        aspectRatio: `600 / ${geometry.height}`,
-        backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
-        borderColor: "var(--line)",
-      }}
+      className={`image-card @container relative shrink-0 border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! disabled:text-(--text)! ${className}`}
+      style={
+        {
+          aspectRatio: `600 / ${geometry.height}`,
+          "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
+          borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
+          backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
+          borderColor: "var(--line)",
+        } as CSSProperties
+      }
       data-image-hovered={hovered && !progress ? "" : undefined}
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setHovered(true);

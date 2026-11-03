@@ -137,7 +137,8 @@
       "overlayColor": "Overlay color",
       "overlayOpacity": "Overlay opacity",
       "showHeading": "Show heading",
-      "showTitles": "Show titles"
+      "showTitles": "Show titles",
+      "rounding": "Corner rounding"
     },
     "reset": {
       "title": "Reset grid settings",

@@ -897,6 +897,7 @@ test("independent typography settings validate, roundtrip and reset without chan
   Object.assign(workspace.grid, {
     headingFont: "Bebas Neue",
     headingFontSize: 30,
+    headingPadding: 54,
     headingTextColor: "#cc4488",
     cellFont: "Boogaloo",
     cellFontSize: 24,
@@ -906,6 +907,7 @@ test("independent typography settings validate, roundtrip and reset without chan
   expect(settings.style).toMatchObject({
     headingFont: "Bebas Neue",
     headingFontSize: 30,
+    headingPadding: 54,
     headingTextColor: "#cc4488",
     cellFont: "Boogaloo",
     cellFontSize: 24,
@@ -917,6 +919,11 @@ test("independent typography settings validate, roundtrip and reset without chan
     JSON.parse(JSON.stringify(settings)),
   );
   expect(model.getEditorSettings(restored)).toEqual(settings);
+  expect(model.headingGeometry(restored.grid, 150)).toEqual({
+    padding: 13.5,
+    contentHeight: 63,
+    height: 90,
+  });
   expect(model.cellGeometry(restored.grid, 150).captionHeight).toBe(55);
   expect(model.cellGeometry(restored.grid, 150, 0)).toMatchObject({
     captionHeight: 0,
@@ -926,6 +933,8 @@ test("independent typography settings validate, roundtrip and reset without chan
   for (const patch of [
     { cellFontSize: 0 },
     { headingFontSize: 37 },
+    { headingPadding: -1 },
+    { headingPadding: 61 },
     { cellTextColor: "red" },
     { headingTextColor: "#fff" },
   ]) {
@@ -937,8 +946,9 @@ test("independent typography settings validate, roundtrip and reset without chan
     ).toBe(false);
   }
   const reset = model.resetWorkspace(workspace);
-  expect(reset.grid.headingFontSize).toBeUndefined();
-  expect(reset.grid.cellFontSize).toBeUndefined();
+  expect(reset.grid.headingFontSize).toBe(21);
+  expect(reset.grid.headingPadding).toBe(30);
+  expect(reset.grid.cellFontSize).toBe(12);
   expect(reset.grid.headingTextColor).toBeUndefined();
   expect(reset.grid.cellTextColor).toBeUndefined();
   expect(reset.assets).toBe(workspace.assets);

@@ -15,7 +15,7 @@ export function fontWeightOptions(font: string) {
     { value: 900, label: "Black" },
   ].filter(({ value }) => font === "Manrope" || value === 400 || value === 700);
 }
-export function resolveFontWeight(font: string, weight = 400) {
+export function resolveFontWeight(font: string, weight = 500) {
   return font === "Manrope" ? weight : weight >= 600 ? 700 : 400;
 }
 export const gridLimit = 12;
@@ -122,6 +122,12 @@ export interface GridLayout {
   rows: number;
   columns: number;
 }
+export function headingGeometry(style: GridStyle, width: number) {
+  const padding = ((style.headingPadding ?? 30) * width) / 600;
+  const contentHeight =
+    width * Math.max(0.28, (style.headingFontSize ?? 21) * 0.014);
+  return { padding, contentHeight, height: contentHeight + padding * 2 };
+}
 export interface GridStyle {
   publisher: Publisher;
   headingVisible: boolean;
@@ -130,6 +136,7 @@ export interface GridStyle {
   headingFontWeight?: number;
   cellFontWeight?: number;
   headingFontSize?: number;
+  headingPadding?: number;
   cellFontSize?: number;
   headingTextColor?: string;
   cellTextColor?: string;
@@ -140,6 +147,7 @@ export interface GridStyle {
   canvasBackgroundColor?: string;
   background: string;
   imageAspect?: "portrait" | "landscape" | "square";
+  cornerRadius?: number;
   titlesVisible?: boolean;
   captionPlacement?: "above" | "below" | "overlay";
   captionAlignment?: "top" | "middle" | "bottom";
@@ -150,7 +158,7 @@ export function gridSpacing(style: GridStyle, width: number) {
   return {
     gap: (style.gap * width) / 600,
     headingGap: (style.gap * width) / 600,
-    padding: ((style.canvasPadding ?? 12) * width) / 600,
+    padding: ((style.canvasPadding ?? 60) * width) / 600,
   };
 }
 export const previewCardMinWidth = 128;
@@ -173,7 +181,7 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
           Math.round(width * 0.23),
           Math.ceil(
             width *
-              (((style.cellFontSize ?? 11) / 100) * 1.05 * captionRows + 0.11),
+              (((style.cellFontSize ?? 12) / 100) * 1.05 * captionRows + 0.11),
           ),
         );
   const captionHeight =
@@ -303,8 +311,13 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   headingVisible: true,
   headingFont: "Manrope",
   cellFont: "Manrope",
-  headingFontWeight: 400,
-  cellFontWeight: 400,
+  headingFontWeight: 500,
+  cellFontWeight: 500,
+  headingFontSize: 21,
+  headingPadding: 30,
+  cellFontSize: 12,
+  cornerRadius: 12.5,
+  captionOverlayOpacity: 70,
   imageAspect: "portrait",
   captionPlacement: "overlay",
   captionAlignment: "bottom",
@@ -348,7 +361,7 @@ export const makeWorkspace = (): Workspace => ({
   version: 1,
   assets: [],
   grid: makeBoard("Grid"),
-  exportSettings: { format: "image/png", resolution: 300, quality: 95 },
+  exportSettings: { format: "image/png", resolution: 300, quality: 75 },
 });
 
 export function resetWorkspace(
@@ -388,6 +401,7 @@ const styleSchema = z.strictObject({
     .optional(),
   cellFontWeight: z.number().int().min(100).max(900).multipleOf(100).optional(),
   headingFontSize: z.number().min(6).max(36).optional(),
+  headingPadding: z.number().min(0).max(60).optional(),
   cellFontSize: z.number().min(6).max(36).optional(),
   headingTextColor: z
     .string()
@@ -413,6 +427,7 @@ const styleSchema = z.strictObject({
     .optional(),
   background: z.string().regex(/^#[0-9a-f]{6}$/i),
   imageAspect: z.enum(["portrait", "landscape", "square"]).optional(),
+  cornerRadius: z.number().min(0).max(25).optional(),
   titlesVisible: z.boolean().optional(),
   captionPlacement: z.enum(["above", "below", "overlay"]).optional(),
   captionAlignment: z.enum(["top", "middle", "bottom"]).optional(),
@@ -450,6 +465,9 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       headingVisible: grid.headingVisible,
       headingFont: grid.headingFont,
       cellFont: grid.cellFont,
+      ...(grid.cornerRadius !== undefined
+        ? { cornerRadius: grid.cornerRadius }
+        : {}),
       ...(grid.headingFontWeight !== undefined
         ? { headingFontWeight: grid.headingFontWeight }
         : {}),
@@ -458,6 +476,9 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
         : {}),
       ...(grid.headingFontSize !== undefined
         ? { headingFontSize: grid.headingFontSize }
+        : {}),
+      ...(grid.headingPadding !== undefined
+        ? { headingPadding: grid.headingPadding }
         : {}),
       ...(grid.cellFontSize !== undefined
         ? { cellFontSize: grid.cellFontSize }
@@ -513,12 +534,14 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
   return {
     ...grid,
     imageAspect: style.imageAspect,
+    cornerRadius: style.cornerRadius,
     titlesVisible: style.titlesVisible,
     captionPlacement: style.captionPlacement,
     captionAlignment: style.captionAlignment,
     captionOverlayColor: style.captionOverlayColor,
     captionOverlayOpacity: style.captionOverlayOpacity,
     headingFontSize: style.headingFontSize,
+    headingPadding: style.headingPadding,
     cellFontSize: style.cellFontSize,
     headingFontWeight: style.headingFontWeight,
     cellFontWeight: style.cellFontWeight,

@@ -385,12 +385,14 @@ async function selectExportField(page, id, value) {
 
 async function beginCellUpload(page, index) {
   const image = page.locator(".cell-image-button").nth(index);
+  const bounds = await image.boundingBox();
+  const position = { x: bounds.width / 2, y: Math.min(20, bounds.height / 2) };
   if (await page.locator(".grid-cell").nth(index).locator("img").count()) {
-    await image.click({ position: { x: 5, y: 5 } });
+    await image.click({ position });
     await page
       .getByRole("button", { name: "Replace image", exact: true })
       .click();
-  } else await image.click({ position: { x: 5, y: 5 } });
+  } else await image.click({ position });
   const dialog = page.getByRole("dialog", {
     name: "Choose image",
     exact: true,
@@ -2825,8 +2827,8 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
     .toEqual({ gap: 120, padding: 120 });
   await page.reload();
   await openSidebarPanel(page, "Settings");
-  await expect(page.locator("#canvas-padding")).toHaveValue("20");
-  await expect(page.locator("#gap")).toHaveValue("20");
+  await expect(page.locator("#canvas-padding")).toHaveValue("100");
+  await expect(page.locator("#gap")).toHaveValue("100");
 });
 
 test("canvas resizing commits fitted dimensions before the next paint", async ({
@@ -2871,6 +2873,254 @@ test("canvas resizing commits fitted dimensions before the next paint", async ({
     ),
   ).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("settings sliders use normalized percentages and midpoint defaults", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await openSidebarPanel(page, "Settings");
+  const sliders = page.locator('.settings-panel input[type="range"]');
+  await expect(sliders).toHaveCount(9);
+  for (const slider of await sliders.all()) {
+    const id = await slider.getAttribute("id");
+    const value =
+      id === "cell-font-size" ? "20" : id === "caption-opacity" ? "70" : "50";
+    await expect(slider).toHaveAttribute("min", "0");
+    await expect(slider).toHaveAttribute("max", "100");
+    await expect(slider).toHaveValue(value);
+    await expect(slider.locator("..").locator("output")).toHaveText(
+      id.endsWith("font-weight") ? "500" : `${value}%`,
+    );
+  }
+  const padding = page.locator("#canvas-padding");
+  await padding.click();
+  await expect(padding).toBeFocused();
+  await expect(padding).toHaveCSS("outline-style", "none");
+  const bounds = await padding.boundingBox();
+  await page.mouse.move(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    bounds.x + bounds.width * 0.7,
+    bounds.y + bounds.height / 2,
+    { steps: 4 },
+  );
+  await expect(padding).toHaveCSS("outline-style", "none");
+  await page.mouse.up();
+  await expect(padding).toHaveCSS("outline-style", "none");
+  await padding.press("Tab");
+  const gap = page.locator("#gap");
+  await expect(gap).toBeFocused();
+  await expect(gap).toHaveCSS("outline-style", "solid");
+  await gap.press("ArrowRight");
+  await expect(gap).toHaveCSS("outline-style", "solid");
+  await page.locator("#cell-font-size").fill("100");
+  expect((await savedWorkspace(page)).grid.cellFontSize).toBe(36);
+  for (const [id, percent] of [
+    ["canvas-padding", 100],
+    ["gap", 0],
+    ["corner-rounding", 100],
+    ["heading-font-size", 100],
+    ["heading-padding", 100],
+    ["cell-font-size", 0],
+    ["heading-font-weight", 0],
+    ["cell-font-weight", 100],
+    ["caption-opacity", 0],
+  ]) {
+    await page.locator(`#${id}`).fill(String(percent));
+    const output =
+      id === "heading-font-weight"
+        ? "100"
+        : id === "cell-font-weight"
+          ? "900"
+          : `${percent}%`;
+    await expect(
+      page.locator(`#${id}`).locator("..").locator("output"),
+    ).toHaveText(output);
+  }
+  expect((await savedWorkspace(page)).grid).toMatchObject({
+    canvasPadding: 120,
+    gap: 0,
+    cornerRadius: 25,
+    headingFontSize: 36,
+    headingPadding: 60,
+    cellFontSize: 6,
+    headingFontWeight: 100,
+    cellFontWeight: 900,
+    captionOverlayOpacity: 0,
+  });
+  await reloadWorkspace(page);
+  await openSidebarPanel(page, "Settings");
+  await expect(page.locator("#canvas-padding")).toHaveValue("100");
+  await expect(page.locator("#cell-font-size")).toHaveValue("0");
+  await expect(page.locator("#heading-padding")).toHaveValue("100");
+  await page.locator("#export-grid-header").click();
+  await selectField(page, "format", "image/jpeg");
+  const quality = page.locator("#quality");
+  await expect(quality).toHaveAttribute("min", "0");
+  await expect(quality).toHaveAttribute("max", "100");
+  await expect(quality).toHaveValue("50");
+  await expect(page.locator("#quality-value")).toHaveText("50%");
+  await quality.fill("0");
+  expect((await savedWorkspace(page)).exportSettings.quality).toBe(50);
+  await quality.fill("100");
+  expect((await savedWorkspace(page)).exportSettings.quality).toBe(100);
+});
+
+test("corner rounding is shared by headings, cards, pickers and exports", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  await mockCommons(page);
+  await page.goto("./");
+  await uploadCellImage(page);
+  await editHeading(page, "Rounded heading");
+  await openSidebarPanel(page, "Settings");
+  const canvasStyle = page.getByRole("group", {
+    name: "Canvas style",
+    exact: true,
+  });
+  const rounding = canvasStyle.getByRole("slider", {
+    name: /^Corner rounding/,
+  });
+  await expect(rounding).toHaveValue("50");
+  async function checkRounding(cards, percent) {
+    await expect(cards.first()).toBeVisible();
+    for (const card of await cards.all()) {
+      expect(
+        await card.evaluate((element, percent) => {
+          const bounds = element.getBoundingClientRect();
+          const radii =
+            getComputedStyle(element).borderTopLeftRadius.split(" ");
+          const horizontal = radii[0].endsWith("%")
+            ? (parseFloat(radii[0]) * bounds.width) / 100
+            : parseFloat(radii[0]);
+          const verticalValue = radii[1] ?? radii[0];
+          const vertical = verticalValue.endsWith("%")
+            ? (parseFloat(verticalValue) * bounds.height) / 100
+            : parseFloat(verticalValue);
+          const expected = (bounds.width * percent) / 100;
+          return Math.max(
+            Math.abs(horizontal - expected),
+            Math.abs(vertical - expected),
+          );
+        }, percent),
+      ).toBeLessThan(1);
+    }
+  }
+  await expect(
+    page
+      .getByRole("group", { name: "Card style", exact: true })
+      .locator("#corner-rounding"),
+  ).toHaveCount(0);
+  for (const [id, value] of [
+    ["background-value", "#17191b"],
+    ["heading-background-color-value", "#ed1d24"],
+    ["cell-background-color-value", "#0085c7"],
+  ]) {
+    await page.locator(`#${id}`).fill(value);
+    await page.locator(`#${id}`).press("Tab");
+  }
+  for (const radius of [12, 0]) {
+    await openSidebarPanel(page, "Settings");
+    await rounding.fill(String(radius * 4));
+    await reloadWorkspace(page);
+    await openSidebarPanel(page, "Settings");
+    await expect(rounding).toHaveValue(String(radius * 4));
+    await expect(
+      canvasStyle.locator('label[for="corner-rounding"] output'),
+    ).toHaveText(`${radius * 4}%`);
+    await checkRounding(page.locator(".grid-cell"), radius);
+    const headingRadius = await page
+      .locator(".board-export-heading")
+      .evaluate((heading) =>
+        parseFloat(getComputedStyle(heading).borderTopLeftRadius),
+      );
+    const cardWidth = await page
+      .locator(".grid-cell")
+      .first()
+      .evaluate((card) => card.getBoundingClientRect().width);
+    expect(headingRadius).toBeCloseTo((cardWidth * radius) / 100, 0);
+    const grid = (await savedWorkspace(page)).grid;
+    expect(grid.cornerRadius).toBe(radius);
+    for (const size of [150, 300]) {
+      await selectExportField(page, "resolution", String(size));
+      const download = await downloadBoard(page);
+      const bytes = [...(await readFile(await download.path()))];
+      const pixels = await page.evaluate(
+        async ({ bytes, grid, size }) => {
+          const bitmap = await createImageBitmap(
+            new Blob([new Uint8Array(bytes)]),
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const context = canvas.getContext("2d");
+          context.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          const padding = Math.round(((grid.canvasPadding ?? 12) * size) / 600);
+          const gap = Math.round((grid.gap * size) / 600);
+          const top =
+            padding +
+            Math.round(
+              size *
+                (Math.max(0.28, (grid.headingFontSize ?? 21) * 0.014) +
+                  (grid.headingPadding ?? 30) / 300),
+            ) +
+            gap;
+          return [
+            [padding, padding],
+            [canvas.width / 2, padding + 1],
+            [padding, top],
+            [padding + size / 2, top + 1],
+          ].map(([left, top]) => [
+            ...context.getImageData(left, top, 1, 1).data,
+          ]);
+        },
+        { bytes, grid, size },
+      );
+      expect(pixels).toEqual([
+        radius ? [23, 25, 27, 255] : [237, 29, 36, 255],
+        [237, 29, 36, 255],
+        radius ? [23, 25, 27, 255] : [0, 133, 199, 255],
+        [0, 133, 199, 255],
+      ]);
+    }
+  }
+  await openSidebarPanel(page, "Settings");
+  await rounding.fill("48");
+  for (const width of [1440, 390]) {
+    await setEditorViewport(page, { width, height: 1000 });
+    if (width > 900) {
+      await openSidebarPanel(page, "Images");
+      await checkRounding(page.locator(".asset-panel .image-card"), 12);
+    }
+    await page.locator(".cell-image-button").nth(1).click();
+    const picker = page.getByRole("dialog", {
+      name: "Choose image",
+      exact: true,
+    });
+    await selectField(page, "picker-image-source", "imported");
+    await checkRounding(
+      picker.locator("[data-upload-tile], [data-library-image] .image-card"),
+      12,
+    );
+    await selectField(page, "picker-image-source", "commons");
+    await expect(picker.locator("[data-image-placeholder]")).toHaveCount(9);
+    await checkRounding(picker.locator(".image-card"), 12);
+    await page.screenshot({
+      path: testInfo.outputPath(`shared-rounding-${width}.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+  }
+  await openSidebarPanel(page, "Settings");
+  await page.getByRole("switch", { name: "Show heading", exact: true }).click();
+  await page.getByRole("switch", { name: "Show titles", exact: true }).click();
+  await expect(rounding).toBeVisible();
 });
 
 test("settings have open sections and joined appearance radio grids", async ({
@@ -4914,7 +5164,7 @@ test("full grid reset confirms a clean slate and retains library images through 
   await useComicExample(page);
   await editHeading(page, "Reset this heading");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("4");
+  await page.locator("#gap").fill("20");
   await page.getByRole("button", { name: "Remove row", exact: true }).click();
   const before = await savedWorkspace(page);
   const blobs = (await localDatabase(page)).images;
@@ -5233,30 +5483,25 @@ test("font previews and independent weights persist and match exports without th
         .toBe(font);
       const weight = page.locator(`#${id}-weight`);
       await expect(weight).toHaveAttribute("type", "range");
-      await expect(weight).toHaveAttribute(
-        "min",
-        font === "Manrope" ? "100" : "400",
-      );
-      await expect(weight).toHaveAttribute(
-        "max",
-        font === "Manrope" ? "900" : "700",
-      );
+      await expect(weight).toHaveAttribute("min", "0");
+      await expect(weight).toHaveAttribute("max", "100");
       await expect(weight).toHaveAttribute(
         "step",
-        font === "Manrope" ? "100" : "300",
+        font === "Manrope" ? "12.5" : "100",
       );
-      await expect(weight).toHaveValue("400");
+      await weight.fill(font === "Manrope" ? "37.5" : "0");
+      await expect(weight).toHaveValue(font === "Manrope" ? "37.5" : "0");
       await weight.press("ArrowRight");
-      await expect(weight).toHaveValue(font === "Manrope" ? "500" : "700");
+      await expect(weight).toHaveValue(font === "Manrope" ? "50" : "100");
       await weight.press("ArrowLeft");
-      await expect(weight).toHaveValue("400");
+      await expect(weight).toHaveValue(font === "Manrope" ? "37.5" : "0");
       await expect(page.getByRole("listbox")).toHaveCount(0);
     }
   }
   await page.locator("#heading-font-weight").press("End");
   await page.locator("#heading-font-weight").press("ArrowLeft");
   await selectField(page, "heading-font", "Bangers");
-  await expect(page.locator("#heading-font-weight")).toHaveValue("700");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("100");
   await expect(page.locator("#heading-font-weight")).toHaveAttribute(
     "aria-valuetext",
     "Bold",
@@ -5264,12 +5509,13 @@ test("font previews and independent weights persist and match exports without th
   await selectField(page, "heading-font", "Manrope");
   await expect(page.locator("#heading-font-weight")).toHaveAttribute(
     "max",
-    "900",
+    "100",
   );
   await page.locator("#heading-font-weight").press("End");
   await page.locator("#heading-font-weight").press("ArrowLeft");
-  await expect(page.locator("#heading-font-weight")).toHaveValue("800");
-  await page.locator("#cell-font-weight").fill("700");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("87.5");
+  await page.locator("#cell-font-weight").fill("75");
+  await page.locator("#cell-font-size").fill("20");
   await page.getByRole("button", { name: /^Edit grid heading: / }).click();
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
@@ -5322,12 +5568,12 @@ test("font previews and independent weights persist and match exports without th
   expect(saved.grid).not.toHaveProperty("template");
   expect(saved).not.toHaveProperty("themeSettings");
   await reloadWorkspace(page);
-  await expect(page.locator("#heading-font-weight")).toHaveValue("800");
+  await expect(page.locator("#heading-font-weight")).toHaveValue("87.5");
   await expect(page.locator("#heading-font-weight")).toHaveAttribute(
     "aria-valuetext",
     "Extra bold",
   );
-  await expect(page.locator("#cell-font-weight")).toHaveValue("700");
+  await expect(page.locator("#cell-font-weight")).toHaveValue("75");
   await expect(page.locator(".board-export-heading")).toHaveCSS(
     "font-weight",
     "800",
@@ -5344,12 +5590,12 @@ test("font previews and independent weights persist and match exports without th
   await page
     .getByRole("button", { name: "Show sidebar", expanded: false, exact: true })
     .click();
-  await page.locator("#cell-font-weight").fill("600");
+  await page.locator("#cell-font-weight").fill("62.5");
   await expect(page.locator("#board-grid .cell-heading").first()).toHaveCSS(
     "font-weight",
     "600",
   );
-  await page.locator("#cell-font-weight").fill("700");
+  await page.locator("#cell-font-weight").fill("75");
   await page.locator("#heading-font").click();
   await expect(
     page.getByRole("listbox").locator('[data-value="Manrope"]'),
@@ -5410,7 +5656,7 @@ test("heading and card typography controls are independent across previews, expo
     page.getByRole("group", { name: "Card style", exact: true }),
   ).toContainText("Font");
   await selectField(page, "heading-font", "Bebas Neue");
-  await page.locator("#heading-font-size").fill("30");
+  await page.locator("#heading-font-size").fill("80");
   const headingHex = page
     .getByRole("group", { name: "Canvas heading style", exact: true })
     .getByRole("textbox", { name: "Text color hex value", exact: true });
@@ -5421,7 +5667,7 @@ test("heading and card typography controls are independent across previews, expo
     "rgb(244, 244, 239)",
   );
   await selectField(page, "cell-font", "Boogaloo");
-  await page.locator("#cell-font-size").fill("24");
+  await page.locator("#cell-font-size").fill("60");
   const cardHex = page
     .getByRole("group", { name: "Card style", exact: true })
     .getByRole("textbox", { name: "Text color hex value", exact: true });
@@ -5499,7 +5745,7 @@ test("heading and card typography controls are independent across previews, expo
     ).toBe(true);
   }
   const configured = await savedWorkspace(page);
-  await expect(page.locator("#cell-font-size")).toHaveValue("24");
+  await expect(page.locator("#cell-font-size")).toHaveValue("60");
   await reloadWorkspace(page);
   await verify();
   expect((await savedWorkspace(page)).grid.cells).toEqual(
@@ -5561,9 +5807,11 @@ test("empty headings use accessible inline placeholders and reserve no export ba
 }, testInfo) => {
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("2");
-  await page.locator("#canvas-padding").fill("2");
+  await page.locator("#gap").fill("10");
+  await page.locator("#canvas-padding").fill("10");
   await selectField(page, "image-shape", "square");
+  await page.locator("#cell-text-color-value").fill("#a6d8ff");
+  await page.locator("#cell-text-color-value").press("Tab");
   await page.locator("#upload").setInputFiles({
     name: "Original.svg",
     mimeType: "image/svg+xml",
@@ -5630,22 +5878,57 @@ test("empty headings use accessible inline placeholders and reserve no export ba
       : [".cell-heading"]) {
       const field = page.locator(selector).first();
       await expect(field).toHaveAttribute("placeholder", "Add heading");
+      const textColor = await field.evaluate(
+        (element) => getComputedStyle(element).color,
+      );
+      expect(textColor).toBe("rgb(166, 216, 255)");
       await page.mouse.move(1, 1);
       await expect
         .poll(() =>
           field.evaluate(
-            (element) => getComputedStyle(element, "::placeholder").color,
+            (element) => getComputedStyle(element, "::placeholder").opacity,
           ),
         )
-        .toMatch(/(?:, |\/ )0\.35\)$/);
+        .toBe("0.65");
+      expect(
+        await field.evaluate(
+          (element) => getComputedStyle(element, "::placeholder").color,
+        ),
+      ).toBe(textColor);
       await field.hover();
       await expect
         .poll(() =>
           field.evaluate(
-            (element) => getComputedStyle(element, "::placeholder").color,
+            (element) => getComputedStyle(element, "::placeholder").opacity,
           ),
         )
-        .toMatch(/(?:, |\/ )0\.8\)$/);
+        .toBe("0.85");
+      if (selector === ".cell-heading") {
+        const preview = field.locator("..").locator("[data-caption-preview]");
+        const previewText = preview.locator("span");
+        await expect(preview).toHaveCSS("color", textColor);
+        await expect(previewText).toHaveCSS("opacity", "0.85");
+        await page.mouse.move(1, 1);
+        await expect(previewText).toHaveCSS("opacity", "0.65");
+        await field.focus();
+        await expect(preview).toBeHidden();
+        expect(
+          await field.evaluate(
+            (element) => getComputedStyle(element, "::placeholder").opacity,
+          ),
+        ).toBe("0.85");
+        await field.fill("Written title");
+        await expect(field).toHaveCSS("opacity", "1");
+        await expect(field).toHaveCSS("color", textColor);
+        await page.locator("#export-grid-header").focus();
+        await expect(preview).toBeVisible();
+        await expect(preview).toHaveText("Written title");
+        await expect(preview).toHaveCSS("color", textColor);
+        await expect(previewText).toHaveCSS("opacity", "1");
+        await field.fill("");
+        await page.locator("#export-grid-header").focus();
+        await expect(previewText).toHaveCSS("opacity", "0.65");
+      }
     }
     await trigger.click();
     const heading = page.getByRole("textbox", {
@@ -5774,6 +6057,30 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
   await page
     .getByRole("textbox", { name: "Grid heading", exact: true })
     .press("Enter");
+  const headingPadding = page.locator("#heading-padding");
+  await expect(headingPadding).toHaveValue("50");
+  for (const percent of [50, 0, 100]) {
+    await headingPadding.fill(String(percent));
+    await expect
+      .poll(() =>
+        page.locator(".board-export-heading").evaluate((heading, percent) => {
+          const cardWidth = document
+            .querySelector(".grid-cell")
+            .getBoundingClientRect().width;
+          const field = heading.firstElementChild;
+          const padding = parseFloat(getComputedStyle(field).paddingTop);
+          const height = heading.getBoundingClientRect().height;
+          const fontSize = parseFloat(getComputedStyle(heading).fontSize);
+          return Math.max(
+            Math.abs(padding / cardWidth - percent / 1000),
+            Math.abs(height / cardWidth - (0.294 + percent / 500)),
+            Math.abs(fontSize / cardWidth - 0.21),
+          );
+        }, percent),
+      )
+      .toBeLessThan(0.005);
+  }
+  await headingPadding.fill("50");
   for (const { width, height } of [
     { width: 1440, height: 844 },
     { width: 960, height: 844 },
@@ -5803,6 +6110,24 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
     await expect(trigger).toHaveCSS("border-top-width", "0px");
     await expect(trigger).toHaveCSS("border-radius", "0px");
     await expect(trigger).toHaveCSS("outline-style", "none");
+    await expect
+      .poll(() =>
+        page.locator(".board-export-heading").evaluate((heading) => {
+          const style = getComputedStyle(heading, "::after");
+          return {
+            color: style.borderTopColor,
+            width: style.borderTopWidth,
+            radius: style.borderTopLeftRadius,
+          };
+        }),
+      )
+      .toEqual({
+        color: "rgb(216, 243, 106)",
+        width: "1px",
+        radius: await page
+          .locator(".board-export-heading")
+          .evaluate((heading) => getComputedStyle(heading).borderTopLeftRadius),
+      });
     expect(await trigger.boundingBox()).toEqual(bounds);
     await page.locator(".board-export-heading").screenshot({
       path: testInfo.outputPath(`heading-text-hover-${width}.png`),
@@ -5817,6 +6142,16 @@ test("grid heading uses text-field hover and inline editing on desktop and mobil
     await expect(field).toHaveCSS("background-color", /(?:, |\/ )0\.12\)$/);
     await expect(field).toHaveCSS("border-top-width", "0px");
     await expect(field).toHaveCSS("outline-style", "none");
+    await page.mouse.move(1, 1);
+    await expect
+      .poll(() =>
+        page
+          .locator(".board-export-heading")
+          .evaluate(
+            (heading) => getComputedStyle(heading, "::after").borderTopColor,
+          ),
+      )
+      .toBe("rgb(216, 243, 106)");
     const editingBounds = await field.boundingBox();
     expect(editingBounds.width).toBeCloseTo(bounds.width, 1);
     expect(editingBounds.height).toBeCloseTo(bounds.height, 1);
@@ -6102,7 +6437,7 @@ test("export combines settings and downloads on desktop and mobile", async ({
       await expect(dialog.locator("#quality")).toBeDisabled();
     else {
       await expect(dialog.locator("#quality")).toBeEnabled();
-      await dialog.locator("#quality").fill("80");
+      await dialog.locator("#quality").fill("60");
     }
     if (format === "image/png")
       await page.screenshot({
@@ -6120,7 +6455,7 @@ test("export combines settings and downloads on desktop and mobile", async ({
   await trigger.click();
   await expect(dialog.locator("#format")).toHaveText("WebP");
   await expect(dialog.locator("#resolution")).toHaveText("150 px / image");
-  await expect(dialog.locator("#quality")).toHaveValue("80");
+  await expect(dialog.locator("#quality")).toHaveValue("60");
   const bounds = await dialog.boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
@@ -6378,7 +6713,7 @@ test("imported captions preserve library capitalization in the canvas and export
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
 });
 
-test("caption hover and focus are distinct without changing field geometry", async ({
+test("caption hover and focus use control borders without changing field geometry", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -6410,7 +6745,7 @@ test("caption hover and focus are distinct without changing field geometry", asy
       await expect(feedback).toHaveCSS("border-top-width", "1px");
       await expect(feedback).toHaveCSS(
         "border-top-color",
-        /^(?:rgba\(255, 255, 255, 0\.6\)|oklab\(0\.999994 .* \/ 0\.6\))$/,
+        "rgb(216, 243, 106)",
       );
       await expect(feedback).toHaveCSS("pointer-events", "none");
       const frame = await feedback.boundingBox();
@@ -6419,9 +6754,13 @@ test("caption hover and focus are distinct without changing field geometry", asy
       expect(frame.y - before.y).toBeCloseTo(inset, 1);
       expect(before.width - frame.width).toBeCloseTo(2 * inset, 1);
       expect(before.height - frame.height).toBeCloseTo(2 * inset, 1);
-      const cardRadius = await card.evaluate((element) =>
-        parseFloat(getComputedStyle(element).borderTopLeftRadius),
-      );
+      const cardRadius = await card.evaluate((element) => {
+        const radius =
+          getComputedStyle(element).borderTopLeftRadius.split(" ")[0];
+        return radius.endsWith("%")
+          ? (parseFloat(radius) * element.clientWidth) / 100
+          : parseFloat(radius);
+      });
       const outerCorner =
         position.endsWith("top") || position === "above"
           ? "borderTopLeftRadius"
@@ -6446,7 +6785,7 @@ test("caption hover and focus are distinct without changing field geometry", asy
       expect(hoverColor).toBe(idleColor);
       await field.click();
       await expect(field).toBeFocused();
-      await expect(feedback).toHaveCSS("border-top-width", "2px");
+      await expect(feedback).toHaveCSS("border-top-width", "1px");
       await expect(feedback).toHaveCSS(
         "border-top-color",
         "rgb(216, 243, 106)",
@@ -7046,8 +7385,8 @@ test("captions share external bands and fit individual overlays across canvas, l
 }, testInfo) => {
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("2");
-  await page.locator("#canvas-padding").fill("2");
+  await page.locator("#gap").fill("10");
+  await page.locator("#canvas-padding").fill("10");
   await selectField(page, "image-shape", "square");
   await page.locator("#upload").setInputFiles(
     ["Short", "Lines", "Word"].map((name) => ({
@@ -8297,6 +8636,9 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   await setEditorViewport(page, { width: 1440, height: 1000 });
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
+  await page.locator("#corner-rounding").fill("0");
+  await page.locator("#heading-font-size").fill("40");
+  await page.locator("#cell-font-size").fill("17");
   const canvasStyle = page.getByRole("group", {
     name: "Canvas style",
     exact: true,
@@ -8412,17 +8754,17 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
     ["canvas-padding", "padding", 5],
     ["gap", "gap", 10],
   ]) {
-    await page.locator(`#${id}`).fill(String(value));
+    await page.locator(`#${id}`).fill(String(value * 5));
     expected[key] = value;
     if (id === "gap") expected.heading = value;
     await expect.poll(ratios).toEqual(expected);
-    await expect(page.locator(`#${id}-value`)).toHaveText(`${value}%`);
+    await expect(page.locator(`#${id}-value`)).toHaveText(`${value * 5}%`);
     await checkCanvasPadding();
   }
   await canvasStyle.locator("#background-value").fill("#d9e7f0");
-  await page.locator("#canvas-padding").fill("4");
+  await page.locator("#canvas-padding").fill("20");
   expected.padding = 4;
-  await expect(page.locator("#canvas-padding-value")).toHaveText("4%");
+  await expect(page.locator("#canvas-padding-value")).toHaveText("20%");
   await checkCanvasPadding();
   await expect
     .poll(() =>
@@ -8518,9 +8860,9 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
     gap: [217, 231, 240, 255],
     edges: Array.from({ length: 4 }, () => [217, 231, 240, 255]),
   });
-  await page.locator("#canvas-padding").fill("8");
+  await page.locator("#canvas-padding").fill("40");
   expected.padding = 8;
-  await expect(page.locator("#canvas-padding-value")).toHaveText("8%");
+  await expect(page.locator("#canvas-padding-value")).toHaveText("40%");
   await checkCanvasPadding();
   await expect(page.locator(".canvas-area")).toHaveCSS("padding-left", "12px");
   await expect
@@ -8585,7 +8927,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
   await setEditorViewport(page, { width: 390, height: 844 });
   await expect.poll(ratios).toEqual(expected);
   await openSidebarPanel(page, "Settings");
-  await expect(page.locator("#canvas-padding")).toHaveValue("8");
+  await expect(page.locator("#canvas-padding")).toHaveValue("40");
   await expect
     .poll(() =>
       page.locator("[data-canvas-viewport]").evaluate((viewport) => {
@@ -8627,8 +8969,8 @@ test("appearance settings preserve content and match exported ratios and caption
   test.setTimeout(60000);
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("2");
-  await page.locator("#canvas-padding").fill("2");
+  await page.locator("#gap").fill("10");
+  await page.locator("#canvas-padding").fill("10");
   await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
     "Portrait",
   );
@@ -10042,8 +10384,8 @@ touchTest(
     await expect(add).toHaveCSS("opacity", "1");
     await expect(library).toHaveAttribute("aria-busy", "true");
     await openSidebarPanel(page, "Settings");
-    await page.locator("#gap").fill("3.5");
-    await expect(page.locator("#gap")).toHaveValue("3.5");
+    await page.locator("#gap").fill("17.5");
+    await expect(page.locator("#gap")).toHaveValue("17.5");
     await openSidebarPanel(page, "Images");
     await page.screenshot({
       path: testInfo.outputPath("import-progress-desktop.png"),
@@ -10327,7 +10669,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   await page.locator(".cell-heading").first().fill("Keep this caption");
   await expect(page.locator(".library-heading").first()).toHaveValue("used");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("4");
+  await page.locator("#gap").fill("20");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -10340,7 +10682,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   );
   await reset.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("4");
+  await expect(page.locator("#gap")).toHaveValue("20");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -10348,7 +10690,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     .getByRole("button", { name: "Reset settings", exact: true })
     .click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("10");
+  await expect(page.locator("#gap")).toHaveValue("50");
   await expect(page.locator(".asset")).toHaveCount(2);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
@@ -10976,12 +11318,12 @@ test("automatic saves work without browser estimates or persistence APIs", async
   });
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("4.5");
+  await page.locator("#gap").fill("22.5");
   await expect
     .poll(async () => (await localDatabase(page)).document?.grid.gap)
     .toBe(27);
   await reloadWorkspace(page);
-  await expect(page.locator("#gap")).toHaveValue("4.5");
+  await expect(page.locator("#gap")).toHaveValue("22.5");
 });
 
 test("IndexedDB stores image blobs and private grid content while localStorage holds settings only", async ({
@@ -11936,10 +12278,10 @@ test("guest reset restores settings without deleting images or removed placement
   await page.locator(".cell-heading").nth(15).fill("Keep my custom caption");
   await editHeading(page, "Custom banner");
   await selectField(page, "heading-font", "Bangers");
-  await page.locator("#gap").fill("5");
+  await page.locator("#gap").fill("25");
   await selectExportField(page, "format", "image/webp");
   await selectField(page, "resolution", "300");
-  await page.locator("#quality").fill("70");
+  await page.locator("#quality").fill("40");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await reloadWorkspace(page);
@@ -11968,13 +12310,13 @@ test("guest reset restores settings without deleting images or removed placement
     page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
-  await expect(page.locator("#gap")).toHaveValue("10");
+  await expect(page.locator("#gap")).toHaveValue("50");
   await expect(page.locator(".asset")).toHaveCount(1);
   const reset = await savedWorkspace(page);
   expect(reset.exportSettings).toEqual({
     format: "image/png",
-    resolution: 1200,
-    quality: 95,
+    resolution: 300,
+    quality: 75,
   });
   expect(reset.assets).toEqual(original.assets);
   expect(reset.grid).toMatchObject({
@@ -12036,6 +12378,12 @@ test("long title overlays reach the bottom and titles can be hidden without losi
   await page.locator(".cell-heading").first().click();
   await expect(canvasPreview).toBeHidden();
   await expect(page.locator(".cell-heading").first()).toHaveValue(title);
+  const canvasField = page.locator(".cell-heading").first();
+  await expect(canvasField).toHaveCSS("overflow-y", "auto");
+  await canvasField.press("Control+End");
+  await expect
+    .poll(() => canvasField.evaluate((field) => field.scrollTop))
+    .toBeGreaterThan(0);
   await page.locator(".cell-image-button").nth(1).press("Enter");
   const picker = page.getByRole("dialog", {
     name: "Choose image",
@@ -12066,13 +12414,55 @@ test("long title overlays reach the bottom and titles can be hidden without losi
     const field = picker.locator(".library-heading");
     const preview = picker.locator("[data-library-caption-preview]");
     await expect(preview).toBeVisible();
+    await expect(field).toHaveCSS("overflow-y", "hidden");
+    const fieldBounds = await field.boundingBox();
+    const textWidth = await field.evaluate((element) => element.clientWidth);
     await field.click();
     await expect(preview).toBeHidden();
     await expect(field).toHaveValue(title);
+    await expect(field).toHaveCSS("overflow-y", "auto");
+    expect(await field.boundingBox()).toEqual(fieldBounds);
+    expect(await field.evaluate((element) => element.clientWidth)).toBe(
+      textWidth,
+    );
+    await expect(field).toHaveCSS("scrollbar-width", "none");
+    const scrollbar = picker.locator("[data-caption-scrollbar]");
+    await expect(scrollbar).toBeVisible();
+    const scrollbarBounds = await scrollbar.boundingBox();
+    expect(scrollbarBounds.x).toBeGreaterThanOrEqual(
+      fieldBounds.x + fieldBounds.width,
+    );
+    await field.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect
+      .poll(() => field.evaluate((element) => element.scrollTop))
+      .toBe(0);
+    await page.mouse.move(
+      scrollbarBounds.x + scrollbarBounds.width / 2,
+      scrollbarBounds.y + 3,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      scrollbarBounds.x + scrollbarBounds.width / 2,
+      scrollbarBounds.y + scrollbarBounds.height - 2,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect(field).toBeFocused();
+    await expect
+      .poll(() => field.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await field.press("Control+End");
+    await expect
+      .poll(() => field.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
     await picker
       .getByRole("heading", { name: "Choose image", exact: true })
       .click();
     await expect(preview).toBeVisible();
+    await expect(field).toHaveCSS("overflow-y", "hidden");
+    await expect(scrollbar).toHaveCount(0);
   }
   await picker
     .getByRole("button", { name: "Close dialog", exact: true })
@@ -12190,7 +12580,7 @@ test("long title overlays reach the bottom and titles can be hidden without losi
   await downloadBoard(page);
   expect(await page.evaluate(() => window.titleDrawing)).toEqual([]);
   await toggle.click();
-  await expect(cardSettings.locator("#cell-font-size")).toHaveValue("11");
+  await expect(cardSettings.locator("#cell-font-size")).toHaveValue("20");
   await expect(titleColor).toHaveValue("#123456");
   await expect(titleOpacity).toHaveValue("37");
   await expect(page.locator(".cell-heading").first()).toBeVisible();

@@ -1,6 +1,7 @@
 import {
   cellGeometry,
   gridSpacing,
+  headingGeometry,
   captionPadding,
   sourceRectangle,
   publishers,
@@ -30,9 +31,7 @@ export function dimensions(item: Board, size: number, captionRows = 1) {
   const titleHeight = geometry.captionHeight;
   const headingHeight =
     item.headingVisible && item.heading?.trim()
-      ? Math.round(
-          size * Math.max(0.28, ((item.headingFontSize ?? 18) / 100) * 1.4),
-        ) + headingGap
+      ? Math.round(headingGeometry(item, size).height) + headingGap
       : 0;
   return {
     gap,
@@ -91,7 +90,7 @@ export function layoutCaption(
   title: string,
   font: string,
   width: number,
-  sizePercent = 11,
+  sizePercent = 12,
   fontWeight = 400,
   maximumHeight = Infinity,
 ) {
@@ -189,7 +188,7 @@ function drawTitle(
   fontWeight = 400,
   padding = { horizontal: width * 0.04, vertical: height * 0.09 },
   caption = false,
-  captionSizePercent = 11,
+  captionSizePercent = 12,
 ) {
   context.letterSpacing = "0.5px";
   const { fontSize, lines } = caption
@@ -264,6 +263,17 @@ export async function createExport(
   const publisher = publishers[item.publisher];
   if (headingHeight) {
     const bandHeight = headingHeight - headingGap;
+    const headingPadding = headingGeometry(item, size).padding;
+    context.save();
+    context.beginPath();
+    context.roundRect(
+      padding,
+      padding,
+      width - padding * 2,
+      bandHeight,
+      ((item.cornerRadius ?? 12.5) * size) / 100,
+    );
+    context.clip();
     const headingBackground = item.headingBackgroundColor ?? publisher.color;
     if (headingBackground !== "transparent") {
       context.fillStyle = headingBackground;
@@ -273,14 +283,15 @@ export async function createExport(
       context,
       item.heading.toUpperCase(),
       item.headingFont,
-      (size * (item.headingFontSize ?? 18)) / 100,
-      padding,
-      padding,
-      width - padding * 2,
-      bandHeight,
+      (size * (item.headingFontSize ?? 21)) / 100,
+      padding + headingPadding,
+      padding + headingPadding,
+      width - padding * 2 - headingPadding * 2,
+      bandHeight - headingPadding * 2,
       item.headingTextColor ?? publisher.text,
       resolveFontWeight(item.headingFont, item.headingFontWeight),
     );
+    context.restore();
   }
   const cells = item.cells.slice(0, item.rows * item.columns);
   const images = await Promise.all(
@@ -314,6 +325,16 @@ export async function createExport(
         .slice(0, Math.floor(index / item.columns))
         .reduce((total, rowHeight) => total + rowHeight + gap, 0);
     const imageTop = top + geometry.imageTop;
+    context.save();
+    context.beginPath();
+    context.roundRect(
+      left,
+      top,
+      size,
+      geometry.height,
+      ((item.cornerRadius ?? 12.5) * size) / 100,
+    );
+    context.clip();
     context.fillStyle = item.cellBackgroundColor ?? "#111315";
     context.fillRect(left, top, size, geometry.height);
     const image = images[index];
@@ -341,7 +362,10 @@ export async function createExport(
       );
       context.restore();
     }
-    if (item.titlesVisible === false || !entry.title.trim()) return;
+    if (item.titlesVisible === false || !entry.title.trim()) {
+      context.restore();
+      return;
+    }
     const captionTop = top + geometry.captionTop;
     context.save();
     context.fillStyle =
@@ -349,7 +373,7 @@ export async function createExport(
         ? (item.captionOverlayColor ?? "#000000")
         : (item.cellBackgroundColor ?? publisher.caption);
     if (item.captionPlacement === "overlay")
-      context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
+      context.globalAlpha = (item.captionOverlayOpacity ?? 70) / 100;
     context.fillRect(left, captionTop, size, geometry.captionHeight);
     context.restore();
     drawTitle(
@@ -367,6 +391,7 @@ export async function createExport(
       true,
       item.cellFontSize,
     );
+    context.restore();
   });
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, mime, quality),

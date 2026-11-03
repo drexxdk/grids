@@ -1,6 +1,6 @@
 import { cellGeometry, type Asset, type Cell, type GridStyle } from "../model";
 import { captionMaxLength } from "../config";
-import type { Ref } from "react";
+import type { CSSProperties, Ref } from "react";
 import { LoaderCircle } from "lucide-react";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
 
@@ -22,11 +22,15 @@ export function LibraryImagePlaceholder({
       className="min-w-0 w-full"
     >
       <div
-        className={`image-card @container flex w-full items-center justify-center rounded-(--card-radius) border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
-        style={{
-          aspectRatio: `600 / ${geometry.height}`,
-          backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
-        }}
+        className={`image-card @container flex w-full items-center justify-center border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
+        style={
+          {
+            aspectRatio: `600 / ${geometry.height}`,
+            "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
+            borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
+            backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
+          } as CSSProperties
+        }
       >
         {loading && (
           <LoaderCircle className="size-[18cqw]! animate-spin text-(--muted) motion-reduce:animate-none" />
