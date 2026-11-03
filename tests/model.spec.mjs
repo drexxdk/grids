@@ -1114,12 +1114,12 @@ test("multiline caption geometry caps shared bands at three rows without changin
   };
   expect(model.cellGeometry(style, 600, 6)).toMatchObject({
     imageHeight: 600,
-    captionHeight: 274,
-    height: 874,
+    captionHeight: 293,
+    height: 893,
   });
   expect(
     model.cellGeometry({ ...style, captionPlacement: "above" }, 600, 6),
-  ).toMatchObject({ imageTop: 274, captionTop: 0, height: 874 });
+  ).toMatchObject({ imageTop: 293, captionTop: 0, height: 893 });
   expect(
     model.cellGeometry(
       {
@@ -1175,8 +1175,8 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   expect(model.workspaceSchema.safeParse(workspace).success).toBe(true);
   expect(model.cellGeometry(workspace.grid, 600)).toMatchObject({
     imageHeight: 800,
-    captionHeight: 138,
-    captionTop: 331,
+    captionHeight: 142,
+    captionTop: 329,
     height: 800,
   });
   expect(
@@ -1190,16 +1190,16 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
     ),
   ).toMatchObject({
     imageHeight: 450,
-    imageTop: 138,
+    imageTop: 142,
     captionTop: 0,
-    height: 588,
+    height: 592,
   });
   expect(
     model.cellGeometry(
       { ...workspace.grid, imageAspect: "square", captionPlacement: "below" },
       600,
     ),
-  ).toMatchObject({ imageHeight: 600, captionTop: 600, height: 738 });
+  ).toMatchObject({ imageHeight: 600, captionTop: 600, height: 742 });
   expect(model.captionPadding(600)).toEqual({ horizontal: 36, vertical: 30 });
   expect(
     model.editorSettingsSchema.safeParse({
@@ -1215,7 +1215,7 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   });
   expect(model.cellGeometry(defaults, 600)).toMatchObject({
     imageHeight: 800,
-    captionTop: 662,
+    captionTop: 658,
     height: 800,
   });
   const reset = model.resetWorkspace(workspace);
@@ -1302,8 +1302,13 @@ test("settings boundary extracts only allowlisted configuration and detached val
       headingVisible: true,
       headingFont: "Manrope",
       cellFont: "Manrope",
-      headingFontWeight: 400,
-      cellFontWeight: 400,
+      headingFontWeight: 500,
+      cellFontWeight: 500,
+      headingFontSize: 21,
+      headingPadding: 30,
+      cellFontSize: 12,
+      cornerRadius: 12.5,
+      captionOverlayOpacity: 60,
       imageAspect: "portrait",
       captionPlacement: "overlay",
       captionAlignment: "bottom",
@@ -1412,8 +1417,8 @@ test("font weights roundtrip and reset without theme profiles", () => {
   }
   const reset = model.resetWorkspace(restored);
   expect(model.getEditorSettings(reset).style).toMatchObject({
-    headingFontWeight: 400,
-    cellFontWeight: 400,
+    headingFontWeight: 500,
+    cellFontWeight: 500,
   });
   for (const field of ["headingFontWeight", "cellFontWeight"]) {
     for (const value of [99, 450, 1000]) {
