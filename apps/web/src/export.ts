@@ -51,6 +51,7 @@ export function dimensions(item: Board, size: number, captionRows = 1) {
 }
 export async function loadImage(src: string) {
   const image = new Image();
+  image.crossOrigin = "anonymous";
   image.src = src;
   await image.decode();
   return image;

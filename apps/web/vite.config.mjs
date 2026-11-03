@@ -32,6 +32,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         globPatterns: ["**/*.{html,js,css,woff2,png,svg}"],
         dontCacheBustURLsMatching: /-[A-Za-z0-9_-]{8}\.(?:js|css)$/,
         cleanupOutdatedCaches: true,
@@ -64,6 +65,7 @@ export default defineConfig({
     host: "localhost",
     port: 5837,
     strictPort: false,
+    proxy: { "/api": "http://localhost:5841" },
   },
   preview: {
     host: "localhost",

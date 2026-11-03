@@ -30,6 +30,7 @@ import {
   PanelBottom,
   PanelTopDashed,
   PanelBottomDashed,
+  Cloud,
 } from "lucide-react";
 import {
   Button,
@@ -40,6 +41,7 @@ import {
   Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
+import { AccountDialog } from "./components/AccountDialog";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
   GridCell,
@@ -246,6 +248,16 @@ export default function App() {
   );
   const [headingEditing, setHeadingEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (url.searchParams.get("auth") !== "failed") return;
+    toast.error(t("account.failedLogin"));
+    url.searchParams.delete("auth");
+    history.replaceState(history.state, "", url);
+    setAccountOpen(true);
+  }, []);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
   const [librarySource, setLibrarySource] = useEditorState("librarySource");
@@ -968,6 +980,17 @@ export default function App() {
   );
   return (
     <>
+      <AccountDialog
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        returnFocus={accountButton}
+        workspace={workspace}
+        onRestore={(restored) => {
+          dispatchDocument({ type: "workspace/restore", workspace: restored });
+          setHeadingEditing(false);
+          setImageTarget(null);
+        }}
+      />
       <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
           canvasControls={
@@ -1004,6 +1027,18 @@ export default function App() {
             </span>
           }
           actions={
+            <>
+            <Button
+              ref={accountButton}
+              variant="icon"
+              aria-label={t("account.title")}
+              title={t("account.title")}
+              aria-haspopup="dialog"
+              disabled={conflict || importProgress !== null}
+              onClick={() => setAccountOpen(true)}
+            >
+              <Cloud aria-hidden="true" className="size-5!" />
+            </Button>
             <button
               id="export-grid-header"
               ref={exportButton}
@@ -1020,6 +1055,7 @@ export default function App() {
                 {t("export.title")}
               </span>
             </button>
+            </>
           }
         >
           {(drawerToggle, toolsExpanded) => (

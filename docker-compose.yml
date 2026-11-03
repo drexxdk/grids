@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grids
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env}
+      POSTGRES_DB: grids
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - grids_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grids -d grids"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  grids_postgres_data:

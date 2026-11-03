@@ -1,6 +1,6 @@
 ---
 description: "Use when writing or editing Tailwind CSS utilities, React UI classes, or resolving suggestCanonicalClasses diagnostics."
-applyTo: "src/**/*.tsx,styles.css"
+applyTo: "apps/web/src/**/*.tsx,apps/web/styles.css"
 ---
 
 # Tailwind 4 Classes

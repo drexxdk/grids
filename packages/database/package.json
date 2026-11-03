@@ -1,0 +1,10 @@
+{
+  "name": "@grids/database",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./index.ts" },
+  "scripts": { "migrate": "tsx --env-file-if-exists=../../.env migrate.ts" },
+  "dependencies": { "pg": "^8.16.3" },
+  "devDependencies": { "@types/pg": "^8.15.6", "tsx": "^4.20.6" }
+}

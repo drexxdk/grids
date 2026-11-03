@@ -168,6 +168,7 @@ export function GridCell({
         ? t("cell.actions.deleteImage", { value1: asset?.title })
         : t("cell.actions.clear");
   const trigger = useRef<HTMLButtonElement>(null);
+  const [failedImage, setFailedImage] = useState<string | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
   const [captionScroll, setCaptionScroll] = useState<{
@@ -693,16 +694,19 @@ export function GridCell({
                   <img
                     className="pointer-events-none rounded-none! border-0!"
                     src={asset.src || undefined}
+                    crossOrigin={asset.provenance ? "anonymous" : undefined}
+                    onError={() => setFailedImage(asset.src)}
                     referrerPolicy={
                       asset.provenance ? "no-referrer" : undefined
                     }
                     alt={cell.title || asset.title}
-                    onLoad={(event) =>
+                    onLoad={(event) => {
+                      setFailedImage(null);
                       setImageSize({
                         width: event.currentTarget.naturalWidth,
                         height: event.currentTarget.naturalHeight,
-                      })
-                    }
+                      });
+                    }}
                     style={
                       cropRectangle
                         ? {
@@ -717,6 +721,11 @@ export function GridCell({
                     }
                     draggable={false}
                   />
+                  {failedImage === asset.src && (
+                    <span role="status" className="absolute inset-0 grid place-items-center bg-(--panel) p-2 text-sm text-(--text)">
+                      {t("account.imageUnavailable")}
+                    </span>
+                  )}
                 </PopoverButton>
               ) : (
                 <button

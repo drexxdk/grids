@@ -159,12 +159,14 @@ export class LocalWorkspaceStore {
     };
     if (!workspaceSchema.safeParse(placeholder).success) return makeWorkspace();
     this.assertActive();
-    if (images.some((image) => !(image?.blob instanceof Blob))) {
+    if (images.some((image, index) =>
+      !document.assets[index].provenance && !(image?.blob instanceof Blob))) {
       throw new Error(
         "A saved image is missing. The stored grid has not been replaced.",
       );
     }
     const assets = document.assets.map((asset, index) => {
+      if (asset.provenance) return { ...asset, src: asset.provenance.originalUrl };
       const blob = images[index]!.blob;
       const existing = this.media.get(asset.id);
       const src = existing?.url ?? URL.createObjectURL(blob);
@@ -211,6 +213,7 @@ export class LocalWorkspaceStore {
     if (this.conflicted) throw new LocalWorkspaceConflictError();
     const records: ImageRecord[] = [];
     for (const asset of workspace.assets) {
+      if (asset.provenance) continue;
       if (this.persistedImages.has(asset.id)) continue;
       let entry = this.media.get(asset.id);
       if (!entry) {
@@ -251,9 +254,10 @@ export class LocalWorkspaceStore {
     });
     const settings = JSON.stringify(getEditorSettings(workspace));
     const retained = new Set(workspace.assets.map((asset) => asset.id));
-    const deletions = [...this.pendingDeletions].filter(
-      (id) => !retained.has(id),
-    );
+    const deletions = [
+      ...[...this.pendingDeletions].filter((id) => !retained.has(id)),
+      ...workspace.assets.filter((asset) => asset.provenance).map((asset) => asset.id),
+    ];
     this.assertActive();
     try {
       await this.db.transaction("rw", this.documents, this.images, async () => {
@@ -277,7 +281,7 @@ export class LocalWorkspaceStore {
     deletions.forEach((id) => {
       this.pendingDeletions.delete(id);
       this.persistedImages.delete(id);
-      this.releaseAsset(id);
+      if (!retained.has(id)) this.releaseAsset(id);
     });
     try {
       this.channel?.postMessage({ id: "guest", revision: document.revision });

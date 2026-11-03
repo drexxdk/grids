@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { captionMaxLength } from "./config";
+import { captionMaxLength } from "./config.js";
 
 export const fontOptions = ["Bangers", "Bebas Neue", "Boogaloo", "Manrope"];
 export function fontWeightOptions(font: string) {

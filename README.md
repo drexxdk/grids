@@ -1,17 +1,51 @@
 # Grids
 
-A browser-only, single-grid image editor built with React 19 and Vite. Fresh workspaces start with one empty, neutral 3x3 grid and an empty image library. No backend is required for guest editing.
+A single-grid image editor built with React 19 and Vite, with optional Google, Facebook and Discord accounts. Fresh workspaces start with one empty, neutral 3x3 grid and an empty image library. Guest editing needs no backend; accounts add named saved grids and private or published layout/style presets. There are no local/password accounts.
 
 ## Run
 
-Requires Node.js 22.12 or newer. Node.js 22 is used for deployment.
+Requires Node.js 22.12 or newer. Node.js 22 is used for deployment. This is one Git repository with npm workspace packages, like Chatter:
+
+| Workspace | Purpose |
+| --- | --- |
+| `apps/web` | React/Vite frontend |
+| `apps/api` | Express provider sign-in, sessions and saved-item API |
+| `packages/database` | Postgres access and versioned SQL migrations |
+| `packages/contracts` | Shared strict schemas and grid/settings transformations |
+
+For guest-only development:
 
 ```sh
 npm ci
-npm run dev
+npm run dev:web
 ```
 
-Open the localhost URL printed in the terminal, normally http://localhost:5837. If that port is occupied, Vite automatically tries the next available port. `npm start` also starts the development server. Use Vite rather than opening the HTML directly so modules, fonts, and canvas exports load consistently.
+Open the localhost URL printed in the terminal, normally http://localhost:5837. If that port is occupied, Vite automatically tries the next available port. Use Vite rather than opening the HTML directly so modules, fonts, and canvas exports load consistently.
+
+### Accounts And Database
+
+1. Copy `.env.example` to the root `.env` (preserve any existing credentials). Set `POSTGRES_PASSWORD` and the matching URL-encoded password in `DATABASE_URL`.
+2. Start Docker Desktop, then run `npm run db:up`. Postgres 16 uses a named persistent volume and binds only to localhost port **5433**, leaving Chatter's port 5432 alone.
+3. Configure both credentials for each desired sign-in provider in the root `.env`. Unconfigured providers are hidden; partially configured providers fail startup explicitly. No OAuth secrets enter the frontend build.
+4. Run `npm run db:migrate`, then `npm start`. This starts the API on **5841** and the web app on **5837**. The API also applies migrations transactionally on startup, with an advisory lock. Stop development processes with Ctrl+C; `npm run db:stop` stops Postgres without deleting its volume.
+
+Register these exact development callbacks in the provider consoles:
+
+- Google: `http://localhost:5841/api/auth/google/callback`
+- Facebook: `http://localhost:5841/api/auth/facebook/callback`
+- Discord: `http://localhost:5841/api/auth/discord/callback`
+
+Use the provider's development/test-user configuration where required; Facebook may require HTTPS/app review for the intended deployment. Never reuse Chatter's production secrets. `WEB_URL` is the fixed return URL after login (including any frontend subpath); `PUBLIC_API_URL` is the API origin, without `/api`. If Vite uses another port, update `WEB_URL` and restart the API. The dev server proxies `/api`; provider callbacks go directly to port 5841. Production configuration requires HTTPS.
+
+The header's cloud button opens **Account and saved grids**. Sign-in never uploads or replaces the browser draft automatically. Signed-in users can save new named grids, replace a saved grid with stale-write protection, load or delete grids, and save/apply/publish/unpublish/delete presets. Loads, replacements, deletions and preset application require confirmation. Shared presets are readable by guests; only the owner can change them. Lists are paginated in groups of 50. Deleting an account removes its sessions, saved grids and private/public presets.
+
+**No image hosting:** saved grids contain layout, captions, crops, approved Commons/Met provenance and original-image references, plus opaque IDs for browser-local images. They never contain uploaded files, image bytes, blob/data URLs or local file paths. Provider images load directly from their original hosts after reload; neither Postgres nor IndexedDB stores provider image binaries. Initial import still validates the original using the existing 20 MB/40 MP limits. Browser-local uploads remain in IndexedDB until removed or browser storage is cleared, and can be resolved when loading a saved grid in that same browser. On another browser their cells retain captions/layout but are empty, with a warning. A deleted/unavailable provider image cannot be guaranteed to reload or export; failures remain visible. Provider images are not guaranteed offline.
+
+Presets contain only reusable layout/style/export settings, never captions, grid headings or image references. Publishing is explicit and off by default. Local navigation preferences are not published or synced.
+
+Sessions use random opaque HttpOnly, SameSite=Lax cookies (Secure in production); only token hashes are stored. OAuth state is browser-bound, single-use and expires after ten minutes, with PKCE for Google/Discord. Access/refresh tokens and email addresses are not retained. Provider+subject identifies an account; different providers create separate accounts, with no email-based auto-linking. State-changing API calls enforce the exact frontend Origin, a custom request header and JSON bodies. Server-side validation, ownership checks, request limits and a 1 MB document limit apply.
+
+Signing out invalidates the server session but deliberately leaves the browser draft and uploads unchanged. Loading an account grid makes it the browser's current autosaved draft; this is one shared browser workspace, not a private local cache per account. Clear site data before handing a shared browser to someone else.
 
 ## Build And Preview
 
@@ -20,13 +54,13 @@ npm run build
 npm run preview
 ```
 
-The production site is generated in `dist/`. Preview normally runs at http://localhost:5838 and also falls back to another port when occupied. Relative build paths support both a GitHub Pages repository URL and a custom domain.
+The production site is generated in `apps/web/dist/`. Preview normally runs at http://localhost:5838 and also falls back to another port when occupied. Relative build paths support both a GitHub Pages repository URL and a custom domain. Preview is static and does not proxy `/api`; use `npm start` for local account development.
 
 ## Install And Offline Use
 
 On Android, open the published site in Chrome and use **Install app** or **Add to Home screen** from its menu. On iPhone, open it in Safari and choose **Share > Add to Home Screen**, with **Open as Web App** enabled if offered. Browser wording and automatic install prompts vary.
 
-After the first online visit finishes caching, Grids can launch, edit local images and export offline. Its production service worker caches the app, local fonts and icons, not uploaded images; those remain in IndexedDB. Installation is not backup or cross-device sync, and some browsers keep installed-app storage separate from browser-tab storage. Updates are checked on launch and resume without reusing cached worker scripts. New workers activate automatically; an already-open page reloads only after changes are saved and active editors, settings, dialogs and uploads have finished. Existing installations using the old update behavior may need one close and reopen after deployment; do not clear site data, which contains local images and grids. Service workers are disabled in development; installation requires HTTPS or localhost and the production build.
+After the first online visit finishes caching, Grids can launch, edit local uploads and export them offline. Its production service worker caches the app, local fonts and icons, not images or API/authentication routes; local uploads remain in IndexedDB. Provider references and account saves require the network. Installation is not backup or cross-device sync, and some browsers keep installed-app storage separate from browser-tab storage. Updates are checked on launch and resume without reusing cached worker scripts. New workers activate automatically; an already-open page reloads only after changes are saved and active editors, settings, dialogs and uploads have finished. Existing installations using the old update behavior may need one close and reopen after deployment; do not clear site data, which contains local images and grids. Service workers are disabled in development; installation requires HTTPS or localhost and the production build.
 
 ## Frontend Foundation
 
@@ -44,15 +78,15 @@ Font, format and resolution dropdowns share a Headless UI listbox with 44px cont
 
 The modal structure and scrollbar-compensation pattern were adapted from the user's Chatter frontend (`apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, and the portal-dialog rules in `apps/web/src/index.css`). Grids uses Motion instead of Chatter's CSS/Web Animations transitions, adds listener/probe cleanup and post-dialog measurements, and keeps its own editor styling and deployment. No Chatter backend code is included.
 
-Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Provider sign-in/database settings, uploaded fonts/thumbnails, and additional/custom ratios remain pending. Dexie stores image blobs and the coherent local grid snapshot in IndexedDB (`grids-client-v1`); localStorage holds the settings cache (`grids-settings-v1`) and separate navigation preferences (`grids-ui-v1`). Restoration uses strict Zod validation and fresh blob URLs. Obsolete prototype localStorage documents are ignored, without migration or backup UI.
+Development order and progress are tracked in [docs/roadmap.md](docs/roadmap.md). Uploaded fonts/thumbnails and additional/custom ratios remain pending. Dexie stores local-upload blobs and the coherent local grid/reference snapshot in IndexedDB (`grids-client-v1`); localStorage holds the settings cache (`grids-settings-v1`) and separate navigation preferences (`grids-ui-v1`). Restoration uses strict Zod validation and fresh blob URLs for local uploads. Obsolete prototype localStorage documents are ignored, without migration or backup UI.
 
 Navigation survives reloads. The URL records the desktop Images/Settings tab (`panel`), library provider (`source`), committed search (`q`) and topic (`topic`), and raw provider cursor (`offset`). Search narrows the selected topic; changing topics keeps the text, clearing text keeps the topic, and All removes only the topic constraint (`topic=all`). Both choices reset pagination when changed and survive reloads/provider switches independently in the sidebar and picker. Topic coverage depends on provider metadata, not an exhaustive category taxonomy; see [topic scope and limits](docs/providers.md#search-and-topics). Browser Back/Forward restores these views. A direct link takes precedence over saved navigation, while opening the bare app URL restores the last local view. Unrelated query parameters and fragments are preserved. Search text in a link is visible to anyone receiving it and can appear in browser history or hosting logs; links contain no uploaded images, grid content, or local media references.
 
 Browser-local navigation preferences remember desktop sidebar visibility, picker source, and independent search/topic/page positions and previous-page cursors for each provider in the sidebar and picker. They are separate from document/settings saves and account-settings payloads. Invalid or unavailable preference storage falls back safely, with URL navigation still usable. Crop/export/reset/image-picker dialogs and the mobile Settings overlay never reopen automatically, and touch text inputs are not focused on restoration. Provider metadata caching remains memory-only: reloading restores the browsing position but fetches its results again.
 
-The image library has one Image source dropdown listing My images and each enabled provider, currently Wikimedia Commons and The Met, without a separate Online/provider dropdown or demo/example loader. Both support keyless public-domain/CC0 image search and the same compact provider-specific topic controls, shared cards and current appearance settings. Sidebar imports add to the library; mouse/touch drops import into the targeted cell, and picker imports place only the chosen image. Original blobs and source/creator/license metadata stay in IndexedDB and survive reload; source links remain available in My images. Searches and image requests disclose query/network information to the selected provider, not local uploads. Other licenses and providers are not enabled. See [provider scope and compatibility checks](docs/providers.md). Defaults use Manrope and do not infer branding from the grid name or uploaded images. Artwork used by browser tests lives only in test fixtures, outside public builds.
+The image library has one Image source dropdown listing My images and each enabled provider, currently Wikimedia Commons and The Met, without a separate Online/provider dropdown or demo/example loader. Both support keyless public-domain/CC0 image search and the same compact provider-specific topic controls, shared cards and current appearance settings. Sidebar imports add to the library; mouse/touch drops import into the targeted cell, and picker imports place only the chosen image. Provider references and source/creator/license metadata survive reload without persisting original blobs; source links remain available in My images. Searches and image requests disclose query/network information to the selected provider, not local uploads. Other licenses and providers are not enabled. See [provider scope and compatibility checks](docs/providers.md). Defaults use Manrope and do not infer branding from the grid name or uploaded images. Artwork used by browser tests lives only in test fixtures, outside public builds.
 
-The model separates layout/style/export configuration from local cell content and media. Its strict settings-only representation excludes images, font files, URLs/paths, placements, IDs, grid names, headings, and captions. Applying settings validates before changing the grid and preserves local content, including cells outside the visible grid. Reset uses this shared path, with an explicit reset of the grid name and banner text. This is a client-side boundary, not account sync; future backend ownership and validation remain required.
+The shared model separates layout/style/export settings from cell content and media. Its strict settings-only representation excludes images, font files, URLs/paths, placements, IDs, grid names, headings and captions. Private and public presets use this contract on both client and server. Saved grids have a separate reference-only contract. Applying settings validates before changing the grid and preserves local content, including cells outside the visible grid. Reset uses this shared path, with an explicit reset of the grid name and banner text.
 
 All editor document changes use typed commands and a React reducer: grid/cell/export edits, placement/swaps/clearing, resizing/reset, and completed imports. Commands resolve current cell IDs rather than stale positions; resize/reset prepare new-cell IDs before dispatch so replay stays stable. Dialogs, save/export progress and pending image decoding remain outside the saved document. There is no undo feature.
 
@@ -62,31 +96,35 @@ All editor document changes use typed commands and a React reducer: grid/cell/ex
 2. In the GitHub repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
 3. Push to `main`, or run **Test And Deploy GitHub Pages** manually from the **Actions** tab.
 
-The workflow installs locked dependencies and typechecks/builds the site once. A successful build allows `main` to deploy `dist/` immediately; model tests and four browser-test shards run independently and do not block deployment. Failed tests still report errors and upload their reports, so the overall workflow can be red even when deployment succeeds. A failed build prevents deployment. Pull requests run the same checks without deploying. The published URL is shown in the deployment environment, normally `https://<username>.github.io/<repository>/`.
+The workflow installs locked dependencies and builds the site once. As before, a successful build permits deployment of `apps/web/dist/`; model tests, four browser-test shards and API/Postgres tests report independently and do not gate deployment. Pull requests run the same checks without deploying. The published URL is shown in the deployment environment, normally `https://<username>.github.io/<repository>/`. For a separately hosted same-site API, set the public repository Actions variable `VITE_API_URL` before building.
 
-No API keys or application secrets are needed for guest editing. Saved grids belong to each browser origin: a localhost grid will not automatically appear on the published site. GitHub Pages does not sync grids between devices. Planned provider login and account settings need a separately hosted backend; images will remain client-only. Review the rights to supplied images before publishing them in a public repository.
+No API keys or application secrets are needed for guest editing. Browser drafts belong to each browser origin. GitHub Pages hosts only the frontend, never the API or Postgres. Account hosting requires a separately running Node API and persistent Postgres with backups. Run `npm ci`, configure server environment and start `npm run start -w @grids/api`; the API applies migrations before listening. The Docker Compose file is local-development infrastructure, not an internet-facing production database setup.
+
+Prefer a same-origin reverse proxy forwarding `/api` to the API while serving the static frontend. Alternatively use same-site HTTPS web/API subdomains and set the public `VITE_API_URL=https://api.example.com/api` in `apps/web/.env` (or the build environment). Rebuild when changing that URL. Set the server's `WEB_URL` and `PUBLIC_API_URL` to the deployed addresses and register the production callbacks. A `github.io` frontend with an unrelated API domain is cross-site: these SameSite=Lax sessions will not work there. Use a custom domain and same-site API, or a same-origin proxy, before enabling production login; do not weaken cookies to work around third-party-cookie blocking. Set `NODE_ENV=production` and the exact `TRUST_PROXY_HOPS` for your trusted reverse proxy; the default is zero. Limit unauthenticated access at the proxy, keep the database private, and back it up before migrations. Request-rate limits are process-local; run one API process or add a shared limiter before scaling. The service worker excludes `/api` navigation so sign-in redirects reach the server.
+
+Review the rights to supplied images before publishing them in a public repository.
 
 ## Project Structure
 
-- [src/App.tsx](src/App.tsx): typed React editor UI, command dispatch, and import/download interactions.
-- [src/components/EditorLayout.tsx](src/components/EditorLayout.tsx): desktop sidebars and the image-first Headless UI/Motion mobile drawer.
-- [src/model.ts](src/model.ts): versioned single-grid/settings schemas, typed document commands/reducer, settings extraction/application, defaults/reset, and coordinate-preserving resizing.
-- [src/storage.ts](src/storage.ts): Dexie grid/image transactions, serialized saves, strict restoration, settings-only localStorage cache, and managed object URLs.
-- [src/browser/navigation.ts](src/browser/navigation.ts): validated browser-local navigation preferences, shareable provider/tab URLs, and Back/Forward cursor restoration.
-- [tests/fixtures/comics.ts](tests/fixtures/comics.ts): test-only workspace fixtures; fixture artwork is excluded from public builds.
-- [src/export.ts](src/export.ts): typed canvas sizing, image rendering, and export generation.
-- `src/components/ui/`: typed Headless UI/Motion buttons, switches, accordion, action menu, and modal.
-- `src/browser/scrollbar.ts`: scrollbar measurement and dialog lifecycle compensation support.
-- `styles.css`: existing responsive canvas/editor styling and incremental Tailwind utilities.
-- `public/assets/`: local fonts and redistribution notices.
-- [tests/editor.spec.mjs](tests/editor.spec.mjs): Node-side production-build browser regression checks.
-- [tests/model.spec.mjs](tests/model.spec.mjs): in-memory TypeScript checks for settings boundaries, immutable document commands, replay-stable IDs, batch imports, and stale-target/media recovery.
-- [vite.config.mjs](vite.config.mjs) and [playwright.config.mjs](playwright.config.mjs): directly executed ESM tooling configuration.
+- [apps/web/src/App.tsx](apps/web/src/App.tsx): typed React editor UI, command dispatch and import/download interactions.
+- [apps/web/src/components/AccountDialog.tsx](apps/web/src/components/AccountDialog.tsx): sign-in, explicit saves/loads, publishing and account deletion.
+- [apps/web/src/components/EditorLayout.tsx](apps/web/src/components/EditorLayout.tsx): responsive editor panels.
+- [packages/contracts/model.ts](packages/contracts/model.ts): grid/settings schemas, commands and reducer.
+- [packages/contracts/cloud.ts](packages/contracts/cloud.ts): reference-only saved grids, settings-only presets and API response schemas.
+- [apps/web/src/storage.ts](apps/web/src/storage.ts): browser-local upload blobs and grid/reference snapshots.
+- [apps/web/src/browser/navigation.ts](apps/web/src/browser/navigation.ts): URL and browser-local navigation preferences.
+- [apps/web/src/export.ts](apps/web/src/export.ts): canvas sizing and CORS-aware image exports.
+- [apps/web/tests](apps/web/tests): model, browser and account regression tests and test-only artwork.
+- [apps/api/src](apps/api/src): validated configuration, OAuth, sessions and owner-scoped CRUD.
+- [apps/api/tests](apps/api/tests): contracts/OAuth tests and isolated real-Postgres integration tests.
+- [packages/database](packages/database): Postgres pool and transactional SQL migration runner.
+- [docker-compose.yml](docker-compose.yml): local Postgres 16 service and persistent volume.
+- [apps/web/vite.config.mjs](apps/web/vite.config.mjs) and [apps/web/playwright.config.mjs](apps/web/playwright.config.mjs): web tooling.
 - `.github/workflows/deploy.yml`: test and GitHub Pages deployment workflow.
 
 ## Editing And Export
 
-Saving is automatic, with no storage-management dialog or persistence request. Image blobs and grid content stay in this browser's IndexedDB; localStorage holds a settings-only cache and separate navigation preferences. Document saves coalesce edits over 300 ms and attempt a flush when the page becomes hidden. Routine progress and success messages are hidden; save failures, session-only mode and conflicts remain visible. Unsaved or failed edits retain a leave-page warning because abrupt termination can still lose pending changes. Browser storage is not permanent backup or synchronization.
+Browser saving is automatic, separately from explicit account saves. Local-upload blobs and grid content/references stay in IndexedDB; localStorage holds a settings-only cache and separate navigation preferences. Document saves coalesce edits over 300 ms and attempt a flush when the page becomes hidden. Routine progress and success messages are hidden; save failures, session-only mode and conflicts remain visible. Unsaved or failed edits retain a leave-page warning because abrupt termination can still lose pending changes. Browser storage is not permanent backup or synchronization.
 
 The library begins with an Add images placeholder: a square tile when images exist, or a full-width larger target when empty. Placeholder text/icons, captions, and in-card action buttons scale with their card; controls outside cards retain their fixed dimensions. Hover a library image on desktop or tap it on mobile to reveal Delete. Clear all images sits below the library. Both actions remove library entries directly, without confirmations or a trash flow. Images already placed on the canvas or in removed cells remain intact, along with captions and placements, across reloads; their local media stays stored but is no longer offered in the library or image picker. Unused images are deleted transactionally with their metadata, and URLs are revoked only after successful deletion. Failed saves retain the stored snapshot/files for retry.
 
@@ -116,6 +154,7 @@ Automatic persistence is quiet during normal editing; Save failed and other acti
 
 ```sh
 npm run check
+npm run test:database
 ```
 
 The browser tests run against the production build under `/grids/` to verify repository-subpath hosting. They check neutral first launch without demo requests, real drag-and-drop, uploads, grid resizing, autosave/reset/export preferences, invalid-document rejection, storage-failure feedback, responsive layout, caption editing, modal scroll/focus lifecycle, touch-device no-autofocus, and downloaded PNG/JPEG/WebP image pixels. Comic-based checks seed test-only fixtures directly into isolated browser storage; fixture artwork is excluded from public builds. The multi-format export check has a larger timeout for image decoding and full-resolution output. Tests also write full-resolution PNGs to `exports/`, which is ignored by Git.
@@ -129,9 +168,11 @@ npx playwright install chromium
 npm test
 ```
 
+`npm run test:api` runs contract and mocked provider exchanges without Postgres. `npm run test:database` requires `DATABASE_URL` and a running Postgres; it creates and drops an isolated random test schema, never clears application tables, and checks migrations, browser-bound OAuth state, sessions, ownership, stale replacements, public/private visibility, logout and cascading account deletion. Provider-console credentials and actual Google/Facebook/Discord consent screens still require manual deployment checks.
+
 `npm test` builds the app automatically and starts a dedicated preview server on localhost port 5840. That test port must be free; tests never reuse an unrelated project's server.
 
-For focused browser runs, rebuild first after application or CSS changes: Playwright's preview server serves the existing `dist/`, not source files. In [tests/editor.spec.mjs](tests/editor.spec.mjs), reuse `openSidebarPanel`, `closeSidebarPanel`, and `selectField` for panel-dependent actions, and `setEditorViewport` before settled geometry checks. Panel helpers wait for real exit/removal and entry boundaries rather than sleeps. Compare sidebar/workspace geometry with the permanent header and actual native-scrollbar content box, not retired drawer selectors or fixed offsets. Use `paletteColor` for editor-token assertions while retaining exact saved-content/export pixel checks. Use `touchTest` for automatic touch-context cleanup and `scrollbarTest` when testing classic native gutters. Selected choices are natively disabled; keyboard tests must verify that navigation skips them.
+For focused browser runs, rebuild first after application or CSS changes, then use `npm exec -w @grids/web -- playwright test --project=browser tests/account.spec.mjs`. Playwright's preview server serves `apps/web/dist/`, not source files. In [apps/web/tests/editor.spec.mjs](apps/web/tests/editor.spec.mjs), reuse `openSidebarPanel`, `closeSidebarPanel`, and `selectField` for panel-dependent actions, and `setEditorViewport` before settled geometry checks. Panel helpers wait for real exit/removal and entry boundaries rather than sleeps. Compare sidebar/workspace geometry with the permanent header and actual native-scrollbar content box, not retired drawer selectors or fixed offsets. Use `paletteColor` for editor-token assertions while retaining exact saved-content/export pixel checks. Use `touchTest` for automatic touch-context cleanup and `scrollbarTest` when testing classic native gutters. Selected choices are natively disabled; keyboard tests must verify that navigation skips them.
 
 ## Asset Notices
 

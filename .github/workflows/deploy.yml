@@ -27,15 +27,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -- --base /${{ github.event.repository.name }}/
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
       - uses: actions/upload-artifact@v7
         with:
           name: production-dist
-          path: dist
+          path: apps/web/dist
           retention-days: 1
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
-          path: dist
+          path: apps/web/dist
 
   model-tests:
     name: Model Tests
@@ -50,14 +52,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright test --project=model
+      - run: npm exec -w @grids/web -- playwright test --project=model
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: model-test-report
           path: |
-            playwright-report
-            test-results
+            apps/web/playwright-report
+            apps/web/test-results
           retention-days: 7
 
   browser-tests:
@@ -80,15 +82,15 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: production-dist
-          path: dist
-      - run: npx playwright test --project=browser --shard=${{ matrix.shard }}/4
+          path: apps/web/dist
+      - run: npm exec -w @grids/web -- playwright test --project=browser --shard=${{ matrix.shard }}/4
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-test-report-${{ matrix.shard }}
           path: |
-            playwright-report
-            test-results
+            apps/web/playwright-report
+            apps/web/test-results
           retention-days: 7
 
   deploy:
@@ -108,3 +110,34 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+
+  api-tests:
+    name: API And Postgres Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: grids
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: grids_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grids -d grids_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://grids:ci-only@localhost:5432/grids_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w @grids/api
+      - run: npm run test:api
+      - run: npm run test:database

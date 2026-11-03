@@ -813,7 +813,7 @@ for (const [mode, density, viewport] of [
           .click();
       }
       await expect
-        .poll(async () => (await localDatabase(page)).images.length)
+        .poll(async () => (await localDatabase(page)).document.assets.length)
         .toBe(1);
       expect(originals).toEqual([
         "https://upload.wikimedia.org/wikipedia/commons/test/1.jpg",
@@ -1264,7 +1264,7 @@ for (const [mode, providerTest] of [
         license: "CC0",
         creator: "Fixture curator",
       });
-      expect(saved.images).toHaveLength(1);
+      expect(saved.images).toHaveLength(0);
       expect(saved.document.grid.cells[0].crop).toBeDefined();
       expect(
         await page.evaluate(() => localStorage.getItem("grids-settings-v1")),
@@ -1543,7 +1543,7 @@ for (const [mode, providerTest] of [
         creator: "Fixture creator",
         license: "Public domain",
       });
-      expect(saved.images).toHaveLength(1);
+      expect(saved.images).toHaveLength(0);
       expect(saved.document.grid.cells[0].crop).toBeDefined();
       const settings = await page.evaluate(() =>
         localStorage.getItem("grids-settings-v1"),
@@ -1610,7 +1610,7 @@ test("Commons cards share imported settings and support native mouse and touch d
     await expect(cells.nth(0).getByRole("status")).toHaveCount(0);
     await page.unroute(originalUrl);
     await expect
-      .poll(async () => (await localDatabase(page)).images.length)
+      .poll(async () => (await localDatabase(page)).document.assets.length)
       .toBe(1);
 
     await openSidebarPanel(page, "Settings");
@@ -1693,7 +1693,7 @@ test("Commons cards share imported settings and support native mouse and touch d
       sourcePosition: { x: 5, y: 5 },
     });
     await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Earth");
-    expect((await localDatabase(page)).images).toHaveLength(1);
+    expect((await localDatabase(page)).images).toHaveLength(0);
     await page.screenshot({
       path: testInfo.outputPath("commons-shared-card-settings.png"),
     });
@@ -1710,7 +1710,7 @@ test("Commons cards share imported settings and support native mouse and touch d
     await expect(cells.nth(2).locator("img")).toHaveCount(0);
     await expect(cells.nth(2)).not.toHaveAttribute("aria-busy");
     await expect(cells.nth(2).getByRole("status")).toHaveCount(0);
-    expect((await localDatabase(page)).images).toHaveLength(1);
+    expect((await localDatabase(page)).images).toHaveLength(0);
     mock.failDownload(false);
     const session = await context.newCDPSession(page);
     const touchDrop = async (cancel) => {
@@ -1755,11 +1755,11 @@ test("Commons cards share imported settings and support native mouse and touch d
     };
     await touchDrop(true);
     await expect(cells.nth(2).locator("img")).toHaveCount(0);
-    expect((await localDatabase(page)).images).toHaveLength(1);
+    expect((await localDatabase(page)).images).toHaveLength(0);
     await touchDrop(false);
     await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Moon");
     await expect
-      .poll(async () => (await localDatabase(page)).images.length)
+      .poll(async () => (await localDatabase(page)).document.assets.length)
       .toBe(2);
     await expect(online.locator(".library-heading")).toHaveValue("Moon");
     await page.reload();
@@ -3375,6 +3375,13 @@ test("header actions stay top right with responsive branding and panel-open and 
     name: "Close sidebar",
     exact: true,
   });
+  const account = header.getByRole("button", {
+    name: "Account and saved grids",
+    exact: true,
+  });
+  await expect(account).toBeVisible();
+  expect((await account.boundingBox()).x + (await account.boundingBox()).width + 8)
+    .toBeCloseTo((await exportButton.boundingBox()).x);
   await expect(header).toBeVisible();
   await expect(
     sidebar.getByRole("button", { name: "Close sidebar", exact: true }),
@@ -3495,7 +3502,7 @@ test("header actions stay top right with responsive branding and panel-open and 
     await expect(
       page.getByRole("link", { name: "Grids", exact: true }),
     ).toHaveCount(1);
-    if (width !== 390) {
+    if ((await header.getAttribute("data-brand-placement")) === "header") {
       await expect(brand).toBeVisible();
       await expect(toolbar).toBeEmpty();
       await expect(settings.locator("[data-sidebar-brand]")).toHaveCount(0);
@@ -4426,6 +4433,7 @@ test("header hides Export text before wrapping only when the buttons no longer f
   const exporter = page.locator("#export-grid-header");
   await expect(header).toHaveAttribute("data-header-layout", "full");
   const fullActionsWidth = (await actions.boundingBox()).width;
+  const compactActionsWidth = fullActionsWidth - (await exporter.boundingBox()).width + 44;
   const buttons = await controls.locator("button").all();
   const initialBounds = await Promise.all(
     buttons.map((button) => button.boundingBox()),
@@ -4488,7 +4496,7 @@ test("header hides Export text before wrapping only when the buttons no longer f
     const leftRequiredRight =
       (await controls.boundingBox()).x + 12 + controlsWidth + 8;
     if (mode === "wrapped") {
-      expect(actionBounds.x + actionBounds.width - 96).toBeLessThan(
+      expect(actionBounds.x + actionBounds.width - compactActionsWidth).toBeLessThan(
         leftRequiredRight + 1,
       );
       expect((await buttons[0].boundingBox()).y).toBeGreaterThanOrEqual(
