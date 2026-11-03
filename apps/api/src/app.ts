@@ -11,7 +11,7 @@ import {
   userSchema,
   type AuthProvider,
 } from "@grids/contracts/cloud";
-import type { Database } from "@grids/database";
+import type { Database, PoolClient } from "@grids/database";
 import type { Config } from "./config.js";
 import { authorizationUrl, exchangeCode, hash, randomToken, type Profile } from "./oauth.js";
 
@@ -85,27 +85,68 @@ export function createApp(
     const value = parse(req.headers.cookie || "")[name];
     return tokenSchema.safeParse(value).success ? value! : null;
   }
-  async function currentUser(req: Request) {
+  async function currentUser(req: Request, executor: Pick<Database, "query"> = db) {
     const token = cookie(req, sessionCookie);
     if (!token) return null;
-    const result = await db.query(
-      `SELECT u.id, u.name, u.provider FROM users u JOIN sessions s ON s.user_id = u.id
+    const result = await executor.query(
+      `SELECT u.id, u.name, s.provider FROM users u JOIN sessions s ON s.user_id = u.id
+       JOIN account_identities i ON i.user_id = u.id AND i.provider = s.provider
        WHERE s.token_hash = $1 AND s.expires_at > now()`, [hash(token)],
     );
     return result.rows[0] ? userSchema.parse(result.rows[0]) : null;
   }
-  async function requireUser(req: Request) {
-    const user = await currentUser(req);
+  async function requireUser(req: Request, executor: Pick<Database, "query"> = db) {
+    const user = await currentUser(req, executor);
     if (!user) throw new HttpError(401, "Sign in to save or manage your grids and presets.");
     return user;
   }
   const providers = authProviderSchema.options.filter((provider) => config.credentials[provider].id);
+  async function accountChange<T>(action: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      // Serialize identity changes, including first sign-in, across API processes.
+      await client.query("SELECT pg_advisory_xact_lock(78421964)");
+      const result = await action(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+  function returnToAccount(res: Response, status?: string) {
+    const url = new URL(config.webUrl);
+    if (status) url.searchParams.set("auth", status);
+    res.redirect(url.href);
+  }
+  async function checkMergeProviders(client: PoolClient, targetId: string, sourceId: string) {
+    const overlap = await client.query(
+      `SELECT 1 FROM account_identities a JOIN account_identities b ON a.provider = b.provider
+       WHERE a.user_id = $1 AND b.user_id = $2`, [targetId, sourceId],
+    );
+    if (overlap.rowCount) throw new HttpError(409, "Both accounts have an identity from the same provider. Disconnect the conflicting provider before merging.");
+  }
   app.get("/api/health", async (_req, res) => {
     await db.query("SELECT 1");
     res.json({ ok: true });
   });
   app.get("/api/session", async (req, res) => {
-    res.json({ user: await currentUser(req), providers });
+    const user = await currentUser(req);
+    const connections = user ? (await db.query(
+      "SELECT provider, name FROM account_identities WHERE user_id = $1 ORDER BY provider", [user.id],
+    )).rows : [];
+    const pending = user ? (await db.query(
+      `SELECT m.id, m.provider, i.name,
+       ARRAY(SELECT provider FROM account_identities WHERE user_id = m.source_user_id ORDER BY provider) AS providers,
+       (SELECT count(*)::int FROM grids WHERE user_id = m.source_user_id) AS grids,
+       (SELECT count(*)::int FROM presets WHERE user_id = m.source_user_id) AS presets
+       FROM account_merges m JOIN account_identities i
+       ON i.provider = m.provider AND i.subject = m.subject AND i.user_id = m.source_user_id
+       WHERE m.session_hash = $1 AND m.expires_at > now()`,
+      [hash(cookie(req, sessionCookie)!)],
+    )).rows[0] ?? null : null;
+    res.json({ user, providers, connections, pendingMerge: pending });
   });
   app.use("/api/auth", rateLimit({
     windowMs: 60000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false,
@@ -125,12 +166,32 @@ export function createApp(
     setCookie(res, stateCookie, browser, 600, "/api/auth");
     res.redirect(authorizationUrl(config, provider, state, verifier));
   });
+  app.post("/api/auth/:provider/link", async (req, res) => {
+    const provider = authProviderSchema.parse(req.params.provider);
+    z.strictObject({}).parse(req.body);
+    if (!providers.includes(provider)) throw new HttpError(404, "This sign-in provider is not configured.");
+    const state = randomToken();
+    const browser = randomToken();
+    const verifier = randomToken();
+    await accountChange(async (client) => {
+      const user = await requireUser(req, client);
+      const existing = await client.query(
+        "SELECT 1 FROM account_identities WHERE user_id = $1 AND provider = $2", [user.id, provider],
+      );
+      if (existing.rowCount) throw new HttpError(409, "This provider is already connected. Disconnect it before connecting another identity from the same provider.");
+      const sessionHash = hash(cookie(req, sessionCookie)!);
+      await client.query("DELETE FROM account_merges WHERE session_hash = $1", [sessionHash]);
+      await client.query(
+        `INSERT INTO oauth_states(state_hash, browser_hash, provider, verifier, expires_at, link_session_hash)
+         VALUES ($1, $2, $3, $4, now() + interval '10 minutes', $5)`,
+        [hash(state), hash(browser), provider, verifier, sessionHash],
+      );
+    });
+    setCookie(res, stateCookie, browser, 600, "/api/auth");
+    res.json({ url: authorizationUrl(config, provider, state, verifier, true) });
+  });
   app.get("/api/auth/:provider/callback", async (req, res) => {
-    const fail = () => {
-      const url = new URL(config.webUrl);
-      url.searchParams.set("auth", "failed");
-      res.redirect(url.href);
-    };
+    const fail = () => returnToAccount(res, "failed");
     const provider = authProviderSchema.safeParse(req.params.provider);
     const state = tokenSchema.safeParse(req.query.state);
     const browser = cookie(req, stateCookie);
@@ -138,11 +199,13 @@ export function createApp(
     if (!provider.success || !providers.includes(provider.data) || !state.success || !browser) return fail();
     const taken = await db.query(
       `DELETE FROM oauth_states WHERE state_hash = $1 AND browser_hash = $2
-       AND provider = $3 AND expires_at > now() RETURNING verifier`,
+       AND provider = $3 AND expires_at > now() RETURNING verifier, link_session_hash`,
       [hash(state.data), hash(browser), provider.data],
     );
     const code = z.string().min(1).max(4096).safeParse(req.query.code);
     if (!taken.rows[0] || !code.success || req.query.error) return fail();
+    const linkSession: string | null = taken.rows[0].link_session_hash;
+    if (linkSession && (!cookie(req, sessionCookie) || hash(cookie(req, sessionCookie)!) !== linkSession)) return fail();
     let profile: Profile;
     try {
       profile = await resolveProfile(provider.data, code.data, taken.rows[0].verifier);
@@ -150,39 +213,133 @@ export function createApp(
       console.error("Provider sign-in failed.", { provider: provider.data });
       return fail();
     }
-    const user = await db.query(
-      `INSERT INTO users(id, provider, subject, name) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (provider, subject) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
-      [randomUUID(), provider.data, profile.subject, profile.name],
-    );
+    if (linkSession) {
+      try {
+        const status = await accountChange(async (client) => {
+          const user = await requireUser(req, client);
+          const connected = await client.query(
+            "SELECT subject FROM account_identities WHERE user_id = $1 AND provider = $2", [user.id, provider.data],
+          );
+          if (connected.rowCount && connected.rows[0].subject !== profile.subject) {
+            throw new HttpError(409, "A different identity from this provider is already connected.");
+          }
+          const identity = await client.query(
+            "SELECT user_id FROM account_identities WHERE provider = $1 AND subject = $2", [provider.data, profile.subject],
+          );
+          const sourceId: string | undefined = identity.rows[0]?.user_id;
+          if (sourceId && sourceId !== user.id) {
+            await checkMergeProviders(client, user.id, sourceId);
+            await client.query(
+              `INSERT INTO account_merges(id, session_hash, source_user_id, provider, subject, expires_at)
+               VALUES ($1, $2, $3, $4, $5, now() + interval '10 minutes')
+               ON CONFLICT (session_hash) DO UPDATE SET id = EXCLUDED.id, source_user_id = EXCLUDED.source_user_id,
+               provider = EXCLUDED.provider, subject = EXCLUDED.subject, expires_at = EXCLUDED.expires_at`,
+              [randomUUID(), linkSession, sourceId, provider.data, profile.subject],
+            );
+            return "merge";
+          }
+          await client.query(
+            `INSERT INTO account_identities(provider, subject, user_id, name) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (provider, subject) DO UPDATE SET name = EXCLUDED.name`,
+            [provider.data, profile.subject, user.id, profile.name],
+          );
+          return "linked";
+        });
+        return returnToAccount(res, status);
+      } catch (error) {
+        if (error instanceof HttpError) return returnToAccount(res, error.status === 409 ? "link-conflict" : "failed");
+        throw error;
+      }
+    }
     const token = randomToken();
     const previous = cookie(req, sessionCookie);
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
+    await accountChange(async (client) => {
+      const identity = await client.query(
+        "SELECT user_id FROM account_identities WHERE provider = $1 AND subject = $2", [provider.data, profile.subject],
+      );
+      const userId: string = identity.rows[0]?.user_id ?? randomUUID();
+      if (!identity.rowCount) {
+        await client.query("INSERT INTO users(id, name) VALUES ($1, $2)", [userId, profile.name]);
+        await client.query(
+          "INSERT INTO account_identities(provider, subject, user_id, name) VALUES ($1, $2, $3, $4)",
+          [provider.data, profile.subject, userId, profile.name],
+        );
+      } else {
+        await client.query(
+          "UPDATE account_identities SET name = $3 WHERE provider = $1 AND subject = $2",
+          [provider.data, profile.subject, profile.name],
+        );
+      }
       if (previous) await client.query("DELETE FROM sessions WHERE token_hash = $1", [hash(previous)]);
       await client.query(
-        "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '30 days')",
-        [hash(token), user.rows[0].id],
+        "INSERT INTO sessions(token_hash, user_id, provider, expires_at) VALUES ($1, $2, $3, now() + interval '30 days')",
+        [hash(token), userId, provider.data],
       );
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally { client.release(); }
+    });
     setCookie(res, sessionCookie, token, 30 * day);
     res.redirect(config.webUrl);
   });
   app.post("/api/logout", async (req, res) => {
     const token = cookie(req, sessionCookie);
-    if (token) await db.query("DELETE FROM sessions WHERE token_hash = $1", [hash(token)]);
+    if (token) await accountChange(async (client) => {
+      await client.query("DELETE FROM sessions WHERE token_hash = $1", [hash(token)]);
+    });
     setCookie(res, sessionCookie, "", 0);
     res.sendStatus(204);
   });
   app.delete("/api/account", async (req, res) => {
-    const user = await requireUser(req);
-    await db.query("DELETE FROM users WHERE id = $1", [user.id]);
+    await accountChange(async (client) => {
+      const user = await requireUser(req, client);
+      await client.query("DELETE FROM users WHERE id = $1", [user.id]);
+    });
     setCookie(res, sessionCookie, "", 0);
+    res.sendStatus(204);
+  });
+  app.delete("/api/account/providers/:provider", async (req, res) => {
+    const provider = authProviderSchema.parse(req.params.provider);
+    const signedOut = await accountChange(async (client) => {
+      const user = await requireUser(req, client);
+      const remaining = await client.query(
+        "SELECT provider FROM account_identities WHERE user_id = $1 AND provider <> $2", [user.id, provider],
+      );
+      if (!remaining.rows.some((row) => providers.includes(row.provider))) {
+        throw new HttpError(409, "Keep at least one configured sign-in provider connected.");
+      }
+      const removed = await client.query(
+        "DELETE FROM account_identities WHERE user_id = $1 AND provider = $2", [user.id, provider],
+      );
+      if (!removed.rowCount) throw new HttpError(404, "Connected provider not found.");
+      await client.query("DELETE FROM sessions WHERE user_id = $1 AND provider = $2", [user.id, provider]);
+      return user.provider === provider;
+    });
+    if (signedOut) setCookie(res, sessionCookie, "", 0);
+    res.sendStatus(204);
+  });
+  app.post("/api/account/merge", async (req, res) => {
+    const { id } = z.strictObject({ id: idSchema }).parse(req.body);
+    await accountChange(async (client) => {
+      const user = await requireUser(req, client);
+      const pending = await client.query(
+        `SELECT m.source_user_id FROM account_merges m JOIN account_identities i
+         ON i.provider = m.provider AND i.subject = m.subject AND i.user_id = m.source_user_id
+         WHERE m.id = $1 AND m.session_hash = $2 AND m.expires_at > now()`,
+        [id, hash(cookie(req, sessionCookie)!)],
+      );
+      const sourceId: string | undefined = pending.rows[0]?.source_user_id;
+      if (!sourceId || sourceId === user.id) throw new HttpError(409, "Merge expired or changed. Connect the provider again.");
+      await checkMergeProviders(client, user.id, sourceId);
+      await client.query("UPDATE grids SET user_id = $1 WHERE user_id = $2", [user.id, sourceId]);
+      await client.query("UPDATE presets SET user_id = $1 WHERE user_id = $2", [user.id, sourceId]);
+      await client.query("DELETE FROM sessions WHERE user_id = $1", [sourceId]);
+      await client.query("UPDATE account_identities SET user_id = $1 WHERE user_id = $2", [user.id, sourceId]);
+      await client.query("DELETE FROM users WHERE id = $1", [sourceId]);
+    });
+    res.sendStatus(204);
+  });
+  app.delete("/api/account/merge/:id", async (req, res) => {
+    const id = idSchema.parse(req.params.id);
+    await requireUser(req);
+    await db.query("DELETE FROM account_merges WHERE id = $1 AND session_hash = $2", [id, hash(cookie(req, sessionCookie)!)]);
     res.sendStatus(204);
   });
 

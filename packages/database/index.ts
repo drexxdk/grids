@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
+export type { PoolClient } from "pg";
 
 export function createPool(connectionString: string) {
   return new Pool({

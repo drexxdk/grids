@@ -5,16 +5,16 @@ import {
   DialogPanel,
   DialogTitle,
 } from "@headlessui/react";
-import { X } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 import { AnimatePresence, useReducedMotion } from "motion/react";
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Button, MotionDiv } from "./controls";
 
-function InitialTouchFocus({
+function InitialDialogFocus({
   target,
   enabled,
 }: {
-  target: RefObject<HTMLButtonElement | null>;
+  target: RefObject<HTMLElement | null>;
   enabled: boolean;
 }) {
   useEffect(() => {
@@ -37,6 +37,7 @@ export function Modal({
   fullscreen = false,
   size = "compact",
   onExited,
+  ready,
 }: {
   open: boolean;
   onClose: () => void;
@@ -47,8 +48,23 @@ export function Modal({
   fullscreen?: boolean;
   size?: "compact" | "wide";
   onExited?: () => void;
+  ready?: boolean;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const pendingCloseButton = useRef<HTMLButtonElement>(null);
+  const [prepared, setPrepared] = useState(false);
+  const contentReady = ready === undefined || prepared;
+  useEffect(() => {
+    if (!open) {
+      setPrepared(false);
+      return;
+    }
+    if (ready !== true || prepared) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setPrepared(true));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, ready, prepared]);
   const reduced = useReducedMotion();
   const touch =
     typeof window !== "undefined" &&
@@ -70,7 +86,7 @@ export function Modal({
           static
           open
           onClose={onClose}
-          initialFocus={touch ? closeButton : (initialFocus ?? closeButton)}
+          initialFocus={contentReady ? (touch ? closeButton : (initialFocus ?? closeButton)) : pendingCloseButton}
           as={MotionDiv}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -89,16 +105,20 @@ export function Modal({
             className={`fixed inset-0 overflow-y-auto overscroll-contain scrollbar-gutter-stable ${fullscreen ? "" : "p-4"}`}
           >
             <div className="flex min-h-full items-center justify-center">
-              <DialogPanel
+              {contentReady ? <DialogPanel
+                key="content"
                 data-modal-panel
                 as={MotionDiv}
+                initial={ready === undefined || reduced ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                motionTransition={{ duration: reduced ? 0 : 0.18 }}
                 className={
                   fullscreen
                     ? "flex h-dvh w-full flex-col bg-(--panel)"
                     : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
                 }
               >
-                <InitialTouchFocus target={closeButton} enabled={touch} />
+                <InitialDialogFocus target={touch ? closeButton : (initialFocus ?? closeButton)} enabled={touch || ready !== undefined} />
                 <div
                   className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
                 >
@@ -116,7 +136,17 @@ export function Modal({
                   </Button>
                 </div>
                 {children}
-              </DialogPanel>
+              </DialogPanel> : <DialogPanel key="loading" className="flex items-center gap-3">
+                <DialogTitle className="sr-only">{title}</DialogTitle>
+                <span role="status" className="flex items-center gap-2 text-sm text-(--text)">
+                  <LoaderCircle aria-hidden="true" className="size-5 motion-safe:animate-spin" />
+                  {t("common.actions.loading")}
+                </span>
+                <Button ref={pendingCloseButton} variant="icon" onClick={onClose}
+                  aria-label={t("common.actions.closeDialog")} title={t("common.actions.closeDialog")}>
+                  <X aria-hidden="true" />
+                </Button>
+              </DialogPanel>}
             </div>
           </div>
         </Dialog>

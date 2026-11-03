@@ -72,6 +72,7 @@ Depends on the shared single-grid/settings contracts. This supports reference-on
 
 - [x] Inspect Chatter and create one npm monorepo with separate web/API/database/shared-contract packages, Docker Postgres 16, persistent volume and transactional versioned migrations.
 - [x] Implement Google, Facebook and Discord authorization-code flows; no password accounts. Keep secrets server-side, minimize scopes, bind single-use expiring state to the browser, and use PKCE where supported. Identify accounts by provider+subject; do not email-auto-link or retain provider tokens.
+- [x] Explicit, session-bound provider linking and confirmed existing-account merges, preserving every cloud save and published/private preset. Keep one identity per provider, revoke incoming-account sessions after merging, and allow disconnect only while another configured sign-in provider remains.
 - [x] Use opaque hashed sessions, HttpOnly/SameSite cookies, production Secure cookies, exact Origin/custom-header CSRF checks, validation, ownership, size/rate limits and logout/account deletion.
 - [x] Explicitly save/load/replace/delete named grids with provider references, captions/crops and browser-local opaque IDs. Restore local images only when present in that browser; never upload local media or persist provider image bytes.
 - [x] Save/apply/delete private or explicitly published presets containing layout/style/export settings only. Guests can browse/apply published presets; only owners can update visibility or delete.

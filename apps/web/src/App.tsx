@@ -42,6 +42,10 @@ import {
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { AccountDialog } from "./components/AccountDialog";
+import { AccountHeader } from "./components/AccountHeader";
+import { LoginDialog } from "./components/LoginDialog";
+import { SavedGridsDialog } from "./components/SavedGridsDialog";
+import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
   GridCell,
@@ -248,16 +252,62 @@ export default function App() {
   );
   const [headingEditing, setHeadingEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const account = useAccountSession();
+  type AccountView = "login" | "account" | "library";
+  const [accountView, setAccountView] = useState<AccountView | null>(null);
+  const queuedAccountView = useRef<AccountView | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const signOutInFlight = useRef(false);
   const accountButton = useRef<HTMLButtonElement>(null);
+  const libraryButton = useRef<HTMLButtonElement>(null);
+  function openAccountView(view: AccountView) {
+    if (accountView && accountView !== view) {
+      queuedAccountView.current = view;
+      setAccountView(null);
+    } else {
+      setAccountView(view);
+    }
+    void account.refresh().catch(() => undefined);
+  }
+  function accountViewExited() {
+    const next = queuedAccountView.current;
+    queuedAccountView.current = null;
+    if (next) requestAnimationFrame(() => setAccountView(next));
+  }
+  async function signOutAccount() {
+    if (signOutInFlight.current) return;
+    signOutInFlight.current = true;
+    setSigningOut(true);
+    try {
+      await account.signOut();
+      setAccountView(null);
+      toast.success(t("account.signedOut"));
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : t("account.offline"));
+    } finally {
+      signOutInFlight.current = false;
+      setSigningOut(false);
+    }
+  }
   useEffect(() => {
     const url = new URL(location.href);
-    if (url.searchParams.get("auth") !== "failed") return;
-    toast.error(t("account.failedLogin"));
+    const auth = url.searchParams.get("auth");
+    if (!auth || !["failed", "linked", "merge", "link-conflict"].includes(auth)) return;
+    if (auth === "failed") toast.error(t("account.failedLogin"));
+    if (auth === "linked") toast.success(t("account.providerLinked"));
+    if (auth === "link-conflict") toast.error(t("account.providerConflict"));
     url.searchParams.delete("auth");
     history.replaceState(history.state, "", url);
-    setAccountOpen(true);
+    setAccountView(auth === "failed" ? "login" : "account");
   }, []);
+  useEffect(() => {
+    if (account.loading || !account.session) return;
+    if (!account.session.user && accountView === "account") setAccountView(null);
+    if (account.session.user && accountView === "login") {
+      queuedAccountView.current = "account";
+      setAccountView(null);
+    }
+  }, [account.loading, account.session, accountView]);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
   const [librarySource, setLibrarySource] = useEditorState("librarySource");
@@ -981,9 +1031,35 @@ export default function App() {
   return (
     <>
       <AccountDialog
-        open={accountOpen}
-        onClose={() => setAccountOpen(false)}
+        open={accountView === "account"}
+        onClose={() => setAccountView(null)}
+        onExited={accountViewExited}
         returnFocus={accountButton}
+        session={account.session}
+        loading={account.loading}
+        error={account.error}
+        onRefresh={account.refresh}
+      />
+      <LoginDialog
+        open={accountView === "login"}
+        onClose={() => setAccountView(null)}
+        onExited={accountViewExited}
+        returnFocus={accountButton}
+        session={account.session}
+        loading={account.loading}
+        error={account.error}
+        onRetry={() => { void account.refresh().catch(() => undefined); }}
+      />
+      <SavedGridsDialog
+        open={accountView === "library"}
+        onClose={() => setAccountView(null)}
+        onExited={accountViewExited}
+        returnFocus={libraryButton}
+        session={account.session}
+        loading={account.loading}
+        error={account.error}
+        onRefresh={account.refresh}
+        onLogin={() => openAccountView("login")}
         workspace={workspace}
         onRestore={(restored) => {
           dispatchDocument({ type: "workspace/restore", workspace: restored });
@@ -1029,13 +1105,13 @@ export default function App() {
           actions={
             <>
             <Button
-              ref={accountButton}
+              ref={libraryButton}
               variant="icon"
-              aria-label={t("account.title")}
-              title={t("account.title")}
+              aria-label={t("account.libraryTitle")}
+              title={t("account.libraryTitle")}
               aria-haspopup="dialog"
               disabled={conflict || importProgress !== null}
-              onClick={() => setAccountOpen(true)}
+              onClick={() => openAccountView("library")}
             >
               <Cloud aria-hidden="true" className="size-5!" />
             </Button>
@@ -1055,6 +1131,17 @@ export default function App() {
                 {t("export.title")}
               </span>
             </button>
+            <AccountHeader
+              session={account.session}
+              loading={account.loading}
+              error={account.error}
+              busy={signingOut}
+              disabled={conflict || importProgress !== null}
+              buttonRef={accountButton}
+              onLogin={() => openAccountView("login")}
+              onAccount={() => openAccountView("account")}
+              onSignOut={() => { void signOutAccount(); }}
+            />
             </>
           }
         >

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { makeWorkspace, getEditorSettings, workspaceSchema } from "@grids/contracts/model";
-import { fromSavedGrid, toSavedGrid, gridWriteSchema, presetWriteSchema } from "@grids/contracts/cloud";
+import { fromSavedGrid, toSavedGrid, gridWriteSchema, presetWriteSchema, authorizationSchema } from "@grids/contracts/cloud";
 import { authorizationUrl, callbackUrl, exchangeCode, randomToken } from "../src/oauth.js";
 import { readConfig } from "../src/config.js";
 
@@ -85,7 +85,14 @@ test("OAuth URLs use exact callbacks, state and provider-appropriate PKCE withou
     assert.equal(url.searchParams.get("response_type"), "code");
     assert.equal(url.searchParams.has("code_challenge"), provider !== "facebook");
     assert.ok(!url.href.includes("secret"));
+    const connecting = new URL(authorizationUrl(config, provider, state, randomToken(), true));
+    assert.equal(connecting.searchParams.get("prompt"), provider === "google" ? "select_account" : provider === "discord" ? "consent" : null);
+    assert.equal(connecting.searchParams.get("auth_type"), provider === "facebook" ? "reauthenticate" : null);
+    assert.equal(connecting.searchParams.get("scope"), url.searchParams.get("scope"));
+    assert.ok(authorizationSchema.safeParse({ url: connecting.href }).success);
   }
+  assert.ok(!authorizationSchema.safeParse({ url: "http://discord.com/oauth2/authorize" }).success);
+  assert.ok(!authorizationSchema.safeParse({ url: "javascript:alert(1)" }).success);
 });
 
 test("all three code exchanges validate provider identities and discard access tokens", async () => {

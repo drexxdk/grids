@@ -43,8 +43,8 @@ test("policy navigation preserves the editor and is available when the account A
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link.locator('svg[aria-hidden="true"]')).toHaveCount(1);
   }
-  await page.getByRole("button", { name: "Account and saved grids", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Account and saved grids" });
+  await page.getByRole("button", { name: "Account unavailable", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Log in", exact: true });
   await expect(dialog.getByRole("navigation", { name: "Policies and support" })).toBeVisible();
   const editorUrl = page.url();
   const [policy] = await Promise.all([

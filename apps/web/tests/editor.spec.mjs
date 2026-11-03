@@ -3363,6 +3363,9 @@ test("settings have open sections and joined appearance radio grids", async ({
 test("header actions stay top right with responsive branding and panel-open and close toggles", async ({
   page,
 }, testInfo) => {
+  await page.route("**/api/session", (route) => route.fulfill({
+    json: { user: null, providers: [], connections: [], pendingMerge: null },
+  }));
   await setEditorViewport(page, { width: 1440, height: 900 });
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
@@ -3376,9 +3379,11 @@ test("header actions stay top right with responsive branding and panel-open and 
     exact: true,
   });
   const account = header.getByRole("button", {
-    name: "Account and saved grids",
+    name: "Saved grids and presets",
     exact: true,
   });
+  const login = header.getByRole("button", { name: "Log in", exact: true });
+  await expect(login).toBeVisible();
   await expect(account).toBeVisible();
   expect((await account.boundingBox()).x + (await account.boundingBox()).width + 8)
     .toBeCloseTo((await exportButton.boundingBox()).x);
@@ -3418,6 +3423,9 @@ test("header actions stay top right with responsive branding and panel-open and 
     (await exportButton.boundingBox()).x +
       (await exportButton.boundingBox()).width +
       8,
+  ).toBeCloseTo((await login.boundingBox()).x);
+  expect(
+    (await login.boundingBox()).x + (await login.boundingBox()).width + 8,
   ).toBeCloseTo((await toggle.boundingBox()).x);
   expect((await toggle.boundingBox()).x).toBeGreaterThan(
     (await sidebar.boundingBox()).x,
@@ -3669,6 +3677,57 @@ scrollbarTest(
   },
 );
 
+test("desktop sidebar slides as one fixed-size panel without image pop-in", async ({ page }) => {
+  await setEditorViewport(page, { width: 1440, height: 900 });
+  await page.goto("./?source=imported");
+  await page.locator("#replace-upload").setInputFiles(
+    path.join(projectRoot, "tests", "fixtures", "assets", "DC - Kite Man.jpg"),
+  );
+  const sidebar = page.locator("[data-editor-sidebar]");
+  await expect(sidebar.locator("[data-library-image] img")).toHaveCount(1);
+  await sidebar.locator("[data-library-image] img").evaluate((image) => image.decode());
+  await sidebarToggle(page, true).click();
+  await expect(sidebar).toHaveCount(0);
+  const recording = page.evaluate(() => new Promise((resolve) => {
+    document.body.setAttribute("data-recording-sidebar", "true");
+    const samples = [];
+    const start = performance.now();
+    function frame() {
+      const sidebar = document.querySelector("[data-editor-sidebar]");
+      const content = sidebar?.querySelector("[data-library-image] [data-card-content]");
+      const image = content?.querySelector("img");
+      if (sidebar && content && image) {
+        const panel = sidebar.getBoundingClientRect();
+        const bounds = content.getBoundingClientRect();
+        samples.push({
+          x: panel.x, width: panel.width, imageWidth: bounds.width,
+          relativeX: bounds.x - panel.x, relativeY: bounds.y - panel.y,
+          opacity: getComputedStyle(content).opacity,
+          loaded: image.complete && image.naturalWidth > 0,
+          transform: getComputedStyle(content).transform,
+        });
+      }
+      if (performance.now() - start < 600) requestAnimationFrame(frame);
+      else {
+        document.body.removeAttribute("data-recording-sidebar");
+        resolve(samples);
+      }
+    }
+    frame();
+  }));
+  await expect(page.locator("body")).toHaveAttribute("data-recording-sidebar", "true");
+  await sidebarToggle(page, false).click();
+  const samples = await recording;
+  expect(samples.length).toBeGreaterThan(5);
+  expect(samples.every(({ width }) => Math.abs(width - 350) < 0.5)).toBe(true);
+  for (const key of ["imageWidth", "relativeX", "relativeY"]) {
+    expect(Math.max(...samples.map((sample) => sample[key])) - Math.min(...samples.map((sample) => sample[key])))
+      .toBeLessThan(0.5);
+  }
+  expect(samples.every(({ opacity, loaded, transform }) => opacity === "1" && loaded && transform === "none")).toBe(true);
+  expect(samples[0].x).toBeGreaterThan(samples.at(-1).x);
+});
+
 test("mobile sidebar keeps the header opaque throughout opening and closing", async ({
   page,
 }) => {
@@ -3859,7 +3918,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
     canvasHeader
       .getByRole("group", { name: "Editor panels", exact: true })
       .locator(":scope > button"),
-  ).toHaveCount(2);
+  ).toHaveCount(4);
   await page.screenshot({
     path: testInfo.outputPath("desktop-sidebar-closed.png"),
   });
@@ -4408,6 +4467,9 @@ test("right sidebar switches images and settings with an image source dropdown",
 test("header hides Export text before wrapping only when the buttons no longer fit", async ({
   page,
 }, testInfo) => {
+  await page.route("**/api/session", (route) => route.fulfill({
+    json: { user: null, providers: [], connections: [], pendingMerge: null },
+  }));
   await page.goto("./");
   await expect(page.locator("[data-canvas-header]")).toHaveAttribute(
     "data-brand-placement",
@@ -4422,7 +4484,7 @@ test("header hides Export text before wrapping only when the buttons no longer f
   await page
     .getByRole("button", { name: "Close sidebar", exact: true })
     .click();
-  await setEditorViewport(page, { width: 760, height: 360 });
+  await setEditorViewport(page, { width: 1040, height: 360 });
   await page.evaluate(() => document.fonts.ready);
   const header = page.locator("[data-canvas-header]");
   const controls = page.locator("[data-canvas-controls]");
@@ -4444,8 +4506,8 @@ test("header hides Export text before wrapping only when the buttons no longer f
   const modes = new Set();
   const brandPlacements = new Set();
   for (const width of [
-    760, 700, 691, 650, 600, 520, 500, 480, 440, 390, 320, 260, 320, 390, 440,
-    480, 500, 520, 600, 650, 691, 700, 760,
+    1040, 960, 900, 850, 760, 700, 691, 650, 600, 520, 500, 480, 440, 390, 320, 260, 320, 390, 440,
+    480, 500, 520, 600, 650, 691, 700, 760, 850, 900, 960, 1040,
   ]) {
     await setEditorViewport(page, { width, height: 360 });
     const mode = await header.getAttribute("data-header-layout");

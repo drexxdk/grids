@@ -623,9 +623,15 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
 export function ActionMenu({
   actions,
   buttonRef,
+  label = t("editor.actions"),
+  icon: Icon = MoreHorizontal,
+  disabled = false,
 }: {
   actions: MenuAction[];
   buttonRef: Ref<HTMLButtonElement>;
+  label?: string;
+  icon?: LucideIcon;
+  disabled?: boolean;
 }) {
   return (
     <Menu>
@@ -635,10 +641,11 @@ export function ActionMenu({
             as={Button}
             variant="icon"
             ref={buttonRef}
-            aria-label={t("editor.actions")}
-            title={t("editor.actions")}
+            aria-label={label}
+            title={label}
+            disabled={disabled}
           >
-            <MoreHorizontal aria-hidden="true" />
+            <Icon aria-hidden="true" />
           </MenuButton>
           <AnimatePresence>
             {open && <ActionItems key="actions" actions={actions} />}

@@ -63,6 +63,7 @@ export function EditorLayout({
   const headerBrand = useRef<HTMLDivElement>(null);
   const [brandInHeader, setBrandInHeader] = useState(false);
   const expandedExportSpacing = useRef(0);
+  const [compactExport, setCompactExport] = useState(false);
   const [headerLayout, setHeaderLayout] = useState<
     "full" | "icon" | "shifted" | "wrapped"
   >("full");
@@ -91,7 +92,7 @@ export function EditorLayout({
         headerElement.current?.getBoundingClientRect().height ?? 76,
       );
       const style = getComputedStyle(exportButton);
-      if (headerLayout === "full" || headerLayout === "wrapped") {
+      if (!compactExport) {
         expandedExportSpacing.current =
           parseFloat(style.paddingLeft) +
           parseFloat(style.paddingRight) +
@@ -137,10 +138,18 @@ export function EditorLayout({
             ? "shifted"
             : "wrapped";
       setHeaderLayout(nextLayout);
+      const nextCompactExport =
+        nextLayout === "icon" ||
+        nextLayout === "shifted" ||
+        (nextLayout === "wrapped" &&
+          actionBounds.right - otherActionsWidth - fullExportWidth <
+            leftControlsRight - controlsWidth);
+      setCompactExport(nextCompactExport);
       const controlsLeft = controlsRight - controlsWidth;
       const brandLimit =
         nextLayout === "wrapped"
-          ? actionBounds.right - otherActionsWidth - fullExportWidth
+          ? actionBounds.right - otherActionsWidth -
+            (nextCompactExport ? iconWidth : fullExportWidth)
           : controlsLeft;
       setBrandInHeader(
         nextLayout !== "shifted" &&
@@ -156,7 +165,7 @@ export function EditorLayout({
       observer.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
     };
-  }, [compact, sidebarOpen, headerLayout, controlsInHeader]);
+  }, [compact, sidebarOpen, headerLayout, compactExport, controlsInHeader]);
   useEffect(() => {
     if (!compact) {
       setSettingsOpen(false);
@@ -246,9 +255,7 @@ export function EditorLayout({
       data-canvas-header
       data-header-layout={headerLayout}
       data-brand-placement={brandInHeader ? "header" : "aside"}
-      data-compact-export={
-        headerLayout === "icon" || headerLayout === "shifted" ? true : undefined
-      }
+      data-compact-export={compactExport ? true : undefined}
       className="group/header col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3!"
     >
       {canvasActions}
@@ -299,7 +306,7 @@ export function EditorLayout({
                 duration: reduced ? 0 : 0.18,
                 ease: "easeInOut",
               }}
-              className="pointer-events-auto absolute inset-y-0 right-0 w-full max-w-87.5"
+              className={`pointer-events-auto absolute inset-y-0 right-0 ${compact ? "w-full max-w-87.5" : "w-87.5"}`}
             >
               <aside
                 id={panelsId}

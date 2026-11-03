@@ -31,7 +31,7 @@ const definitions = {
 export const callbackUrl = (config: Config, provider: AuthProvider) =>
   `${config.apiOrigin}/api/auth/${provider}/callback`;
 
-export function authorizationUrl(config: Config, provider: AuthProvider, state: string, verifier: string) {
+export function authorizationUrl(config: Config, provider: AuthProvider, state: string, verifier: string, linking = false) {
   const definition = definitions[provider];
   const url = new URL(definition.authorize);
   url.search = new URLSearchParams({
@@ -40,6 +40,8 @@ export function authorizationUrl(config: Config, provider: AuthProvider, state: 
     response_type: "code",
     scope: definition.scope,
     state,
+    ...(linking ? provider === "google" ? { prompt: "select_account" } :
+      provider === "discord" ? { prompt: "consent" } : { auth_type: "reauthenticate" } : {}),
     ...(definition.pkce ? {
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",

@@ -4,11 +4,16 @@ import { readFile } from "node:fs/promises";
 
 const image = new URL("./fixtures/assets/DC - Kite Man.jpg", import.meta.url);
 const touchTest = test.extend({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-async function mockAccount(page, { signedIn = true } = {}) {
-  let user = signedIn ? { id: randomUUID(), name: "Test user", provider: "google" } : null;
+async function mockAccount(page, { signedIn = true, provider = "google", connections, pendingMerge = null } = {}) {
+  let user = signedIn ? { id: randomUUID(), name: "Test user", provider } : null;
+  const state = {
+    connections: connections ?? (user ? [{ provider, name: user.name }] : []),
+    pendingMerge,
+  };
   const grids = new Map();
   const presets = new Map();
   const writes = [];
+  const reads = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -16,8 +21,31 @@ async function mockAccount(page, { signedIn = true } = {}) {
     const resource = parts[2];
     const id = parts[3];
     const method = request.method();
+    if (method === "GET") reads.push(resource);
     const json = (body, status = 200) => route.fulfill({ status, json: body });
-    if (resource === "session") return json({ user, providers: ["google", "facebook", "discord"] });
+    if (resource === "session") return json({
+      user, providers: ["google", "facebook", "discord"],
+      connections: user ? state.connections : [], pendingMerge: user ? state.pendingMerge : null,
+    });
+    if (resource === "auth" && parts[4] === "link") {
+      writes.push({ resource, provider: id, method, headers: request.headers(), body: request.postDataJSON() });
+      return json({ url: "https://discord.com/oauth2/authorize?client_id=test" });
+    }
+    if (resource === "account" && id === "providers") {
+      const provider = parts[4];
+      state.connections = state.connections.filter((connection) => connection.provider !== provider);
+      if (user.provider === provider) user = null;
+      writes.push({ resource, provider, method });
+      return route.fulfill({ status: 204 });
+    }
+    if (resource === "account" && id === "merge") {
+      writes.push({ resource, method, body: method === "POST" ? request.postDataJSON() : undefined });
+      if (method === "POST") {
+        state.connections.push(...state.pendingMerge.providers.map((provider) => ({ provider, name: state.pendingMerge.name })));
+      }
+      state.pendingMerge = null;
+      return route.fulfill({ status: 204 });
+    }
     if (resource === "logout" || resource === "account") {
       user = null;
       return route.fulfill({ status: 204 });
@@ -51,13 +79,59 @@ async function mockAccount(page, { signedIn = true } = {}) {
     items.set(item.id, item);
     return json(item, method === "POST" ? 201 : 200);
   });
-  return { writes, grids, presets };
+  return { writes, reads, grids, presets, state, expireSession: () => { user = null; } };
 }
 async function openAccount(page) {
-  await page.getByRole("button", { name: "Account and saved grids", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Account and saved grids" });
-  await expect(dialog.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Account", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Account", exact: true });
+  await expect(dialog.getByRole("region", { name: "Connected sign-in providers", exact: true })).toBeVisible();
   return dialog;
+}
+async function openLibrary(page) {
+  await page.getByRole("button", { name: "Saved grids and presets", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Saved grids and presets", exact: true });
+  await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("complementary")).toHaveCount(0);
+  await expect(dialog.getByRole("navigation", { name: "Policies and support", exact: true })).toBeVisible();
+  return dialog;
+}
+async function openLogin(page) {
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Log in", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+async function signOut(page) {
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
+}
+async function browserDraft(page) {
+  await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
+  return page.evaluate(async () => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("grids-client-v1");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const { document, images } = await new Promise((resolve, reject) => {
+        const transaction = database.transaction(["documents", "images"], "readonly");
+        const document = transaction.objectStore("documents").get("guest");
+        const images = transaction.objectStore("images").getAll();
+        transaction.oncomplete = () => resolve({ document: document.result, images: images.result });
+        transaction.onerror = () => reject(transaction.error);
+      });
+      return {
+        document,
+        images: await Promise.all(images.map(async ({ id, blob }) => ({
+          id, hash: [...new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()))],
+        }))),
+      };
+    } finally { database.close(); }
+  });
 }
 
 async function expectRedAction(button) {
@@ -74,10 +148,89 @@ async function expectRedAction(button) {
   expect(red).toBeGreaterThan(blue + 20);
 }
 
+for (const [width, height, reducedMotion] of [
+  [1440, 1600, "no-preference"], [1440, 1600, "reduce"],
+  [390, 844, "no-preference"], [390, 844, "reduce"],
+]) {
+  const viewport = { width, height };
+  test(`dialogs fade in at their final position at ${viewport.width}px with ${reducedMotion} motion`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.setViewportSize(viewport);
+    const mock = await mockAccount(page);
+    for (let index = 0; index < 3; index++) {
+      const id = randomUUID();
+      mock.grids.set(id, { id, name: `Saved grid ${index}`, updatedAt: new Date().toISOString() });
+    }
+    let release;
+    const ready = new Promise((resolve) => { release = resolve; });
+    await page.route("**/api/grids", async (route) => {
+      await ready;
+      await route.fallback();
+    });
+    await page.goto("./");
+    await expect(page.getByRole("button", { name: "Account menu", exact: true })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await page.getByRole("button", { name: "Saved grids and presets", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Saved grids and presets", exact: true });
+    await expect(dialog).toHaveCSS("opacity", "1");
+    const panel = dialog.locator("[data-modal-panel]");
+    await expect(panel).toHaveCount(0);
+    await expect(dialog.getByRole("status")).toContainText("Loading...");
+    const recording = page.evaluate(() => new Promise((resolve) => {
+      document.body.setAttribute("data-recording", "true");
+      const samples = [];
+      const start = performance.now();
+      function frame() {
+        const element = document.querySelector("[data-modal-panel]");
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          samples.push({ y: rect.y, height: rect.height, opacity: Number(style.opacity), transform: style.transform });
+        }
+        if (performance.now() - start < 600) requestAnimationFrame(frame);
+        else {
+          document.body.removeAttribute("data-recording");
+          resolve(samples);
+        }
+      }
+      frame();
+    }));
+    await expect(page.locator("body")).toHaveAttribute("data-recording", "true");
+    release();
+    const samples = await recording;
+    await expect(dialog.getByRole("region", { name: "My saved grids", exact: true }).getByRole("listitem")).toHaveCount(3);
+    expect(samples.length).toBeGreaterThan(5);
+    expect(Math.max(...samples.map(({ y }) => y)) - Math.min(...samples.map(({ y }) => y))).toBeLessThan(0.5);
+    expect(samples.every(({ y, height, transform }) =>
+      Math.abs(y - Math.max(16, (viewport.height - height) / 2)) < 0.5 && transform === "none")).toBe(true);
+    expect(samples.at(-1).opacity).toBe(1);
+    if (reducedMotion === "no-preference") {
+      expect(samples.filter(({ opacity }) => opacity > 0 && opacity < 1).length).toBeGreaterThan(2);
+    } else expect(samples.every(({ opacity }) => opacity === 1)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Saved grids and presets", exact: true })).toBeFocused();
+  });
+}
+
+test("saved-grid errors retain retry without a manual refresh button", async ({ page }) => {
+  await mockAccount(page);
+  const unavailable = (route) => route.fulfill({ status: 503, json: { error: "Saved grids unavailable" } });
+  await page.route("**/api/grids", unavailable);
+  await page.goto("./");
+  await expect(page.getByRole("button", { name: "Account menu", exact: true })).toBeVisible();
+  const dialog = await openLibrary(page);
+  await expect(dialog.getByRole("alert")).toContainText("Saved grids unavailable");
+  await page.unroute("**/api/grids", unavailable);
+  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByLabel("Save name", { exact: true })).toBeEnabled();
+});
+
 test("account provider links use accessible packaged brand icons", async ({ page }) => {
   await mockAccount(page, { signedIn: false });
   await page.goto("./?source=imported");
-  const dialog = await openAccount(page);
+  const dialog = await openLogin(page);
   for (const provider of ["Google", "Facebook", "Discord"]) {
     const link = dialog.getByRole("link", { name: `Continue with ${provider}`, exact: true });
     await expect(link).toBeVisible();
@@ -86,6 +239,277 @@ test("account provider links use accessible packaged brand icons", async ({ page
     const size = await link.boundingBox();
     expect(size.height).toBeGreaterThanOrEqual(44);
   }
+});
+
+test("login is provider-only and switching from the guest library preserves focus and the browser draft", async ({ page }) => {
+  const mock = await mockAccount(page, { signedIn: false });
+  await page.goto("./?source=imported");
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account menu", exact: true })).toHaveCount(0);
+  const before = await browserDraft(page);
+  let dialog = await openLogin(page);
+  await expect(dialog.getByRole("link", { name: /^Continue with/ })).toHaveCount(3);
+  await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("region", { name: "Connected sign-in providers" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Delete account and server data" })).toHaveCount(0);
+  expect(mock.reads.every((resource) => resource === "session")).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeFocused();
+  const library = await openLibrary(page);
+  await library.getByRole("button", { name: "Log in", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Log in", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(dialog.getByRole("button", { name: "Close dialog", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeFocused();
+  expect(await browserDraft(page)).toEqual(before);
+});
+
+test("the icon-only account menu supports keyboard navigation and keeps account management separate", async ({ page }) => {
+  const mock = await mockAccount(page);
+  await page.goto("./");
+  const menuButton = page.getByRole("button", { name: "Account menu", exact: true });
+  await expect(menuButton).toHaveText("");
+  await expect(menuButton.locator("svg")).toHaveCount(1);
+  await menuButton.focus();
+  await page.keyboard.press("ArrowDown");
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Account", "Sign out"]);
+  for (const item of await menu.getByRole("menuitem").all()) {
+    await expect(item.locator("svg")).toHaveCount(1);
+  }
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Account", exact: true })).toHaveAttribute("data-focus", "");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Account", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Delete account and server data", exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
+  expect(mock.reads.every((resource) => resource === "session")).toBe(true);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
+});
+
+test("sign-out failure stays signed in and a successful retry preserves local images", async ({ page }) => {
+  await mockAccount(page);
+  await page.goto("./?source=imported");
+  await page.locator("#replace-upload").setInputFiles({
+    name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
+  });
+  await expect(page.getByRole("button", { name: "Image options: local", exact: true })).toBeVisible();
+  const before = await browserDraft(page);
+  const failLogout = (route) => route.fulfill({ status: 503, json: { error: "Sign out unavailable" } });
+  await page.route("**/api/logout", failLogout);
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Sign out unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account menu", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close toast", exact: true }).click();
+  await page.unroute("**/api/logout", failLogout);
+  await signOut(page);
+  expect(await browserDraft(page)).toEqual(before);
+});
+
+for (const action of ["expire", "delete", "disconnect"]) {
+  test(`header and account modal update when the session ends through ${action}`, async ({ page }) => {
+    const mock = await mockAccount(page, {
+      connections: [{ provider: "google", name: "Test user" }, { provider: "discord", name: "Other user" }],
+    });
+    await page.goto("./?source=imported");
+    const before = await browserDraft(page);
+    const dialog = await openAccount(page);
+    if (action === "expire") {
+      mock.expireSession();
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    } else {
+      const target = action === "delete"
+        ? dialog.getByRole("button", { name: "Delete account and server data", exact: true })
+        : dialog.getByRole("button", { name: "Disconnect Google", exact: true });
+      await target.click();
+      await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+    }
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account menu", exact: true })).toHaveCount(0);
+    expect(await browserDraft(page)).toEqual(before);
+  });
+}
+
+for (const signedIn of [false, true]) {
+  for (const width of [260, 320, 390, 1280]) {
+    test(`header actions do not overlap at ${width}px when ${signedIn ? "signed in" : "a guest"}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await mockAccount(page, { signedIn });
+      await page.goto("./");
+      const header = page.locator("[data-canvas-header]");
+      const account = header.getByRole("button", { name: signedIn ? "Account menu" : "Log in", exact: true });
+      await expect(account).toBeVisible();
+      await expect.poll(async () => (await header.getByRole("button", { name: "Saved grids and presets", exact: true }).boundingBox()).x)
+        .toBeGreaterThanOrEqual(0);
+      const buttons = [
+        header.getByRole("button", { name: "Saved grids and presets", exact: true }),
+        header.getByRole("button", { name: "Export grid", exact: true }),
+        account,
+        header.getByRole("button", { name: /^(Show sidebar|Close sidebar)$/ }),
+      ];
+      let right = 0;
+      for (const button of buttons) {
+        const bounds = await button.boundingBox();
+        expect(bounds.x).toBeGreaterThanOrEqual(right);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        expect(bounds.height).toBeGreaterThanOrEqual(44);
+        right = bounds.x + bounds.width;
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+  }
+}
+
+for (const provider of ["google", "discord"]) {
+  test(`account header is provider-neutral when signed in through ${provider}`, async ({ page }) => {
+    await mockAccount(page, { provider, connections: [
+      { provider: "google", name: "Google identity" }, { provider: "discord", name: "Discord identity" },
+    ] });
+    await page.goto("./?source=imported");
+    const dialog = await openAccount(page);
+    const identity = dialog.getByRole("group", { name: "Your Gridz account", exact: true });
+    await expect(identity.getByText("Test user", { exact: true })).toBeVisible();
+    await expect(identity.getByText("Your Gridz account", { exact: true })).toBeVisible();
+    await expect(identity.locator('svg.lucide-user-round[aria-hidden="true"]')).toHaveCount(1);
+    await expect(identity).not.toContainText(/Google|Discord|Connected with/);
+    await expect(dialog.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("complementary")).toHaveCount(0);
+    await expect(dialog.getByText("Keep at least one available sign-in provider connected.", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Sign in to this account using any connected provider.", { exact: false })).toHaveCount(0);
+    await expect(dialog.getByRole("navigation", { name: "Policies and support", exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
+    const connections = dialog.getByRole("region", { name: "Connected sign-in providers", exact: true });
+    for (const name of ["Google", "Discord"]) {
+      await expect(connections.getByText(name, { exact: true })).toBeVisible();
+      await expect(connections.getByRole("listitem").filter({ hasText: `${name} identity` }).locator('svg[aria-hidden="true"]').first()).toBeVisible();
+    }
+  });
+}
+
+test("connecting a provider is explicit, uses a protected POST and leaves the saved browser draft intact", async ({ page }) => {
+  const mock = await mockAccount(page);
+  await page.route("https://discord.com/oauth2/authorize?client_id=test", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Provider authorization</h1>" }));
+  await page.goto("./?source=imported");
+  await page.locator("#replace-upload").setInputFiles({
+    name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
+  });
+  await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
+  const before = await browserDraft(page);
+  expect(before.images).toHaveLength(1);
+  const dialog = await openAccount(page);
+  const connections = dialog.getByRole("region", { name: "Connected sign-in providers" });
+  await expect(connections.getByRole("button", { name: /^Disconnect / })).toHaveCount(0);
+  await expect(connections.getByRole("button", { name: "Connect Google", exact: true })).toHaveCount(0);
+  await connections.getByRole("button", { name: "Connect Discord", exact: true }).click();
+  expect(mock.writes).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(mock.writes).toHaveLength(0);
+  await connections.getByRole("button", { name: "Connect Discord", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Provider authorization" })).toBeVisible();
+  expect(mock.writes).toHaveLength(1);
+  expect(mock.writes[0]).toMatchObject({ resource: "auth", provider: "discord", method: "POST", body: {} });
+  expect(mock.writes[0].headers["x-grids-request"]).toBe("1");
+  await page.goBack();
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
+  expect(await browserDraft(page)).toEqual(before);
+});
+
+for (const width of [320, 1280]) {
+  test(`existing account merge review fits ${width}px and never merges automatically`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const pendingMerge = {
+      id: randomUUID(), provider: "discord", name: "Incoming account", providers: ["discord", "facebook"], grids: 3, presets: 4,
+    };
+    const mock = await mockAccount(page, { pendingMerge });
+    await page.goto("./?source=imported");
+    await page.locator("#replace-upload").setInputFiles({
+      name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
+    });
+    await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
+    const before = await browserDraft(page);
+    await page.goto("./?source=imported&auth=merge");
+    const dialog = page.getByRole("dialog", { name: "Account", exact: true });
+    const review = dialog.getByRole("region", { name: "Merge existing accounts?" });
+    await expect(review).toBeVisible();
+    await expect(review).toContainText("Incoming account (Discord, Facebook) already has 3 saved grids and 4 presets");
+    expect(mock.writes).toHaveLength(0);
+    await expect(dialog.getByRole("button", { name: "Connect Discord", exact: true })).toBeDisabled();
+    const bounds = await page.locator("[data-modal-panel]").evaluate((element) => ({
+      width: element.clientWidth, scroll: element.scrollWidth,
+    }));
+    expect(bounds.scroll).toBeLessThanOrEqual(bounds.width);
+    await review.getByRole("button", { name: "Merge accounts and keep all saves", exact: true }).click();
+    await expect(review).toHaveCount(0);
+    expect(mock.writes).toEqual([{ resource: "account", method: "POST", body: { id: pendingMerge.id } }]);
+    await expect(dialog.getByRole("button", { name: "Disconnect Discord", exact: true })).toBeEnabled();
+    await expect(dialog.getByRole("button", { name: "Disconnect Facebook", exact: true })).toBeEnabled();
+    expect(await browserDraft(page)).toEqual(before);
+  });
+}
+
+test("merge cancellation and server conflicts are visible without changing the browser grid", async ({ page }) => {
+  const mock = await mockAccount(page, { pendingMerge: {
+    id: randomUUID(), provider: "discord", name: "Another account", providers: ["discord"], grids: 1, presets: 0,
+  } });
+  await page.goto("./?source=imported&auth=merge");
+  const dialog = page.getByRole("dialog", { name: "Account", exact: true });
+  const review = dialog.getByRole("region", { name: "Merge existing accounts?" });
+  await expect(review).toBeVisible();
+  await page.route("**/api/account/merge", (route) => route.fulfill({
+    status: 409, json: { error: "Merge expired or changed. Connect the provider again." },
+  }));
+  await review.getByRole("button", { name: "Merge accounts and keep all saves", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Merge expired or changed");
+  await expect(review).toBeVisible();
+  expect(mock.writes).toHaveLength(0);
+  await review.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(review).toHaveCount(0);
+  expect(mock.writes).toEqual([{ resource: "account", method: "DELETE", body: undefined }]);
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+});
+
+test("disconnect uses red confirmation, cancellation is harmless and the final provider stays connected", async ({ page }) => {
+  const mock = await mockAccount(page, { connections: [
+    { provider: "google", name: "Test user" }, { provider: "discord", name: "Discord identity" },
+  ] });
+  await page.goto("./?source=imported");
+  const dialog = await openAccount(page);
+  const disconnect = dialog.getByRole("button", { name: "Disconnect Discord", exact: true });
+  await expect(dialog.getByRole("button", { name: "Disconnect Google", exact: true })).toBeEnabled();
+  await expectRedAction(disconnect);
+  await disconnect.click();
+  await expect(dialog).toContainText("Sessions signed in through this provider will be signed out");
+  await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(mock.writes).toHaveLength(0);
+  await disconnect.click();
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Disconnect Discord", exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /^Disconnect / })).toHaveCount(0);
+  expect(mock.writes).toEqual([{ resource: "account", provider: "discord", method: "DELETE" }]);
 });
 
 for (const width of [320, 390, 1280]) {
@@ -100,23 +524,29 @@ for (const width of [320, 390, 1280]) {
     });
     await page.goto("./?source=imported");
     const dialog = await openAccount(page);
-    const identity = await dialog.getByText("Test user", { exact: true }).evaluate((element) => ({
+    const identity = await dialog.getByText("Test user", { exact: true }).first().evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       font: Number.parseFloat(getComputedStyle(element).fontSize),
     }));
     expect(identity.height).toBeLessThanOrEqual(identity.font * 1.6);
-    const input = dialog.getByLabel("Save name", { exact: true });
+    await dialog.getByRole("button", { name: "Delete account and server data", exact: true }).click();
+    await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const library = await openLibrary(page);
+    const input = library.getByLabel("Save name", { exact: true });
     expect((await input.boundingBox()).height).toBeGreaterThanOrEqual(44);
-    const checkbox = await dialog.getByRole("checkbox").boundingBox();
+    const checkbox = await library.getByRole("checkbox").boundingBox();
     expect(checkbox.width).toBeGreaterThanOrEqual(16);
     expect(checkbox.width).toBeLessThanOrEqual(24);
     expect(checkbox.height).toBeLessThanOrEqual(24);
-    await dialog.getByRole("checkbox").check();
-    await expect(dialog.getByRole("checkbox")).toBeChecked();
-    for (const button of await dialog.getByRole("button").all()) {
+    await library.getByRole("checkbox").check();
+    await expect(library.getByRole("checkbox")).toBeChecked();
+    for (const button of await library.getByRole("button").all()) {
       await expect(button.locator('svg[aria-hidden="true"]')).toHaveCount(1);
     }
-    for (const button of await dialog.getByRole("button", { name: /^Delete/ }).all()) {
+    for (const button of await library.getByRole("button", { name: /^Delete/ }).all()) {
       await expectRedAction(button);
     }
     const panel = page.locator("[data-modal-panel]");
@@ -127,20 +557,18 @@ for (const width of [320, 390, 1280]) {
     expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
     expect(dimensions.left).toBeGreaterThanOrEqual(0);
     expect(dimensions.right).toBeLessThanOrEqual(width);
-    const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });
+    const mine = library.getByRole("region", { name: "My saved grids", exact: true });
     await mine.getByRole("button", { name: "Delete", exact: true }).click();
-    await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
-    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expectRedAction(library.getByRole("button", { name: "Confirm", exact: true }));
+    await expect(library.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await library.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(mock.grids.has(id)).toBe(true);
     await mine.getByRole("button", { name: "Delete", exact: true }).click();
-    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+    await library.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(mine).toContainText("Nothing saved here yet.");
     expect(mock.grids.has(id)).toBe(false);
-    await dialog.getByRole("button", { name: "Delete account and server data", exact: true }).click();
-    await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(dialog.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await expect(library.getByRole("region", { name: "Connected sign-in providers", exact: true })).toHaveCount(0);
+    await expect(library.getByRole("button", { name: "Delete account and server data", exact: true })).toHaveCount(0);
   });
 }
 
@@ -152,7 +580,7 @@ for (const mobile of [false, true]) {
       name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
     });
     await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-    const dialog = await openAccount(page);
+    const dialog = await openLibrary(page);
     await dialog.getByLabel("Save name", { exact: true }).fill("My grid");
     await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
     const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });
@@ -186,9 +614,9 @@ for (const mobile of [false, true]) {
     await expect(dialog).toHaveCount(0);
     await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
     await page.reload();
-    const again = await openAccount(page);
-    await again.getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(again.getByRole("link", { name: "Continue with Google", exact: true })).toBeVisible();
+    await signOut(page);
+    const again = await openLibrary(page);
+    await expect(again.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
     await expect(again.getByRole("region", { name: "My saved grids" })).toHaveCount(0);
     await again.getByRole("button", { name: "Close dialog", exact: true }).click();
     await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
@@ -216,7 +644,7 @@ test("account reference grids restore images from providers and export without u
   }));
   await page.goto("./?source=imported");
   await page.locator("#upload").setInputFiles({ name: "temporary.jpg", mimeType: "image/jpeg", buffer: file });
-  const dialog = await openAccount(page);
+  const dialog = await openLibrary(page);
   await dialog.getByLabel("Save name", { exact: true }).fill("Reference grid");
   await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
   await expect(dialog.getByRole("region", { name: "My saved grids" })).toContainText("Reference grid");
@@ -257,9 +685,9 @@ test("account reference grids restore images from providers and export without u
 test("account failures are visible and do not break guest editing", async ({ page }) => {
   await page.route("**/api/**", (route) => route.fulfill({ status: 503, json: { error: "Account service unavailable" } }));
   await page.goto("./?source=imported&auth=failed");
-  const dialog = page.getByRole("dialog", { name: "Account and saved grids" });
+  const dialog = page.getByRole("dialog", { name: "Log in", exact: true });
   await expect(dialog.getByRole("alert")).toContainText("Account service unavailable");
-  await expect(page.locator("[data-sonner-toast]").first()).toContainText("Sign-in failed");
+  await expect(page.locator("[data-sonner-toast]").first()).toContainText("Sign-in or provider connection failed");
   await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
   await expect(page.locator("#board-grid")).toBeVisible();
   await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
@@ -272,14 +700,18 @@ test("account shared presets apply for guests without publishing captions or rep
   await page.locator("#replace-upload").setInputFiles({
     name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
   });
-  let dialog = await openAccount(page);
+  let dialog = await openLibrary(page);
   await dialog.getByLabel("Save name", { exact: true }).fill("Two columns");
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Save settings as new preset", exact: true }).click();
   await expect(dialog.getByRole("region", { name: "Shared presets" })).toContainText("Two columns");
   const preset = [...mock.presets.values()][0];
   preset.settings.layout = { rows: 1, columns: 2 };
-  await dialog.getByRole("button", { name: "Sign out", exact: true }).click();
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Close toast", exact: true }).click();
+  await signOut(page);
+  dialog = await openLibrary(page);
   const shared = dialog.getByRole("region", { name: "Shared presets" });
   await expect(shared.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
   await expect(shared.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
@@ -290,7 +722,10 @@ test("account shared presets apply for guests without publishing captions or rep
   await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
   await page.reload();
   await expect(page.locator("#board-grid .grid-cell")).toHaveCount(2);
-  dialog = await openAccount(page);
+  dialog = await openLibrary(page);
+  await expect(dialog.getByRole("link", { name: "Continue with Google", exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Log in", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Log in", exact: true });
   await expect(dialog.getByRole("link", { name: "Continue with Google", exact: true }))
     .toHaveAttribute("href", /\/api\/auth\/google\/start$/);
   await expect(dialog.getByRole("link", { name: "Continue with Facebook", exact: true })).toBeVisible();
@@ -300,7 +735,7 @@ test("account shared presets apply for guests without publishing captions or rep
 test("account grids warn about unavailable local uploads but preserve captions and layout", async ({ page }) => {
   const mock = await mockAccount(page);
   await page.goto("./?source=imported");
-  const dialog = await openAccount(page);
+  const dialog = await openLibrary(page);
   await dialog.getByLabel("Save name", { exact: true }).fill("Missing local");
   await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
   const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });

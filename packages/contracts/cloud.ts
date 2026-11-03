@@ -14,10 +14,25 @@ export const userSchema = z.strictObject({
   name: z.string().min(1).max(100),
   provider: authProviderSchema,
 });
+export const connectionSchema = z.strictObject({
+  provider: authProviderSchema,
+  name: z.string().min(1).max(100),
+});
+export const pendingMergeSchema = z.strictObject({
+  id: z.uuid(),
+  provider: authProviderSchema,
+  name: z.string().min(1).max(100),
+  providers: z.array(authProviderSchema),
+  grids: z.number().int().nonnegative(),
+  presets: z.number().int().nonnegative(),
+});
 export const sessionSchema = z.strictObject({
   user: userSchema.nullable(),
   providers: z.array(authProviderSchema),
+  connections: z.array(connectionSchema),
+  pendingMerge: pendingMergeSchema.nullable(),
 });
+export const authorizationSchema = z.strictObject({ url: z.url({ protocol: /^https$/ }) });
 
 const referenceAssetSchema = z.strictObject({
   id: z.uuid(),

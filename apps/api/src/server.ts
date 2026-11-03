@@ -12,6 +12,7 @@ const server = createApp(config, pool).listen(config.port, () => {
 const cleanup = setInterval(() => {
   void pool.query("DELETE FROM oauth_states WHERE expires_at <= now()")
     .then(() => pool.query("DELETE FROM sessions WHERE expires_at <= now()"))
+    .then(() => pool.query("DELETE FROM account_merges WHERE expires_at <= now()"))
     .catch(() => console.error("Expired authentication record cleanup failed."));
 }, 60000);
 cleanup.unref();
