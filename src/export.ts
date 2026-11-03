@@ -373,7 +373,7 @@ export async function createExport(
         ? (item.captionOverlayColor ?? "#000000")
         : (item.cellBackgroundColor ?? publisher.caption);
     if (item.captionPlacement === "overlay")
-      context.globalAlpha = (item.captionOverlayOpacity ?? 70) / 100;
+      context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
     context.fillRect(left, captionTop, size, geometry.captionHeight);
     context.restore();
     drawTitle(

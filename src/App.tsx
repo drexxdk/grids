@@ -1713,7 +1713,7 @@ export default function App() {
                             >
                               {t("settings.fields.overlayOpacity")}{" "}
                               <output>
-                                {board.captionOverlayOpacity ?? 70}%
+                                {board.captionOverlayOpacity ?? 60}%
                               </output>
                             </label>
                             <input
@@ -1721,7 +1721,7 @@ export default function App() {
                               type="range"
                               min="0"
                               max="100"
-                              value={board.captionOverlayOpacity ?? 70}
+                              value={board.captionOverlayOpacity ?? 60}
                               onChange={(event) =>
                                 patchBoard({
                                   captionOverlayOpacity: Number(

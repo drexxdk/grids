@@ -2885,7 +2885,7 @@ test("settings sliders use normalized percentages and midpoint defaults", async 
   for (const slider of await sliders.all()) {
     const id = await slider.getAttribute("id");
     const value =
-      id === "cell-font-size" ? "20" : id === "caption-opacity" ? "70" : "50";
+      id === "cell-font-size" ? "20" : id === "caption-opacity" ? "60" : "50";
     await expect(slider).toHaveAttribute("min", "0");
     await expect(slider).toHaveAttribute("max", "100");
     await expect(slider).toHaveValue(value);

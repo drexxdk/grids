@@ -317,7 +317,7 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   headingPadding: 30,
   cellFontSize: 12,
   cornerRadius: 12.5,
-  captionOverlayOpacity: 70,
+  captionOverlayOpacity: 60,
   imageAspect: "portrait",
   captionPlacement: "overlay",
   captionAlignment: "bottom",

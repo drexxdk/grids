@@ -343,7 +343,7 @@ export function GridCell({
   const toolSpace =
     overlay && alignment === "middle" ? freeImageHeight / 2 : freeImageHeight;
   const overlayColor = `${gridStyle.captionOverlayColor ?? "#000000"}${Math.round(
-    ((gridStyle.captionOverlayOpacity ?? 70) / 100) * 255,
+    ((gridStyle.captionOverlayOpacity ?? 60) / 100) * 255,
   )
     .toString(16)
     .padStart(2, "0")}`;
