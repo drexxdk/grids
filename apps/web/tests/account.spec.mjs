@@ -60,6 +60,90 @@ async function openAccount(page) {
   return dialog;
 }
 
+async function expectRedAction(button) {
+  await expect(button.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+  const [red, green, blue] = await button.evaluate((element) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d");
+    context.fillStyle = getComputedStyle(element).color;
+    context.fillRect(0, 0, 1, 1);
+    return [...context.getImageData(0, 0, 1, 1).data];
+  });
+  expect(red).toBeGreaterThan(green + 30);
+  expect(red).toBeGreaterThan(blue + 20);
+}
+
+test("account provider links use accessible packaged brand icons", async ({ page }) => {
+  await mockAccount(page, { signedIn: false });
+  await page.goto("./?source=imported");
+  const dialog = await openAccount(page);
+  for (const provider of ["Google", "Facebook", "Discord"]) {
+    const link = dialog.getByRole("link", { name: `Continue with ${provider}`, exact: true });
+    await expect(link).toBeVisible();
+    await expect(link.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+    await expect(link).toHaveAttribute("href", new RegExp(`/api/auth/${provider.toLowerCase()}/start$`));
+    const size = await link.boundingBox();
+    expect(size.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+for (const width of [320, 390, 1280]) {
+  test(`account controls and destructive confirmations fit a ${width}px viewport`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const mock = await mockAccount(page);
+    const id = randomUUID();
+    const presetId = randomUUID();
+    mock.grids.set(id, { id, name: "Long saved grid ".repeat(4), updatedAt: new Date().toISOString() });
+    mock.presets.set(presetId, {
+      id: presetId, name: "A private style", public: false, owned: true, updatedAt: new Date().toISOString(),
+    });
+    await page.goto("./?source=imported");
+    const dialog = await openAccount(page);
+    const identity = await dialog.getByText("Test user", { exact: true }).evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      font: Number.parseFloat(getComputedStyle(element).fontSize),
+    }));
+    expect(identity.height).toBeLessThanOrEqual(identity.font * 1.6);
+    const input = dialog.getByLabel("Save name", { exact: true });
+    expect((await input.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    const checkbox = await dialog.getByRole("checkbox").boundingBox();
+    expect(checkbox.width).toBeGreaterThanOrEqual(16);
+    expect(checkbox.width).toBeLessThanOrEqual(24);
+    expect(checkbox.height).toBeLessThanOrEqual(24);
+    await dialog.getByRole("checkbox").check();
+    await expect(dialog.getByRole("checkbox")).toBeChecked();
+    for (const button of await dialog.getByRole("button").all()) {
+      await expect(button.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+    }
+    for (const button of await dialog.getByRole("button", { name: /^Delete/ }).all()) {
+      await expectRedAction(button);
+    }
+    const panel = page.locator("[data-modal-panel]");
+    const dimensions = await panel.evaluate((element) => ({
+      width: element.clientWidth, scroll: element.scrollWidth,
+      left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+    }));
+    expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
+    expect(dimensions.left).toBeGreaterThanOrEqual(0);
+    expect(dimensions.right).toBeLessThanOrEqual(width);
+    const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });
+    await mine.getByRole("button", { name: "Delete", exact: true }).click();
+    await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
+    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(mock.grids.has(id)).toBe(true);
+    await mine.getByRole("button", { name: "Delete", exact: true }).click();
+    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(mine).toContainText("Nothing saved here yet.");
+    expect(mock.grids.has(id)).toBe(false);
+    await dialog.getByRole("button", { name: "Delete account and server data", exact: true }).click();
+    await expectRedAction(dialog.getByRole("button", { name: "Confirm", exact: true }));
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+  });
+}
+
 for (const mobile of [false, true]) {
   (mobile ? touchTest : test)(`account ${mobile ? "mobile" : "desktop"} saves named reference-only grids and public/private settings presets`, async ({ page }) => {
     const mock = await mockAccount(page);

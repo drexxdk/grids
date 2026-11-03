@@ -118,6 +118,8 @@ const buttonStyles = cva(
           "border-(--line) bg-(--bg) text-(--text) enabled:hover:border-(--accent)",
         primary:
           "border-(--accent) bg-(--accent) text-[#19200d] enabled:hover:brightness-110",
+        danger:
+          "border-red-400/40 bg-red-500/10 text-red-300 enabled:hover:border-red-400 enabled:hover:bg-red-500/20 focus-visible:outline-red-400",
         icon: "size-11 shrink-0 border-(--line) bg-(--bg) p-0 enabled:hover:border-(--accent)!",
       },
     },
