@@ -58,6 +58,7 @@ export function EditorLayout({
   const [headerHeight, setHeaderHeight] = useState(76);
   const headerActions = useRef<HTMLDivElement>(null);
   const resizeControls = useRef<HTMLDivElement>(null);
+  const controlsInHeader = Boolean(canvasControls);
   const headerBrand = useRef<HTMLDivElement>(null);
   const [brandInHeader, setBrandInHeader] = useState(false);
   const expandedExportSpacing = useRef(0);
@@ -110,7 +111,7 @@ export function EditorLayout({
           (width, child) => width + child.getBoundingClientRect().width,
           0,
         ) +
-        gap * (children.length - 1);
+        gap * Math.max(0, children.length - 1);
       const controlsRight =
         controls.getBoundingClientRect().left +
         controls.clientWidth / 2 +
@@ -154,7 +155,7 @@ export function EditorLayout({
       observer.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
     };
-  }, [compact, sidebarOpen, headerLayout]);
+  }, [compact, sidebarOpen, headerLayout, controlsInHeader]);
   useEffect(() => {
     if (!compact) {
       setSettingsOpen(false);
@@ -196,7 +197,7 @@ export function EditorLayout({
       <div
         ref={resizeControls}
         data-canvas-controls
-        className={`flex min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden scrollbar-gutter-stable px-3 ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
+        className={`flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden scrollbar-gutter-stable px-3 ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
       >
         {canvasControls}
       </div>

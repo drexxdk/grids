@@ -16,6 +16,9 @@ export function GridResizer({
   previewWidth,
   onOverflowChange,
   heading,
+  bottomControls,
+  sideControls,
+  cornerAction,
   children,
 }: {
   ref?: Ref<HTMLDivElement>;
@@ -24,6 +27,9 @@ export function GridResizer({
   previewWidth?: number;
   onOverflowChange?: (size: { width: number; height: number }) => void;
   heading?: ReactNode;
+  bottomControls?: ReactNode;
+  sideControls?: ReactNode;
+  cornerAction?: ReactNode;
   children: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -91,7 +97,12 @@ export function GridResizer({
       ref={ref}
       style={style}
       data-resize-frame
-      className="flex min-h-0 min-w-0 items-center justify-center"
+      data-controls-placement={bottomControls ? "canvas" : "header"}
+      className={
+        bottomControls
+          ? "grid min-h-0 min-w-0 grid-cols-[44px_minmax(0,1fr)_44px] grid-rows-[minmax(0,1fr)_44px] gap-2 [&_button:focus-visible]:-outline-offset-3!"
+          : "flex min-h-0 min-w-0 items-center justify-center"
+      }
     >
       <div
         ref={contentRef}
@@ -101,7 +112,7 @@ export function GridResizer({
           maxWidth: "100%",
           paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
         }}
-        className="relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container"
+        className={`relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container ${bottomControls ? "col-start-2 row-start-1" : ""}`}
       >
         <span
           aria-hidden="true"
@@ -122,6 +133,19 @@ export function GridResizer({
           {children}
         </div>
       </div>
+      {bottomControls && (
+        <>
+          <div className="col-start-3 row-start-1 flex items-center justify-center">
+            {sideControls}
+          </div>
+          <div className="col-start-2 row-start-2 flex items-center justify-center">
+            {bottomControls}
+          </div>
+          <div className="col-start-3 row-start-2 flex items-center justify-center">
+            {cornerAction}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -130,87 +154,93 @@ export function GridResizeControls({
   rows,
   columns,
   onResize,
+  dimension,
+  orientation = "horizontal",
 }: {
   rows: number;
   columns: number;
   onResize: (dimension: "rows" | "columns", value: number) => void;
+  dimension?: "rows" | "columns";
+  orientation?: "horizontal" | "vertical";
 }) {
   const dimensions = { rows, columns };
   return (
     <>
-      {(["columns", "rows"] as const).map((dimension) => (
-        <ButtonGroup
-          key={dimension}
-          label={
-            dimension === "columns"
-              ? t("editor.resize.columns")
-              : t("editor.resize.rows")
-          }
-          orientation="horizontal"
-          className="[&>button[data-resize-action]]:bg-(--resize-color)/15! [&>button[data-resize-action]:enabled:hover]:bg-(--resize-color)/25!"
-        >
-          {[-1, 1].map((change) => {
-            const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
-            const limited =
-              change > 0
-                ? dimensions[dimension] >= gridLimit
-                : dimensions[dimension] <= 1;
-            const limit =
-              change > 0
-                ? `Maximum ${gridLimit} ${dimension}`
-                : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
-            return (
-              <Button
-                key={change}
-                variant="icon"
-                aria-label={label}
-                title={limited ? limit : label}
-                data-resize-action={change > 0 ? "add" : "remove"}
-                className="border-(--resize-color)/60! text-(--resize-color)! enabled:hover:border-(--resize-color)! focus-visible:outline-(--resize-color)!"
-                style={
-                  {
-                    "--resize-color": change > 0 ? "#80cab1" : "#ff7f87",
-                  } as CSSProperties
-                }
-                disabled={limited}
-                onClick={() =>
-                  onResize(dimension, dimensions[dimension] + change)
-                }
-              >
-                <span aria-hidden="true" className="size-6 shrink-0">
-                  <svg
-                    data-resize-symbol={dimension}
-                    viewBox="0 0 24 24"
-                    className="size-6! stroke-2!"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <title>{`${change > 0 ? "add" : "remove"}-${dimension === "rows" ? "row" : "column"}-line`}</title>
-                    <g
-                      transform={
-                        dimension === "columns"
-                          ? "rotate(-90 12 12)"
-                          : undefined
-                      }
+      {(dimension ? [dimension] : (["columns", "rows"] as const)).map(
+        (dimension) => (
+          <ButtonGroup
+            key={dimension}
+            label={
+              dimension === "columns"
+                ? t("editor.resize.columns")
+                : t("editor.resize.rows")
+            }
+            orientation={orientation}
+            className="[&>button[data-resize-action]]:bg-(--resize-color)/15! [&>button[data-resize-action]:enabled:hover]:bg-(--resize-color)/25!"
+          >
+            {[-1, 1].map((change) => {
+              const label = `${change > 0 ? "Add" : "Remove"} ${dimension === "columns" ? "column" : "row"}`;
+              const limited =
+                change > 0
+                  ? dimensions[dimension] >= gridLimit
+                  : dimensions[dimension] <= 1;
+              const limit =
+                change > 0
+                  ? `Maximum ${gridLimit} ${dimension}`
+                  : `Minimum one ${dimension === "columns" ? "column" : "row"}`;
+              return (
+                <Button
+                  key={change}
+                  variant="icon"
+                  aria-label={label}
+                  title={limited ? limit : label}
+                  data-resize-action={change > 0 ? "add" : "remove"}
+                  className="border-(--resize-color)/60! text-(--resize-color)! enabled:hover:border-(--resize-color)! focus-visible:outline-(--resize-color)!"
+                  style={
+                    {
+                      "--resize-color": change > 0 ? "#80cab1" : "#ff7f87",
+                    } as CSSProperties
+                  }
+                  disabled={limited}
+                  onClick={() =>
+                    onResize(dimension, dimensions[dimension] + change)
+                  }
+                >
+                  <span aria-hidden="true" className="size-6 shrink-0">
+                    <svg
+                      data-resize-symbol={dimension}
+                      viewBox="0 0 24 24"
+                      className="size-6! stroke-2!"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
-                      <path
-                        d={
-                          change > 0
-                            ? "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-3 3v3m0 0v3m0-3h3m-3 0H9"
-                            : "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-6 3l3 3m0 0l3 3m-3-3l3-3m-3 3l-3 3"
+                      <title>{`${change > 0 ? "add" : "remove"}-${dimension === "rows" ? "row" : "column"}-line`}</title>
+                      <g
+                        transform={
+                          dimension === "columns"
+                            ? "rotate(-90 12 12)"
+                            : undefined
                         }
-                      />
-                    </g>
-                  </svg>
-                </span>
-              </Button>
-            );
-          })}
-        </ButtonGroup>
-      ))}
+                      >
+                        <path
+                          d={
+                            change > 0
+                              ? "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-3 3v3m0 0v3m0-3h3m-3 0H9"
+                              : "M3 3v3m18-3v3m0 0v4a2 2 0 0 1-2 2H9m12-6H9M3 6v4a2 2 0 0 0 2 2h4M3 6h6m0-3v3m0 0v6m6-9v9m-6 3l3 3m0 0l3 3m-3-3l3-3m-3 3l-3 3"
+                          }
+                        />
+                      </g>
+                    </svg>
+                  </span>
+                </Button>
+              );
+            })}
+          </ButtonGroup>
+        ),
+      )}
     </>
   );
 }

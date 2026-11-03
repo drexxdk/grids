@@ -361,7 +361,7 @@ export const makeWorkspace = (): Workspace => ({
   version: 1,
   assets: [],
   grid: makeBoard("Grid"),
-  exportSettings: { format: "image/png", resolution: 300, quality: 75 },
+  exportSettings: { format: "image/png", resolution: 300, quality: 95 },
 });
 
 export function resetWorkspace(

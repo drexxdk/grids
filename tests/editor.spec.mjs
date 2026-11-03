@@ -2953,8 +2953,9 @@ test("settings sliders use normalized percentages and midpoint defaults", async 
   const quality = page.locator("#quality");
   await expect(quality).toHaveAttribute("min", "0");
   await expect(quality).toHaveAttribute("max", "100");
-  await expect(quality).toHaveValue("50");
-  await expect(page.locator("#quality-value")).toHaveText("50%");
+  await expect(quality).toHaveValue("90");
+  await expect(page.locator("#quality-value")).toHaveText("90%");
+  expect((await savedWorkspace(page)).exportSettings.quality).toBe(95);
   await quality.fill("0");
   expect((await savedWorkspace(page)).exportSettings.quality).toBe(50);
   await quality.fill("100");
@@ -4571,6 +4572,36 @@ test("canvas preview fits both row and column changes without resizing controls"
       .poll(() =>
         page.evaluate(() => {
           const workspace = document.querySelector("[data-workspace-scroll]");
+          const frame = document.querySelector("[data-resize-frame]");
+          if (frame.dataset.controlsPlacement === "canvas") {
+            const content = frame
+              .querySelector("[data-preview-content]")
+              .getBoundingClientRect();
+            const columns = frame
+              .querySelector('[aria-label="Column controls"]')
+              .getBoundingClientRect();
+            const rows = frame
+              .querySelector('[aria-label="Row controls"]')
+              .getBoundingClientRect();
+            const reset = frame
+              .querySelector('button[aria-label="Reset grid"]')
+              .getBoundingClientRect();
+            return Math.max(
+              Math.abs(rows.top - content.bottom - 8),
+              Math.abs(columns.left - content.right - 8),
+              Math.abs(
+                rows.left + rows.width / 2 - content.left - content.width / 2,
+              ),
+              Math.abs(
+                columns.top +
+                  columns.height / 2 -
+                  content.top -
+                  content.height / 2,
+              ),
+              Math.abs(reset.left - columns.left),
+              Math.abs(reset.top - rows.top),
+            );
+          }
           const buttons = [
             ...document.querySelectorAll("[data-canvas-controls] button"),
           ].map((button) => button.getBoundingClientRect());
@@ -4605,6 +4636,7 @@ test("canvas preview fits both row and column changes without resizing controls"
     { width: 1900, height: 1000 },
     { width: 1440, height: 1000 },
     { width: 390, height: 720 },
+    { width: 1440, height: 360 },
   ]) {
     await setEditorViewport(page, viewport);
     await checkFrameFits();
@@ -4614,15 +4646,20 @@ test("canvas preview fits both row and column changes without resizing controls"
       exact: true,
     });
     await expect(workspace).toHaveCSS("scrollbar-gutter", "auto");
+    const attached = viewport.width > 900 && viewport.height > 500;
+    await expect(page.locator("[data-resize-frame]")).toHaveAttribute(
+      "data-controls-placement",
+      attached ? "canvas" : "header",
+    );
     await expect(page.locator("[data-resize-frame]")).toHaveCSS(
       "display",
-      "flex",
+      attached ? "grid" : "flex",
     );
     await expect(
       page.locator(
         '[data-resize-frame] [aria-label="Column controls"], [data-resize-frame] [aria-label="Row controls"]',
       ),
-    ).toHaveCount(0);
+    ).toHaveCount(attached ? 2 : 0);
     await expect
       .poll(() =>
         page.locator("[data-resize-frame]").evaluate((frame) => {
@@ -4631,8 +4668,16 @@ test("canvas preview fits both row and column changes without resizing controls"
             .getBoundingClientRect();
           const bounds = frame.getBoundingClientRect();
           return Math.max(
-            Math.abs(bounds.width - content.width),
-            Math.abs(bounds.height - content.height),
+            Math.abs(
+              bounds.width -
+                content.width -
+                (frame.dataset.controlsPlacement === "canvas" ? 104 : 0),
+            ),
+            Math.abs(
+              bounds.height -
+                content.height -
+                (frame.dataset.controlsPlacement === "canvas" ? 52 : 0),
+            ),
           );
         }),
       )
@@ -4877,6 +4922,7 @@ test("canvas preview fits both row and column changes without resizing controls"
       ),
     ).toBe(true);
   }
+  await setEditorViewport(page, { width: 390, height: 720 });
   for (let count = 0; count < 2; count++)
     await page.getByRole("button", { name: "Add row", exact: true }).click();
   const scroller = page.locator("[data-canvas-viewport]");
@@ -11233,7 +11279,11 @@ test("debounced saves coalesce edits and flush on hide while guarding unsaved na
   });
   await page.locator(".cell-heading").first().fill("Unsaved edit");
   await expect(page.locator("#save-status")).toHaveText("Save failed");
-  await expect(page.locator("#save-status")).toBeVisible();
+  await expect(page.locator("#save-status")).toBeHidden();
+  await page.clock.runFor(50);
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
+    "Local save failed",
+  );
 });
 
 test("automatic browser saves need no storage controls or persistence request", async ({
@@ -12307,7 +12357,7 @@ test("guest reset restores settings without deleting images or removed placement
   expect(reset.exportSettings).toEqual({
     format: "image/png",
     resolution: 300,
-    quality: 75,
+    quality: 95,
   });
   expect(reset.assets).toEqual(original.assets);
   expect(reset.grid).toMatchObject({
@@ -12640,6 +12690,7 @@ test("failed guest saves roll back blobs and recover without blocking export", a
   await expect(page.locator("[data-sonner-toast]")).toContainText(
     "Local save failed",
   );
+  await expect(page.locator("#save-status")).toBeHidden();
   await page.locator("#replace-upload").setInputFiles({
     name: "retry.svg",
     mimeType: "image/svg+xml",
@@ -12680,6 +12731,10 @@ test("unavailable IndexedDB leaves session editing and image exports usable", as
   });
   await page.goto("./");
   await expect(page.locator("#save-status")).toHaveText("Session only");
+  await expect(page.locator("#save-status")).toBeHidden();
+  await expect(page.locator("[data-sonner-toast]")).toContainText(
+    "Editing and exports remain available for this session.",
+  );
   await page.locator("#replace-upload").setInputFiles({
     name: "session.svg",
     mimeType: "image/svg+xml",

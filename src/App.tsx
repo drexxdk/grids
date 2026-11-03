@@ -336,6 +336,7 @@ export default function App() {
     gap: number;
     padding: number;
     headingGap: number;
+    compactControls: boolean;
   } | null>(null);
   useLayoutEffect(() => {
     const frame = previewFrame;
@@ -343,7 +344,7 @@ export default function App() {
     if (!frame || !container) return;
     const fit = () => {
       const padding = getComputedStyle(container);
-      const availableWidth =
+      const workspaceWidth =
         container.clientWidth -
         parseFloat(padding.paddingLeft) -
         parseFloat(padding.paddingRight);
@@ -354,7 +355,7 @@ export default function App() {
           parseFloat(toolbarStyle!.marginTop) +
           parseFloat(toolbarStyle!.marginBottom)
         : 0;
-      const availableHeight = Math.max(
+      const workspaceHeight = Math.max(
         1,
         container.clientHeight -
           parseFloat(padding.paddingTop) -
@@ -362,6 +363,9 @@ export default function App() {
           toolbarHeight -
           1,
       );
+      const compactControls = workspaceWidth < 560 || workspaceHeight < 400;
+      const availableWidth = workspaceWidth - (compactControls ? 0 : 104);
+      const availableHeight = workspaceHeight - (compactControls ? 0 : 52);
       const { gap: gapRatio, padding: paddingRatio } = gridSpacing(board, 1);
       const headingGapRatio = board.headingVisible ? gapRatio : 0;
       const widthRatio =
@@ -415,8 +419,10 @@ export default function App() {
         ),
       );
       const next = {
-        width: viewportWidth,
-        frameHeight: height + cellWidth * headingAreaRatio,
+        width: viewportWidth + (compactControls ? 0 : 104),
+        frameHeight:
+          height + cellWidth * headingAreaRatio + (compactControls ? 0 : 52),
+        compactControls,
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
         height,
@@ -428,6 +434,7 @@ export default function App() {
       };
       setPreviewSize((previous) =>
         previous &&
+        previous.compactControls === next.compactControls &&
         Math.abs(previous.width - next.width) < 0.01 &&
         Math.abs(previous.frameHeight - next.frameHeight) < 0.01 &&
         Math.abs(previous.previewWidth - next.previewWidth) < 0.01 &&
@@ -947,27 +954,33 @@ export default function App() {
       onChange={setPickerSource}
     />
   );
+  const compactCanvasControls = previewSize?.compactControls ?? true;
+  const resetGridControl = (
+    <Button
+      ref={resetGridButton}
+      variant="icon"
+      aria-label={t("editor.reset.title")}
+      title={t("editor.reset.title")}
+      onClick={() => setResetGridOpen(true)}
+    >
+      <RotateCcw aria-hidden="true" className="size-5!" />
+    </Button>
+  );
   return (
     <>
       <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
           canvasControls={
-            <>
-              <GridResizeControls
-                rows={board.rows}
-                columns={board.columns}
-                onResize={resize}
-              />
-              <Button
-                ref={resetGridButton}
-                variant="icon"
-                aria-label={t("editor.reset.title")}
-                title={t("editor.reset.title")}
-                onClick={() => setResetGridOpen(true)}
-              >
-                <RotateCcw aria-hidden="true" className="size-5!" />
-              </Button>
-            </>
+            compactCanvasControls ? (
+              <>
+                <GridResizeControls
+                  rows={board.rows}
+                  columns={board.columns}
+                  onResize={resize}
+                />
+                {resetGridControl}
+              </>
+            ) : null
           }
           status={
             <span
@@ -981,12 +994,7 @@ export default function App() {
                     ? "saving"
                     : "blocked"
               }
-              className="save-status max-[900px]:col-span-3 max-[900px]:row-start-2 max-[900px]:min-w-0 max-[900px]:wrap-break-word"
-              hidden={
-                saveStatus === "Saved locally" ||
-                saveStatus === "Saving locally"
-              }
-              title={t("save.tooltip")}
+              hidden
             >
               {saveStatus === "Saved locally"
                 ? t("save.saved")
@@ -1191,6 +1199,28 @@ export default function App() {
                 <div className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!">
                   <GridResizer
                     ref={setPreviewFrame}
+                    bottomControls={
+                      !compactCanvasControls && (
+                        <GridResizeControls
+                          dimension="rows"
+                          rows={board.rows}
+                          columns={board.columns}
+                          onResize={resize}
+                        />
+                      )
+                    }
+                    sideControls={
+                      !compactCanvasControls && (
+                        <GridResizeControls
+                          dimension="columns"
+                          orientation="vertical"
+                          rows={board.rows}
+                          columns={board.columns}
+                          onResize={resize}
+                        />
+                      )
+                    }
+                    cornerAction={!compactCanvasControls && resetGridControl}
                     viewportHeight={previewSize?.height}
                     previewWidth={previewSize?.previewWidth}
                     onOverflowChange={setCanvasOverflow}
