@@ -54,7 +54,7 @@ export async function onRequest({ request, env }: { request: Request; env: Envir
     result.headers.set("Cache-Control", "no-store");
     return result;
   } catch {
-    console.error("Pages could not reach the Grids API.");
+    console.error("Pages could not reach the Gridz API.");
     return failure(502, "The account service is temporarily unavailable. Guest editing remains available.");
   }
 }

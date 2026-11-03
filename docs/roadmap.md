@@ -1,4 +1,4 @@
-# Grids Roadmap
+# Gridz Roadmap
 
 Updated November 3, 2026. `[x]` = implemented and checked. `[ ]` = remaining work, including partial features. Only work items have checkboxes.
 
@@ -10,7 +10,7 @@ This is a new project with no users or real data. Prototype schemas, storage key
 
 - One working grid, not a multi-board workspace. No board tabs, Add Board, duplication/reordering, or multi-board export.
 - Guests automatically save grid/media to IndexedDB and a settings-only cache to localStorage. Reset grid settings is a separate confirmed action; removing library images preserves canvas placements.
-- Next, integrate image providers across anime/characters, film/TV, games, books, music, cards, photography, art/cultural collections, and space imagery. Start with browser-compatible keyless sources, then add credentialed sources only after their hosting/policy requirements are approved. Guest search/import must not depend on Grids sign-in.
+- Next, integrate image providers across anime/characters, film/TV, games, books, music, cards, photography, art/cultural collections, and space imagery. Start with browser-compatible keyless sources, then add credentialed sources only after their hosting/policy requirements are approved. Guest search/import must not depend on Gridz sign-in.
 - Google, Discord and Facebook are the only account types. Named grid saves/loads and private/public presets are explicit actions; login/logout never silently replace the browser draft.
 - Keep direct Canvas, Heading and Card style controls, with optional reusable layout/style presets rather than Theme/Sub-theme hierarchies. One Gap controls heading-to-grid and inter-card spacing; Canvas padding/background belong to the exported composition, not the dotted workspace.
 - Store validated settings-only presets and reference-only grids (captions, crops, approved provider metadata/URLs and opaque browser-local image IDs), never image/font binaries, blob/data URLs or local paths. A different browser reloads provider images but cannot recover local uploads.
@@ -64,7 +64,7 @@ This is the next implementation focus. Depends on the existing guest storage, cr
 - [ ] Validate each candidate's current terms and actual deployment-origin search/image-CDN behavior before advertising it: search/details/pagination, anonymous image loading, untainted PNG/JPEG/WebP export, variants/resolution, attribution/transform/storage rules, 429/timeouts/bad responses/missing images, and permitted cache/offline use. Keep dated compatibility reports; substitute or omit candidates that fail.
 - [ ] Add mocked provider contract/search/import/error tests and focused desktop/mobile search-to-placement-to-crop-to-export/reload checks. Verify stale responses, provenance/credits, safe local media retention and failure isolation. Use tiny real-service smoke checks at integration milestones, not bulk catalog traffic in CI.
 
-Exit criteria: the Online library is usable across the planned content domains with clear provider capabilities and failure states; every advertised integration passes policy/real-origin/export checks. Keyless providers work without Grids accounts or user API keys. Credentialed providers ship only with approved secure configuration; unavailable candidates are documented, not disguised as supported. No server-side image upload/storage/cache or arbitrary image proxy. API access is not permission to reuse images.
+Exit criteria: the Online library is usable across the planned content domains with clear provider capabilities and failure states; every advertised integration passes policy/real-origin/export checks. Keyless providers work without Gridz accounts or user API keys. Credentialed providers ship only with approved secure configuration; unavailable candidates are documented, not disguised as supported. No server-side image upload/storage/cache or arbitrary image proxy. API access is not permission to reuse images.
 
 ### 3. Provider Sign-In, Saved Grids And Presets
 
@@ -181,7 +181,7 @@ Depends on demand; cloud scope needs separate approval.
 
 Use React/Vite, strict TypeScript, Headless UI v2, Tailwind v4, Motion (`motion/react`), class-variance-authority/clsx, Lucide, TypeScript/Playwright. Adapt supported compatible versions and owned UI behavior from `C:/Users/draxx/Sources/Chatter/apps/web`; inspect its provider-auth/session/account-linking implementation when step 3 begins. Do not copy the whole manifest/stylesheet/glass palette/chat offsets/TipTap/sockets/Redis/CMS/chat backend. Reuse relevant security patterns without making the editor depend on Chatter's chat stack. Keep adaptation/license notes. Custom CSS needs a concrete rendering/typography reason.
 
-Chatter reference paths (not Grids files):
+Chatter reference paths (not Gridz files):
 
 - `apps/web/src/components/Modal.tsx`, `apps/web/src/scrollbarWidth.ts`, `apps/web/src/index.css`: lifecycle, gutter measurement/compensation, `--scrollbar-width`/`--fixed-scrollbar-inset`.
 - `apps/web/src/components/ViewTransition.tsx`: LazyMotion/domAnimation, MotionConfig reduced motion, AnimatePresence, inert/aria-hidden exit views. Adapt legacy modal CSS/Web Animations to Motion without conflicting owners.
@@ -242,7 +242,7 @@ Public release requires reliable single-grid initialization, guest autosave/rese
 
 ## Reference And Sources
 
-The unsigned live interface at https://www.anime.com/grid/new showed fixed sizes, square/portrait switching, naming/custom text/shuffle/download, show/character search, shows/movies/characters/top 10/anime taste/alignment/month/MBTI templates, community/Post controls. Grids instead uses flexible edges. Exact portrait ratio/provider/authenticated posting/output were not verified. Reuse workflow ideas, not artwork/branding/source/proprietary templates.
+The unsigned live interface at https://www.anime.com/grid/new showed fixed sizes, square/portrait switching, naming/custom text/shuffle/download, show/character search, shows/movies/characters/top 10/anime taste/alignment/month/MBTI templates, community/Post controls. Gridz instead uses flexible edges. Exact portrait ratio/provider/authenticated posting/output were not verified. Reuse workflow ideas, not artwork/branding/source/proprietary templates.
 
 - AniList: https://docs.anilist.co/
 - Jikan: https://docs.api.jikan.moe/

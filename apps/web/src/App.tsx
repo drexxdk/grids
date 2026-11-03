@@ -1092,7 +1092,7 @@ export default function App() {
                   <span className="brand-mark">
                     <PanelsTopLeft />
                   </span>
-                  Grids
+                  Gridz
                 </a>
               </div>
               <div

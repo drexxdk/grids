@@ -3390,11 +3390,11 @@ test("header actions stay top right with responsive branding and panel-open and 
     sidebar.getByRole("button", { name: "Export grid", exact: true }),
   ).toHaveCount(0);
   await expect(sidebar.getByRole("tab")).toHaveCount(2);
-  const brand = header.getByRole("link", { name: "Grids", exact: true });
+  const brand = header.getByRole("link", { name: "Gridz", exact: true });
   await expect(brand).toBeVisible();
   await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(
-    page.getByRole("link", { name: "Grids", exact: true }),
+    page.getByRole("link", { name: "Gridz", exact: true }),
   ).toHaveCount(1);
   await expect(
     sidebar.getByRole("tab", { name: "Images", exact: true }),
@@ -3491,7 +3491,7 @@ test("header actions stay top right with responsive branding and panel-open and 
     ).toHaveCount(0);
     await expect(settings.getByRole("tab")).toHaveCount(0);
     const mobileBrand = toolbar.getByRole("link", {
-      name: "Grids",
+      name: "Gridz",
       exact: true,
     });
     const mobileExport = toolbar.getByRole("button", {
@@ -3500,7 +3500,7 @@ test("header actions stay top right with responsive branding and panel-open and 
     });
     await expect(mobileExport).toHaveCount(0);
     await expect(
-      page.getByRole("link", { name: "Grids", exact: true }),
+      page.getByRole("link", { name: "Gridz", exact: true }),
     ).toHaveCount(1);
     if ((await header.getAttribute("data-brand-placement")) === "header") {
       await expect(brand).toBeVisible();
@@ -3740,7 +3740,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
   await expect(header.getByRole("tab")).toHaveCount(0);
   await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(
-    header.getByRole("link", { name: "Grids", exact: true }),
+    header.getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
   await expect(sidebar).toHaveCSS("overflow-y", "auto");
   await expect(sidebar).toHaveCSS("scrollbar-gutter", "stable");
@@ -4047,7 +4047,7 @@ test("sticky padded sidebar controls stay above scrolling images", async ({
   await expect(
     page
       .locator("[data-canvas-header]")
-      .getByRole("link", { name: "Grids", exact: true }),
+      .getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
   await expect(sidebar.locator("[data-sidebar-brand]")).toHaveCount(0);
   await expect(controls).toHaveCSS("padding-top", "16px");
@@ -4416,7 +4416,7 @@ test("header hides Export text before wrapping only when the buttons no longer f
   await expect(
     page
       .locator("[data-canvas-header]")
-      .getByRole("link", { name: "Grids", exact: true }),
+      .getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
   await expect(page.locator("[data-sidebar-brand]")).toHaveCount(0);
   await page
@@ -4470,7 +4470,7 @@ test("header hides Export text before wrapping only when the buttons no longer f
     );
     brandPlacements.add(await header.getAttribute("data-brand-placement"));
     const visibleBrand = header.getByRole("link", {
-      name: "Grids",
+      name: "Gridz",
       exact: true,
     });
     if (fitsBrand) {
@@ -11732,9 +11732,9 @@ test("single grid starts neutral and uploaded content persists", async ({
   );
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
-  await expect(page).toHaveTitle("Grids - Image Boards");
+  await expect(page).toHaveTitle("Gridz - Image Boards");
   await expect(
-    page.getByRole("link", { name: "Grids", exact: true }),
+    page.getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
   await expect(page.locator("#sidebar-image-source")).toBeVisible();
   await expect(
@@ -13189,8 +13189,8 @@ touchTest(
     expect(response.ok()).toBe(true);
     const manifest = await response.json();
     expect(manifest).toMatchObject({
-      name: "Grids",
-      short_name: "Grids",
+      name: "Gridz",
+      short_name: "Gridz",
       display: "standalone",
     });
     for (const key of ["id", "start_url", "scope"])
@@ -13313,18 +13313,28 @@ test("page metadata assets resolve and desktop library keeps mouse dragging", as
   await expect(
     page.locator(".grid-cell").first().locator("img"),
   ).toHaveAttribute("alt", "Image 0");
-  await expect(page).toHaveTitle("Grids - Image Boards");
+  await expect(page).toHaveTitle("Gridz - Image Boards");
   await expect(page.locator('meta[name="description"]')).toHaveAttribute(
     "content",
     /Create image grids/,
   );
+  for (const [selector, content] of [
+    ['meta[name="apple-mobile-web-app-title"]', "Gridz"],
+    ['meta[property="og:site_name"]', "Gridz"],
+    ['meta[property="og:title"]', "Gridz - Image Boards"],
+    ['meta[name="twitter:title"]', "Gridz - Image Boards"],
+    ['meta[property="og:image:alt"]', "Gridz: four lime tiles on a dark background"],
+    ['meta[name="twitter:image:alt"]', "Gridz: four lime tiles on a dark background"],
+  ]) {
+    await expect(page.locator(selector)).toHaveAttribute("content", content);
+  }
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     "href",
-    "https://drexxdk.github.io/grids/",
+    "https://gritz.pages.dev/",
   );
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
-    "https://drexxdk.github.io/grids/assets/grids-icon.png",
+    "https://gritz.pages.dev/assets/grids-icon.png",
   );
   for (const relation of ["icon", "apple-touch-icon"]) {
     const url = await page

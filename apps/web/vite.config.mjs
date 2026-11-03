@@ -13,8 +13,8 @@ export default defineConfig({
       injectRegister: false,
       manifest: {
         id: "./",
-        name: "Grids",
-        short_name: "Grids",
+        name: "Gridz",
+        short_name: "Gridz",
         description:
           "Create and export image grids with your own captions, crops and styles.",
         start_url: "./",

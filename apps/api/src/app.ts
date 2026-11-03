@@ -42,7 +42,7 @@ export function createApp(
     if (!supplied || !timingSafeEqual(
       Buffer.from(hash(supplied), "hex"),
       Buffer.from(hash(config.proxySecret), "hex"),
-    )) return next(new HttpError(403, "Access through the Grids website is required."));
+    )) return next(new HttpError(403, "Access through the Gridz website is required."));
     next();
   });
   app.use("/api", (req, res, next) => {

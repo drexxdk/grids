@@ -7,7 +7,7 @@ const pool = createPool(config.databaseUrl);
 pool.on("error", () => console.error("An idle database connection failed."));
 await migrate(pool);
 const server = createApp(config, pool).listen(config.port, () => {
-  console.log(`Grids API listening on port ${config.port}.`);
+  console.log(`Gridz API listening on port ${config.port}.`);
 });
 const cleanup = setInterval(() => {
   void pool.query("DELETE FROM oauth_states WHERE expires_at <= now()")

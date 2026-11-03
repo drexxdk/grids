@@ -180,7 +180,7 @@ export function EditorLayout({
       <span className="brand-mark">
         <PanelsTopLeft />
       </span>
-      Grids
+      Gridz
     </a>
   );
   const canvasActions = (
