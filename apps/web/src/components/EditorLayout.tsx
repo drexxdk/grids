@@ -19,7 +19,6 @@ import {
 import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
 import { useEditorState } from "../browser/navigation";
-import { LegalLinks } from "./LegalLinks";
 
 const compactQuery = "(max-width: 900px)";
 function subscribeToViewport(onChange: () => void) {
@@ -275,7 +274,7 @@ export function EditorLayout({
             exit={{ opacity: 0 }}
             motionTransition={{ duration: reduced ? 0 : 0.18 }}
             onClick={() => setSettingsOpen(false)}
-            className="fixed inset-x-0 bottom-0 z-30 bg-black/60"
+            className="absolute bottom-0 left-0 z-30 w-[calc(100%+var(--native-scrollbar-width,0px))] bg-black/60"
             style={{ top: headerHeight }}
           />
         )}
@@ -285,7 +284,7 @@ export function EditorLayout({
         data-sidebar-open={!compact && sidebarOpen ? "" : undefined}
         className={
           compact
-            ? "pointer-events-none fixed right-0 bottom-0 z-40 w-87.5 max-w-full overflow-hidden"
+            ? "pointer-events-none absolute -right-(--native-scrollbar-width,0px) bottom-0 z-40 w-87.5 max-w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
             : "relative h-full min-h-0 min-w-0 w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
         }
         style={compact ? { top: headerHeight } : undefined}
@@ -370,9 +369,6 @@ export function EditorLayout({
                     {settings(null)}
                   </div>
                 </div>
-                <footer className="border-0 border-t border-solid border-(--line) px-4 py-2">
-                  <LegalLinks />
-                </footer>
               </aside>
             </MotionDiv>
           )}

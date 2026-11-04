@@ -407,10 +407,14 @@ test("disconnect revokes provider sessions and pending links, keeps data and pre
   assert.equal((await db.query("SELECT 1 FROM oauth_states WHERE link_session_hash NOT IN (SELECT token_hash FROM sessions)")).rowCount, 0);
   assert.notEqual((await session(await login("disconnect-discord", "discord"))).user.id, ownerId);
   await link(target, "facebook", "disconnect-facebook");
+  const otherGoogle = await login("disconnect-target");
   const disconnectedCurrent = await request("/account/providers/google", { method: "DELETE", cookie: target });
   assert.equal(disconnectedCurrent.status, 204);
-  assert.ok(disconnectedCurrent.headers.get("set-cookie")?.includes("Max-Age=0"));
-  assert.equal((await session(target)).user, null);
+  assert.equal(disconnectedCurrent.headers.get("set-cookie"), null);
+  assert.equal((await session(target)).user.id, ownerId);
+  assert.equal((await session(target)).user.provider, "facebook");
+  assert.equal((await session(otherGoogle)).user, null);
+  assert.equal((await request(`/grids/${grid.id}`, { cookie: target })).status, 200);
   const facebook = await login("disconnect-facebook", "facebook");
   assert.equal((await session(facebook)).user.id, ownerId);
   assert.equal((await request("/account/providers/facebook", { method: "DELETE", cookie: facebook })).status, 409);

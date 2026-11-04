@@ -20,7 +20,6 @@ import { t } from "../i18n";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/controls";
 import { AccountConfirmation, AccountFeedback, useAccountActions } from "./AccountUi";
-import { LegalLinks } from "./LegalLinks";
 
 type GridSummary = z.infer<typeof itemSummarySchema>;
 type PresetSummary = z.infer<typeof presetSummarySchema>;
@@ -282,7 +281,6 @@ export function SavedGridsDialog({
             </Button>}
           </section>
         </>}
-        <LegalLinks />
       </div>
     </Modal>
   );

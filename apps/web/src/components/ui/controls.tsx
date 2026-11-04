@@ -590,6 +590,7 @@ type MenuAction = {
 function ActionItems({ actions }: { actions: MenuAction[] }) {
   const present = useIsPresent();
   const reduced = useReducedMotion();
+  const itemClass = "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left no-underline data-focus:bg-(--selected) data-disabled:opacity-50";
   return (
     <MenuItems
       static
@@ -609,7 +610,7 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
           <button
             type="button"
             onClick={onSelect}
-            className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left data-focus:bg-(--selected) data-disabled:opacity-50"
+            className={itemClass}
           >
             <Icon aria-hidden="true" />
             {label}

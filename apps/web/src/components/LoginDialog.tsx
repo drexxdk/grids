@@ -5,8 +5,7 @@ import type { AccountSession } from "../browser/account";
 import { apiBase } from "../browser/api";
 import { t } from "../i18n";
 import { Modal } from "./ui/Modal";
-import { AccountFeedback, ProviderMark, providerNames } from "./AccountUi";
-import { LegalLinks } from "./LegalLinks";
+import { AccountFeedback, ProviderTile, providerNames } from "./AccountUi";
 
 export function LoginDialog({
   open, onClose, onExited, returnFocus, session, loading, error, onRetry,
@@ -25,10 +24,11 @@ export function LoginDialog({
       <div className="flex min-w-0 flex-col gap-5">
         <p className="m-0 text-sm leading-relaxed text-(--muted)">{t("account.loginDescription")}</p>
         <AccountFeedback busy={loading} error={error} onRetry={onRetry} />
-        {!error && session && !session.user && <div className="flex flex-col gap-3">
+        {!error && session && !session.user && <div className="grid auto-cols-fr grid-flow-col gap-0.5 min-[320px]:gap-2">
           {session.providers.map((provider) => (
-            <a key={provider}
-              className="inline-flex min-h-12 items-center justify-center gap-3 rounded-lg border border-solid border-(--line) bg-(--bg) px-4 py-3 text-sm font-semibold text-(--text) no-underline hover:border-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent)"
+            <ProviderTile key={provider}
+              provider={provider}
+              label={t("account.signIn", { value1: providerNames[provider] })}
               href={`${apiBase}/auth/${provider}/start`}
               onClick={(event) => {
                 if (document.querySelector("#save-status")?.getAttribute("data-save-state") !== "saved") {
@@ -36,15 +36,12 @@ export function LoginDialog({
                   toast.error(t("account.waitForSave"));
                 }
               }}
-            >
-              <ProviderMark provider={provider} />{t("account.signIn", { value1: providerNames[provider] })}
-            </a>
+            />
           ))}
           {!session.providers.length && <p className="m-0 flex items-start gap-2 text-sm text-(--muted)">
             <LogIn aria-hidden="true" className="size-5 shrink-0" />{t("account.noProviders")}
           </p>}
         </div>}
-        <LegalLinks />
       </div>
     </Modal>
   );

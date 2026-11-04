@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Link2, Trash2, Unlink, UserRound, X } from "lucide-react";
@@ -8,9 +8,8 @@ import { apiRequest } from "../browser/api";
 import { t } from "../i18n";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/controls";
-import { LegalLinks } from "./LegalLinks";
 import {
-  AccountConfirmation, AccountFeedback, ProviderMark, providerNames, useAccountActions,
+  AccountConfirmation, AccountFeedback, ProviderTile, providerNames, useAccountActions,
 } from "./AccountUi";
 
 export function AccountDialog({
@@ -26,8 +25,12 @@ export function AccountDialog({
   onRefresh: () => Promise<AccountSession>;
 }) {
   const actions = useAccountActions();
-  const { busy, error, setError, confirmation, setConfirmation, run, confirm } = actions;
+  const { error, setError, confirmation, setConfirmation, run, confirm } = actions;
+  const [connecting, setConnecting] = useState(false);
+  const busy = actions.busy || connecting;
   const pendingMerge = session?.pendingMerge;
+  const [disconnecting, setDisconnecting] = useState<AuthProvider | null>(null);
+  const providers = session ? [...new Set([...session.providers, ...session.connections.map(({ provider }) => provider)])] : [];
   const canDisconnect = (provider: AuthProvider) => Boolean(session?.connections.some(
     (connection) => connection.provider !== provider && session.providers.includes(connection.provider),
   ));
@@ -35,13 +38,27 @@ export function AccountDialog({
     if (open) {
       setError("");
       setConfirmation(null);
+      setDisconnecting(null);
+      setConnecting(false);
     }
   }, [open]);
+  useEffect(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) setConnecting(false);
+    };
+    window.addEventListener("pageshow", restored);
+    return () => window.removeEventListener("pageshow", restored);
+  }, []);
+  useEffect(() => {
+    if (disconnecting && (!session?.connections.some(({ provider }) => provider === disconnecting) || !canDisconnect(disconnecting))) {
+      setDisconnecting(null);
+    }
+  }, [session, disconnecting]);
   return (
-    <Modal open={open} ready={!loading} onClose={() => { if (!busy) onClose(); }} onExited={onExited} title={t("account.title")} returnFocus={returnFocus} size="wide">
-      <div className="flex min-w-0 flex-col gap-5 [&_button]:min-h-11 [&_button]:text-sm" aria-busy={busy || loading}>
-        <AccountFeedback busy={busy || loading} error={error || sessionError} onRetry={() => void run(async () => { await onRefresh(); })} />
-        {confirmation ? <AccountConfirmation actions={actions} /> : session?.user && <>
+    <Modal open={open} ready={!loading} onClose={() => { if (!busy) onClose(); }} onExited={onExited} title={t("account.title")} returnFocus={returnFocus}>
+      <div className="flex min-w-0 flex-col gap-5 data-connecting:[&_button:disabled]:opacity-100! [&_button]:min-h-11 [&_button]:text-sm" data-connecting={connecting || undefined} aria-busy={busy || loading}>
+        <AccountFeedback busy={(busy || loading) && !connecting} error={error || sessionError} onRetry={() => void run(async () => { await onRefresh(); })} />
+        {session?.user && <>
           <div role="group" aria-label={t("account.identityTitle")} className="flex min-w-0 items-center gap-3 rounded-xl border border-solid border-(--line) bg-(--bg) p-4">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-solid border-(--line) bg-(--panel)">
               <UserRound aria-hidden="true" className="size-5" />
@@ -74,57 +91,66 @@ export function AccountDialog({
               })}><X aria-hidden="true" />{t("common.actions.cancel")}</Button>
             </div>
           </section>}
-          <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-solid border-(--line) p-4" aria-label={t("account.providersTitle")}>
-            <h3 className="m-0 text-base font-semibold">{t("account.providersTitle")}</h3>
-            <ul className="m-0 flex list-none flex-col gap-3 p-0">
-              {session.connections.map((connection) => (
-                <li key={connection.provider} className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg bg-(--bg) p-3">
-                  <ProviderMark provider={connection.provider} />
-                  <div className="min-w-0 flex-1">
-                    <p className="m-0 text-sm font-semibold">{providerNames[connection.provider]}</p>
-                    <p className="m-0 wrap-anywhere text-xs text-(--muted)">{connection.name}</p>
-                  </div>
-                  {session.connections.length > 1 && <Button
-                    variant="danger"
-                    disabled={busy || loading || !canDisconnect(connection.provider)}
-                    title={!canDisconnect(connection.provider) ? t("account.keepProvider") : undefined}
-                    aria-label={t("account.disconnect", { value1: providerNames[connection.provider] })}
-                    onClick={() => confirm(t("account.confirmDisconnect", { value1: providerNames[connection.provider] }), async () => {
-                      await apiRequest(`/account/providers/${connection.provider}`, z.undefined(), { method: "DELETE" });
-                      await onRefresh();
-                      toast.success(t("account.providerDisconnected"));
-                    }, true)}
-                  ><Unlink aria-hidden="true" />{t("account.disconnectShort")}</Button>}
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap gap-2">
-              {session.providers.filter((provider) => !session.connections.some((connection) => connection.provider === provider)).map((provider) => (
-                <Button key={provider} disabled={busy || loading || Boolean(pendingMerge)} onClick={() => confirm(
-                  t("account.confirmConnect", { value1: providerNames[provider] }),
-                  async () => {
-                    if (document.querySelector("#save-status")?.getAttribute("data-save-state") !== "saved") {
-                      throw new Error(t("account.waitForSave"));
+          <section className="flex min-w-0 flex-col gap-3 border-0 pt-4" aria-label={t("account.providersTitle")}>
+            <h3 className="m-0 text-sm font-semibold">{t("account.providersTitle")}</h3>
+            <div className="grid auto-cols-fr grid-flow-col gap-0.5 min-[320px]:gap-2">
+              {providers.map((provider) => {
+                const connected = session.connections.some((connection) => connection.provider === provider);
+                const removable = connected && canDisconnect(provider);
+                const label = t(connected ? removable ? "account.disconnect" : "account.connected" : "account.connect", { value1: providerNames[provider] });
+                return <ProviderTile key={provider} provider={provider} connected={connected} label={label}
+                  disabled={busy || loading || (connected ? !removable : Boolean(pendingMerge))}
+                  onClick={() => {
+                    setConfirmation(null);
+                    if (connected) {
+                      setDisconnecting(provider);
+                    } else {
+                      setConnecting(true);
+                      void run(async () => {
+                        if (document.querySelector("#save-status")?.getAttribute("data-save-state") !== "saved") {
+                          throw new Error(t("account.waitForSave"));
+                        }
+                        const result = await apiRequest(`/auth/${provider}/link`, authorizationSchema, { method: "POST", body: {} });
+                        location.assign(result.url);
+                      }).then((succeeded) => {
+                        if (!succeeded) setConnecting(false);
+                      });
                     }
-                    const result = await apiRequest(`/auth/${provider}/link`, authorizationSchema, { method: "POST", body: {} });
-                    location.assign(result.url);
-                  },
-                )}><ProviderMark provider={provider} />{t("account.connect", { value1: providerNames[provider] })}</Button>
-              ))}
+                  }}
+                />;
+              })}
             </div>
+            {disconnecting && <div role="group" aria-label={t("account.confirmDisconnect", { value1: providerNames[disconnecting] })} className="flex flex-col gap-3">
+              <p className="m-0 text-sm leading-relaxed text-(--muted)">{t("account.confirmDisconnect", { value1: providerNames[disconnecting] })}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="danger" disabled={busy || loading} onClick={() => {
+                  const provider = disconnecting;
+                  void run(async () => {
+                    await apiRequest(`/account/providers/${provider}`, z.undefined(), { method: "DELETE" });
+                    setDisconnecting(null);
+                    await onRefresh();
+                    toast.success(t("account.providerDisconnected"));
+                  });
+                }}><Unlink aria-hidden="true" />{t("account.continue")}</Button>
+                <Button disabled={busy || loading} onClick={() => setDisconnecting(null)}><X aria-hidden="true" />{t("common.actions.cancel")}</Button>
+              </div>
+            </div>}
           </section>
           <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-red-400/25 bg-red-500/5 p-4" aria-label={t("account.deleteTitle")}>
             <div>
               <h3 className="m-0 text-sm font-semibold text-red-300">{t("account.deleteTitle")}</h3>
               <p className="mt-1 mb-0 text-sm leading-relaxed text-(--muted)">{t("account.deleteDescription")}</p>
             </div>
-            <Button variant="danger" disabled={busy || loading} onClick={() => confirm(t("account.confirmAccount"), async () => {
+            <Button variant="danger" disabled={busy || loading} aria-expanded={Boolean(confirmation)} onClick={() => {
+              setDisconnecting(null);
+              confirm(t("account.confirmAccount"), async () => {
               await apiRequest("/account", z.undefined(), { method: "DELETE" });
               await onRefresh();
-            }, true)}><Trash2 aria-hidden="true" />{t("account.deleteAccount")}</Button>
+              }, true);
+            }}><Trash2 aria-hidden="true" />{t("account.deleteAccount")}</Button>
+            <AccountConfirmation actions={actions} />
           </section>
         </>}
-        <LegalLinks />
       </div>
     </Modal>
   );

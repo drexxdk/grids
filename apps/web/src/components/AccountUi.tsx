@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type MouseEventHandler } from "react";
 import { AlertTriangle, Check, LoaderCircle, RefreshCw, Trash2, X } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import { FaDiscord, FaFacebook } from "react-icons/fa6";
@@ -15,20 +15,47 @@ export function ProviderMark({ provider }: { provider: AuthProvider }) {
   return <Icon aria-hidden="true" className={`size-5 shrink-0 ${provider === "facebook" ? "text-[#1877f2]" : provider === "discord" ? "text-[#5865f2]" : ""}`} />;
 }
 
+type ProviderTileProps = {
+  provider: AuthProvider;
+  label: string;
+  connected?: boolean;
+} & (
+  { href: string; onClick: MouseEventHandler<HTMLAnchorElement> } |
+  { href?: never; disabled: boolean; onClick: () => void }
+);
+
+export function ProviderTile(props: ProviderTileProps) {
+  const className = "relative inline-flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-solid border-(--line) bg-(--bg) px-0 text-(--text) no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50 aria-pressed:border-(--accent) aria-pressed:bg-(--selected) aria-pressed:disabled:opacity-100!";
+  const content = <>
+    <ProviderMark provider={props.provider} />
+    <span className="text-center text-xs leading-4 whitespace-nowrap">{providerNames[props.provider]}</span>
+    {props.connected && <Check aria-hidden="true" className="absolute top-1 right-1 size-3 text-(--accent)" />}
+  </>;
+  if (props.href !== undefined) {
+    return <a href={props.href} onClick={props.onClick} aria-label={props.label}
+      className={`${className} hover:border-(--accent)`}>{content}</a>;
+  }
+  return <button type="button" disabled={props.disabled} onClick={props.onClick}
+    aria-label={props.label} aria-pressed={props.connected}
+    className={`${className} enabled:hover:border-(--accent)`}>{content}</button>;
+}
+
 export function useAccountActions() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const inFlight = useRef(false);
   async function run(action: () => Promise<void>) {
-    if (inFlight.current) return;
+    if (inFlight.current) return false;
     inFlight.current = true;
     setBusy(true);
     setError("");
     try {
       await action();
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("account.offline"));
+      return false;
     } finally {
       inFlight.current = false;
       setBusy(false);

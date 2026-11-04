@@ -38,7 +38,7 @@ test.beforeAll(async () => {
   ]);
 });
 
-test("editor navigation validates saved state and URL browsing cursors", () => {
+test("editor navigation migrates legacy URLs and restores browser-local history", () => {
   const defaults = navigation.parseEditorState({});
   expect(defaults.browsing["library:commons"]).toEqual(
     navigation.defaultBrowsing(providers.commons),
@@ -69,9 +69,9 @@ test("editor navigation validates saved state and URL browsing cursors", () => {
   });
   const url = navigation.navigationUrl(
     restored,
-    new URL("https://example.com/grids/?other=keep#anchor"),
+    new URL("https://example.com/grids/?panel=settings&source=commons&q=earth&topic=all&offset=27&other=keep#anchor"),
   );
-  expect(url.searchParams.get("offset")).toBe("27");
+  expect([...url.searchParams.keys()]).toEqual(["other"]);
   expect(url.searchParams.get("other")).toBe("keep");
   expect(url.hash).toBe("#anchor");
   const invalid = navigation.readNavigation(
@@ -85,6 +85,7 @@ test("editor navigation validates saved state and URL browsing cursors", () => {
   ).toEqual(restored);
   const entry = {
     gridsNavigation: {
+      selectedPanel: 1,
       source: "commons",
       browsing: { ...restored.browsing["library:commons"], history: [0, 15] },
     },
@@ -94,11 +95,16 @@ test("editor navigation validates saved state and URL browsing cursors", () => {
       "library:commons"
     ].history,
   ).toEqual([0, 15]);
+  expect(navigation.readNavigation(defaults, url, false, entry)).toMatchObject({
+    selectedPanel: 1,
+    librarySource: "commons",
+    browsing: { "library:commons": { query: "earth", request: { offset: 27 } } },
+  });
   expect(
     navigation.readNavigation(defaults, url, false, {
-      gridsNavigation: { ...entry.gridsNavigation, source: "met" },
+      gridsNavigation: { ...entry.gridsNavigation, source: "invalid" },
     }).browsing["library:commons"].history,
-  ).toEqual([0]);
+  ).toEqual([]);
   const combined = navigation.readNavigation(
     defaults,
     new URL(
@@ -114,8 +120,7 @@ test("editor navigation validates saved state and URL browsing cursors", () => {
     combined,
     new URL("https://example.com/"),
   );
-  expect(combinedUrl.searchParams.get("topic")).toBe("places");
-  expect(combinedUrl.searchParams.get("q")).toBe("bridge");
+  expect(combinedUrl.search).toBe("");
   const all = navigation.readNavigation(
     defaults,
     new URL("https://example.com/?source=met&topic=all"),
@@ -129,7 +134,7 @@ test("editor navigation validates saved state and URL browsing cursors", () => {
     navigation
       .navigationUrl(all, new URL("https://example.com/"))
       .searchParams.get("topic"),
-  ).toBe("all");
+  ).toBeNull();
 });
 
 test("provider topic scopes reach every batch and use separate page cache entries", async () => {

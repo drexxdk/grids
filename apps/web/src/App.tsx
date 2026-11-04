@@ -30,7 +30,6 @@ import {
   PanelBottom,
   PanelTopDashed,
   PanelBottomDashed,
-  Cloud,
 } from "lucide-react";
 import {
   Button,
@@ -45,6 +44,7 @@ import { AccountDialog } from "./components/AccountDialog";
 import { AccountHeader } from "./components/AccountHeader";
 import { LoginDialog } from "./components/LoginDialog";
 import { SavedGridsDialog } from "./components/SavedGridsDialog";
+import { InformationDialog } from "./components/InformationDialog";
 import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
@@ -253,13 +253,24 @@ export default function App() {
   const [headingEditing, setHeadingEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const account = useAccountSession();
-  type AccountView = "login" | "account" | "library";
-  const [accountView, setAccountView] = useState<AccountView | null>(null);
+  type AccountView = "login" | "account" | "library" | "information";
+  const readAccountView = (): AccountView | null => {
+    const view: unknown = history.state?.gridsAccountView;
+    return view === "login" || view === "account" || view === "library" || view === "information" ? view : null;
+  };
+  const [accountView, setAccountView] = useState<AccountView | null>(readAccountView);
+  useEffect(() => {
+    history.replaceState({ ...history.state, gridsAccountView: accountView }, "");
+  }, [accountView]);
+  useEffect(() => {
+    const restore = () => setAccountView(readAccountView());
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
   const queuedAccountView = useRef<AccountView | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const signOutInFlight = useRef(false);
   const accountButton = useRef<HTMLButtonElement>(null);
-  const libraryButton = useRef<HTMLButtonElement>(null);
   function openAccountView(view: AccountView) {
     if (accountView && accountView !== view) {
       queuedAccountView.current = view;
@@ -1030,6 +1041,8 @@ export default function App() {
   );
   return (
     <>
+      <InformationDialog open={accountView === "information"} onClose={() => setAccountView(null)}
+        onExited={accountViewExited} returnFocus={accountButton} />
       <AccountDialog
         open={accountView === "account"}
         onClose={() => setAccountView(null)}
@@ -1054,7 +1067,7 @@ export default function App() {
         open={accountView === "library"}
         onClose={() => setAccountView(null)}
         onExited={accountViewExited}
-        returnFocus={libraryButton}
+        returnFocus={accountButton}
         session={account.session}
         loading={account.loading}
         error={account.error}
@@ -1067,7 +1080,7 @@ export default function App() {
           setImageTarget(null);
         }}
       />
-      <main className="app-layout h-dvh! min-h-dvh! grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
+      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
           canvasControls={
             compactCanvasControls ? (
@@ -1104,17 +1117,6 @@ export default function App() {
           }
           actions={
             <>
-            <Button
-              ref={libraryButton}
-              variant="icon"
-              aria-label={t("account.libraryTitle")}
-              title={t("account.libraryTitle")}
-              aria-haspopup="dialog"
-              disabled={conflict || importProgress !== null}
-              onClick={() => openAccountView("library")}
-            >
-              <Cloud aria-hidden="true" className="size-5!" />
-            </Button>
             <button
               id="export-grid-header"
               ref={exportButton}
@@ -1140,6 +1142,8 @@ export default function App() {
               buttonRef={accountButton}
               onLogin={() => openAccountView("login")}
               onAccount={() => openAccountView("account")}
+              onLibrary={() => openAccountView("library")}
+              onInformation={() => openAccountView("information")}
               onSignOut={() => { void signOutAccount(); }}
             />
             </>

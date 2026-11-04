@@ -38,7 +38,11 @@ type HistoryMode = "push" | "replace" | "silent";
 const storageKey = "grids-ui-v1";
 const parameters = ["panel", "source", "q", "topic", "offset"];
 const historySchema = z.object({
-  gridsNavigation: z.object({ source: sourceSchema, browsing: browsingSchema }),
+  gridsNavigation: z.object({
+    selectedPanel: stateSchema.shape.selectedPanel,
+    source: sourceSchema,
+    browsing: browsingSchema.optional(),
+  }),
 });
 
 export function defaultBrowsing(provider: ImageProvider): BrowsingState {
@@ -73,8 +77,25 @@ export function readNavigation(
   initial = false,
   entry?: unknown,
 ): EditorState {
-  if (initial && !parameters.some((key) => url.searchParams.has(key)))
-    return state;
+  if (!parameters.some((key) => url.searchParams.has(key))) {
+    const parsed = historySchema.safeParse(entry);
+    if (!parsed.success) return state;
+    const visited = parsed.data.gridsNavigation;
+    const browse = visited.browsing;
+    return {
+      ...state,
+      selectedPanel: visited.selectedPanel,
+      librarySource: visited.source,
+      browsing: browse ? {
+        ...state.browsing,
+        [`library:${visited.source}`]: {
+          ...browse,
+          query: browse.request?.query ?? browse.query,
+          selectedTopic: browse.request?.topic === undefined ? browse.selectedTopic : browse.request.topic,
+        },
+      } : state.browsing,
+    };
+  }
   const panel = url.searchParams.get("panel");
   const parsedSource = sourceSchema.safeParse(
     url.searchParams.get("source") ?? "imported",
@@ -113,7 +134,7 @@ export function readNavigation(
       ? parsedEntry.data.gridsNavigation.browsing
       : null;
   const history =
-    visited?.request?.query === request?.query &&
+    visited && visited.request?.query === request?.query &&
     visited?.request?.topic === request.topic &&
     visited?.request?.offset === offset
       ? visited.history
@@ -138,29 +159,9 @@ export function readNavigation(
   };
 }
 
-export function navigationUrl(state: EditorState, current: URL): URL {
+export function navigationUrl(_state: EditorState, current: URL): URL {
   const url = new URL(current);
   for (const key of parameters) url.searchParams.delete(key);
-  url.searchParams.set(
-    "panel",
-    state.selectedPanel === 1 ? "settings" : "images",
-  );
-  url.searchParams.set("source", state.librarySource);
-  const provider = imageProviders.find(
-    (item) => item.id === state.librarySource,
-  );
-  if (provider) {
-    const browse =
-      state.browsing[`library:${provider.id}`] ?? defaultBrowsing(provider);
-    const topic = provider.browse.find(
-      (item) => item.id === browse.request?.topic,
-    );
-    if (topic) url.searchParams.set("topic", topic.id);
-    else url.searchParams.set("topic", "all");
-    if (browse.request?.query) url.searchParams.set("q", browse.request.query);
-    if (browse.request?.offset)
-      url.searchParams.set("offset", String(browse.request.offset));
-  }
   return url;
 }
 
@@ -177,6 +178,7 @@ function snapshot(): EditorState {
       parseEditorState(saved),
       new URL(window.location.href),
       true,
+      window.history.state,
     );
   }
   return state;
@@ -191,14 +193,23 @@ function update(next: EditorState, mode: HistoryMode) {
   persist();
   if (mode !== "silent") {
     const url = navigationUrl(next, new URL(window.location.href));
+    const previous = historySchema.safeParse(window.history.state);
+    const before = previous.success ? previous.data.gridsNavigation.browsing?.request : undefined;
+    const after = next.browsing[`library:${next.librarySource}`]?.request;
     const entry = {
+      ...window.history.state,
       gridsNavigation: {
+        selectedPanel: next.selectedPanel,
         source: next.librarySource,
         browsing: next.browsing[`library:${next.librarySource}`],
       },
     };
+    const changed = !previous.success ||
+      previous.data.gridsNavigation.selectedPanel !== next.selectedPanel ||
+      previous.data.gridsNavigation.source !== next.librarySource ||
+      before?.query !== after?.query || before?.topic !== after?.topic || before?.offset !== after?.offset;
     window.history[
-      mode === "push" && url.href !== window.location.href
+      mode === "push" && changed
         ? "pushState"
         : "replaceState"
     ](entry, "", url);

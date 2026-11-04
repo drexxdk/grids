@@ -297,22 +297,27 @@ export function createApp(
   });
   app.delete("/api/account/providers/:provider", async (req, res) => {
     const provider = authProviderSchema.parse(req.params.provider);
-    const signedOut = await accountChange(async (client) => {
+    await accountChange(async (client) => {
       const user = await requireUser(req, client);
       const remaining = await client.query(
         "SELECT provider FROM account_identities WHERE user_id = $1 AND provider <> $2", [user.id, provider],
       );
-      if (!remaining.rows.some((row) => providers.includes(row.provider))) {
+      const replacement = remaining.rows.find((row) => providers.includes(row.provider));
+      if (!replacement) {
         throw new HttpError(409, "Keep at least one configured sign-in provider connected.");
       }
       const removed = await client.query(
         "DELETE FROM account_identities WHERE user_id = $1 AND provider = $2", [user.id, provider],
       );
       if (!removed.rowCount) throw new HttpError(404, "Connected provider not found.");
+      if (user.provider === provider) {
+        await client.query(
+          "UPDATE sessions SET provider = $1 WHERE token_hash = $2 AND user_id = $3",
+          [replacement.provider, hash(cookie(req, sessionCookie)!), user.id],
+        );
+      }
       await client.query("DELETE FROM sessions WHERE user_id = $1 AND provider = $2", [user.id, provider]);
-      return user.provider === provider;
     });
-    if (signedOut) setCookie(res, sessionCookie, "", 0);
     res.sendStatus(204);
   });
   app.post("/api/account/merge", async (req, res) => {

@@ -31,7 +31,7 @@ test.beforeEach(async ({ page }) => {
 function sidebarToggle(page, expanded = false) {
   return page
     .getByRole("group", { name: "Editor panels", exact: true })
-    .getByRole("button", { expanded });
+    .getByRole("button", { name: /^(Show sidebar|Close sidebar)$/, expanded });
 }
 
 async function setEditorViewport(page, size) {
@@ -1946,12 +1946,12 @@ for (const provider of ["commons", "met"]) {
             .nth(provider === "commons" ? 0 : 2),
         ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
         if (mode === "desktop") {
-          const url = new URL(page.url());
-          expect(url.searchParams.get("topic")).toBe("all");
-          expect(url.searchParams.get("q")).toBe("paged");
-          expect(url.searchParams.get("offset")).toBe(
-            provider === "commons" ? "13" : "16",
-          );
+          expect(new URL(page.url()).search).toBe("");
+          const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem("grids-ui-v1")));
+          expect(preferences.librarySource).toBe(provider);
+          expect(preferences.browsing[`library:${provider}`].request).toEqual({
+            topic: null, query: "paged", offset: provider === "commons" ? 13 : 16,
+          });
         }
         await page.reload();
         if (mode === "mobile") await open();
@@ -1972,7 +1972,7 @@ for (const provider of ["commons", "met"]) {
     );
   }
 
-  test(`${provider} opens a shared provider page without prior browser state`, async ({
+  test(`${provider} imports a legacy provider URL into local preferences and cleans the address`, async ({
     page,
   }) => {
     await (provider === "commons" ? mockCommons(page) : mockMet(page));
@@ -1984,6 +1984,10 @@ for (const provider of ["commons", "met"]) {
     await expect(online.locator(".library-heading")).toHaveValue(
       provider === "commons" ? "Moon" : "Vase",
     );
+    expect(new URL(page.url()).search).toBe("");
+    const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem("grids-ui-v1")));
+    expect(preferences.librarySource).toBe(provider);
+    expect(preferences.browsing[`library:${provider}`].request).toMatchObject({ query: "paged", offset });
     await online
       .getByRole("button", { name: "Previous results", exact: true })
       .click();
@@ -2011,7 +2015,7 @@ for (const provider of ["commons", "met"]) {
       await expect(
         online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
       ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-      expect(new URL(page.url()).searchParams.get("source")).toBe("imported");
+      expect(new URL(page.url()).search).toBe("");
       await page.reload();
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await page
@@ -2053,13 +2057,16 @@ for (const provider of ["commons", "met"]) {
       .click();
     const last = provider === "commons" ? "Open 20" : "Vase";
     await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    expect(new URL(page.url()).searchParams.get("offset")).toBe(
-      provider === "commons" ? "13" : "16",
-    );
+    const cleanUrl = page.url();
+    expect(new URL(cleanUrl).search).toBe("?extra=keep");
+    const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem("grids-ui-v1")));
+    expect(preferences.browsing[`library:${provider}`].request.offset).toBe(provider === "commons" ? 13 : 16);
     await page.goBack();
     await expect(online.locator(".library-heading")).toHaveCount(10);
+    await expect(page).toHaveURL(cleanUrl);
     await page.goForward();
     await expect(online.locator(".library-heading").last()).toHaveValue(last);
+    await expect(page).toHaveURL(cleanUrl);
     await openSidebarPanel(page, "Settings");
     await page.reload();
     await expect(
@@ -2106,10 +2113,9 @@ for (const provider of ["commons", "met"]) {
     await expect(
       online.getByRole("searchbox", { name: "Search images", exact: true }),
     ).toHaveValue("paged");
-    expect(new URL(page.url()).searchParams.get("topic")).toBe(
-      topic.toLowerCase(),
-    );
-    expect(new URL(page.url()).searchParams.has("offset")).toBe(false);
+    expect(new URL(page.url()).search).toBe("?extra=keep");
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("grids-ui-v1")));
+    expect(saved.browsing[`library:${provider}`].request).toMatchObject({ topic: topic.toLowerCase(), offset: 0 });
   });
 
   nativeTouchTest(
@@ -3383,15 +3389,8 @@ test("header actions stay top right with responsive branding and panel-open and 
     name: "Close sidebar",
     exact: true,
   });
-  const account = header.getByRole("button", {
-    name: "Saved grids and presets",
-    exact: true,
-  });
-  const login = header.getByRole("button", { name: "Log in", exact: true });
+  const login = header.getByRole("button", { name: "Menu", exact: true });
   await expect(login).toBeVisible();
-  await expect(account).toBeVisible();
-  expect((await account.boundingBox()).x + (await account.boundingBox()).width + 8)
-    .toBeCloseTo((await exportButton.boundingBox()).x);
   await expect(header).toBeVisible();
   await expect(
     sidebar.getByRole("button", { name: "Close sidebar", exact: true }),
@@ -3923,7 +3922,7 @@ test("sidebar tabs retain disabled styling and panel settings across arrow toggl
     canvasHeader
       .getByRole("group", { name: "Editor panels", exact: true })
       .locator(":scope > button"),
-  ).toHaveCount(4);
+  ).toHaveCount(3);
   await page.screenshot({
     path: testInfo.outputPath("desktop-sidebar-closed.png"),
   });
@@ -4182,7 +4181,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
       name: "Editor panels",
       exact: true,
     });
-    await expect(commands.locator(":scope > button")).toHaveCount(4);
+    await expect(commands.locator(":scope > button")).toHaveCount(3);
     await expect(tools).toHaveAttribute("title", "Show sidebar");
     await expect(tools).toHaveCSS("width", "44px");
     await expect(tools).toHaveCSS("height", "44px");
@@ -4195,7 +4194,7 @@ test("desktop sidebar is 350px and mobile settings slide out from the right with
     const settingsBounds = await tools.boundingBox();
     const exportBounds = await exportButton.boundingBox();
     const loginBounds = await commands
-      .getByRole("button", { name: "Log in", exact: true })
+      .getByRole("button", { name: "Menu", exact: true })
       .boundingBox();
     expect(
       Math.abs(loginBounds.x - exportBounds.x - exportBounds.width - 8),
@@ -4795,7 +4794,7 @@ test("canvas preview fits both row and column changes without resizing controls"
       const drawer = page.locator("[data-editor-drawer]");
       await expect(drawer).toHaveCount(0);
       expect(
-        Math.abs(canvasBounds.y + canvasBounds.height - viewport.height),
+        Math.abs(canvasBounds.y + canvasBounds.height - await page.evaluate(() => innerHeight)),
       ).toBeLessThanOrEqual(1.01);
       expect(
         Math.abs(
@@ -4923,7 +4922,7 @@ test("canvas preview fits both row and column changes without resizing controls"
       const headerActions = page.locator(
         '[data-canvas-header] [role="group"][aria-label="Editor panels"] button',
       );
-      await expect(headerActions).toHaveCount(4);
+      await expect(headerActions).toHaveCount(3);
       for (const button of await headerActions.all()) {
         await button.focus();
         await button.press("Tab");
@@ -5394,7 +5393,7 @@ test("desktop sidebar has stable panel scrollbars and modal alignment", async ({
         .locator("[data-canvas-header]")
         .boundingBox();
       expect((await sidebar.boundingBox()).height).toBe(
-        3000 - toolbarBounds.height,
+        await page.evaluate(() => innerHeight) - toolbarBounds.height,
       );
       expect((await aside.boundingBox()).width).toBe(
         await sidebar.evaluate((element) => element.clientWidth),
@@ -6448,7 +6447,7 @@ test("canvas has no appearance toolbar and the sidebar header stays fixed", asyn
         headerBounds.y + headerBounds.height,
       );
       expect((await sidebar.boundingBox()).height).toBe(
-        600 - headerBounds.height,
+        await page.evaluate(() => innerHeight) - headerBounds.height,
       );
       for (const [panel, selector] of [
         ["Images", ".asset-panel"],
@@ -7371,7 +7370,7 @@ test("precise empty image frames remain independent of hidden captions", async (
       expect(prompt.height).toBeCloseTo(imageBounds.height, 1);
       expect(imageBounds.height).toBeCloseTo(surfaceBounds.height, 1);
       expect(before.width / before.height).toBeCloseTo(ratio, 2);
-      await image.hover({ position: { x: 8, y: 5 } });
+      await image.hover();
       for (const frame of await frames.all()) {
         await expect(frame).toHaveCSS("--frame-color", "#d8f36a");
         await expect(frame.locator("rect")).toHaveAttribute(
