@@ -9,7 +9,7 @@ import { t } from "../i18n";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/controls";
 import {
-  AccountConfirmation, AccountFeedback, ProviderTile, providerNames, useAccountActions,
+  AccountConfirmation, AccountConfirmationCard, AccountFeedback, ProviderTile, providerNames, useAccountActions,
 } from "./AccountUi";
 
 export function AccountDialog({
@@ -91,8 +91,8 @@ export function AccountDialog({
               })}><X aria-hidden="true" />{t("common.actions.cancel")}</Button>
             </div>
           </section>}
-          <section className="flex min-w-0 flex-col gap-3 border-0 pt-4" aria-label={t("account.providersTitle")}>
-            <h3 className="m-0 text-sm font-semibold">{t("account.providersTitle")}</h3>
+          <section className="flex min-w-0 flex-col gap-2 border-0" aria-label={t("account.providersTitle")}>
+            <h3 className="field-label font-normal">{t("account.providersTitle")}</h3>
             <div className="grid auto-cols-fr grid-flow-col gap-0.5 min-[320px]:gap-2">
               {providers.map((provider) => {
                 const connected = session.connections.some((connection) => connection.provider === provider);
@@ -120,9 +120,12 @@ export function AccountDialog({
                 />;
               })}
             </div>
-            {disconnecting && <div role="group" aria-label={t("account.confirmDisconnect", { value1: providerNames[disconnecting] })} className="flex flex-col gap-3">
-              <p className="m-0 text-sm leading-relaxed text-(--muted)">{t("account.confirmDisconnect", { value1: providerNames[disconnecting] })}</p>
-              <div className="flex flex-wrap gap-2">
+            {disconnecting && <AccountConfirmationCard
+              title={t("account.confirmDisconnectTitle", { value1: providerNames[disconnecting] })}
+              message={t("account.confirmDisconnect", { value1: providerNames[disconnecting] })}
+              icon={Unlink}
+              destructive
+            >
                 <Button variant="danger" disabled={busy || loading} onClick={() => {
                   const provider = disconnecting;
                   void run(async () => {
@@ -133,14 +136,9 @@ export function AccountDialog({
                   });
                 }}><Unlink aria-hidden="true" />{t("account.continue")}</Button>
                 <Button disabled={busy || loading} onClick={() => setDisconnecting(null)}><X aria-hidden="true" />{t("common.actions.cancel")}</Button>
-              </div>
-            </div>}
+            </AccountConfirmationCard>}
           </section>
-          <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-red-400/25 bg-red-500/5 p-4" aria-label={t("account.deleteTitle")}>
-            <div>
-              <h3 className="m-0 text-sm font-semibold text-red-300">{t("account.deleteTitle")}</h3>
-              <p className="mt-1 mb-0 text-sm leading-relaxed text-(--muted)">{t("account.deleteDescription")}</p>
-            </div>
+          <section className="flex flex-col items-start gap-3" aria-label={t("account.deleteTitle")}>
             <Button variant="danger" disabled={busy || loading} aria-expanded={Boolean(confirmation)} onClick={() => {
               setDisconnecting(null);
               confirm(t("account.confirmAccount"), async () => {

@@ -242,7 +242,7 @@ test("login is provider-only and switching from the guest library preserves focu
   await expect(dialog.getByRole("link", { name: /^Continue with/ })).toHaveCount(3);
   await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("region", { name: "Connected sign-in providers" })).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "Delete account and server data" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Delete account", exact: true })).toHaveCount(0);
   expect(mock.reads.every((resource) => resource === "session")).toBe(true);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
@@ -282,7 +282,7 @@ test("the hamburger menu supports keyboard navigation and keeps account manageme
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Account", exact: true });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Delete account and server data", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Delete account", exact: true })).toBeVisible();
   await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
   expect(mock.reads.every((resource) => resource === "session")).toBe(true);
@@ -325,7 +325,9 @@ for (const width of [320, 1280]) {
     const before = await browserDraft(page);
     const dialog = await openAccount(page);
     const section = dialog.getByRole("region", { name: "Account removal", exact: true });
-    const remove = section.getByRole("button", { name: "Delete account and server data", exact: true });
+    const remove = section.getByRole("button", { name: "Delete account", exact: true });
+    await expect(remove).toHaveAttribute("aria-expanded", "false");
+    await expect(section.getByRole("group")).toHaveCount(0);
     let deletions = 0;
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/account" && request.method() === "DELETE") deletions++;
@@ -333,6 +335,8 @@ for (const width of [320, 1280]) {
     await remove.click();
     const confirmation = section.getByRole("group");
     await expect(confirmation).toBeVisible();
+    await expect(confirmation.getByRole("heading", { name: "Delete this data?", exact: true })).toBeVisible();
+    await expect(confirmation).toContainText("Deletes your account and all cloud saves permanently. Browser data is kept.");
     await expect(remove).toHaveAttribute("aria-expanded", "true");
     await expect(dialog.getByRole("group", { name: "Your Gridz account", exact: true })).toBeVisible();
     await expect(dialog.getByRole("region", { name: "Connected sign-in providers", exact: true })).toBeVisible();
@@ -372,7 +376,7 @@ for (const action of ["expire", "delete"]) {
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     } else {
       const target = action === "delete"
-        ? dialog.getByRole("button", { name: "Delete account and server data", exact: true })
+        ? dialog.getByRole("button", { name: "Delete account", exact: true })
         : dialog.getByRole("button", { name: "Disconnect Google", exact: true });
       await target.click();
       await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
@@ -616,6 +620,8 @@ test("disconnect uses inline confirmation, cancellation is harmless and the fina
   await expect(disconnect).toHaveAttribute("aria-pressed", "true");
   await disconnect.focus();
   await page.keyboard.press("Enter");
+  await expect(dialog.getByRole("group", { name: "Disconnect Discord?", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Disconnect Discord?", exact: true })).toBeVisible();
   await expect(dialog).toContainText("You will stay signed in.");
   await expect(dialog.getByRole("region", { name: "Connected sign-in providers" })).toBeVisible();
   await expect(dialog.getByRole("group", { name: "Your Gridz account", exact: true })).toBeVisible();
@@ -710,7 +716,7 @@ for (const width of [320, 390, 1280]) {
     });
     await page.goto("./?source=imported");
     const dialog = await openAccount(page);
-    await dialog.getByRole("button", { name: "Delete account and server data", exact: true }).click();
+    await dialog.getByRole("button", { name: "Delete account", exact: true }).click();
 
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
@@ -739,7 +745,7 @@ for (const width of [320, 390, 1280]) {
     await expect(mine).toContainText("Nothing saved here yet.");
     expect(mock.grids.has(id)).toBe(false);
     await expect(library.getByRole("region", { name: "Connected sign-in providers", exact: true })).toHaveCount(0);
-    await expect(library.getByRole("button", { name: "Delete account and server data", exact: true })).toHaveCount(0);
+    await expect(library.getByRole("button", { name: "Delete account", exact: true })).toHaveCount(0);
   });
 }
 

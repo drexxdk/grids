@@ -1,5 +1,5 @@
-import { useRef, useState, type MouseEventHandler } from "react";
-import { AlertTriangle, Check, LoaderCircle, RefreshCw, Trash2, X } from "lucide-react";
+import { useRef, useState, type MouseEventHandler, type ReactNode } from "react";
+import { AlertTriangle, Check, LoaderCircle, RefreshCw, Trash2, X, type LucideIcon } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import { FaDiscord, FaFacebook } from "react-icons/fa6";
 import type { AuthProvider } from "@grids/contracts/cloud";
@@ -81,17 +81,34 @@ export function AccountFeedback({ busy, error, onRetry }: { busy: boolean; error
   </>;
 }
 
+export function AccountConfirmationCard({ title, message, icon: Icon, destructive = false, children }: {
+  title: string;
+  message: string;
+  icon: LucideIcon;
+  destructive?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-solid border-(--line) bg-(--bg) p-4" role="group" aria-label={title}>
+      <h3 className="m-0 flex items-center gap-2 text-base font-semibold">
+        <Icon aria-hidden="true" className={`size-5 shrink-0 ${destructive ? "text-red-300" : "text-(--accent)"}`} />{title}
+      </h3>
+      <p className="m-0 text-sm leading-relaxed text-(--muted)">{message}</p>
+      <div className="flex w-full flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
 export function AccountConfirmation({ actions }: { actions: ReturnType<typeof useAccountActions> }) {
   const confirmation = actions.confirmation;
   if (!confirmation) return null;
   return (
-    <div className="flex flex-col items-start gap-4 rounded-xl border border-solid border-(--line) bg-(--bg) p-5" role="group" aria-label={confirmation.message}>
-      <span className={`flex size-11 items-center justify-center rounded-full ${confirmation.destructive ? "bg-red-500/10 text-red-300" : "bg-(--selected) text-(--accent)"}`}>
-        {confirmation.destructive ? <Trash2 aria-hidden="true" className="size-5" /> : <AlertTriangle aria-hidden="true" className="size-5" />}
-      </span>
-      <h3 className="m-0 text-base font-semibold">{t(confirmation.destructive ? "account.confirmDeleteTitle" : "account.confirmTitle")}</h3>
-      <p className="m-0 text-sm leading-relaxed text-(--muted)">{confirmation.message}</p>
-      <div className="flex w-full flex-wrap gap-2">
+    <AccountConfirmationCard
+      title={t(confirmation.destructive ? "account.confirmDeleteTitle" : "account.confirmTitle")}
+      message={confirmation.message}
+      icon={confirmation.destructive ? Trash2 : AlertTriangle}
+      destructive={confirmation.destructive}
+    >
         <Button variant={confirmation.destructive ? "danger" : "primary"} disabled={actions.busy} onClick={() => {
           actions.setConfirmation(null);
           void actions.run(confirmation.action);
@@ -102,7 +119,6 @@ export function AccountConfirmation({ actions }: { actions: ReturnType<typeof us
         <Button autoFocus disabled={actions.busy} onClick={() => actions.setConfirmation(null)}>
           <X aria-hidden="true" />{t("common.actions.cancel")}
         </Button>
-      </div>
-    </div>
+    </AccountConfirmationCard>
   );
 }
