@@ -7,6 +7,28 @@ const policies = [
 ];
 
 for (const width of [320, 1280]) {
+  for (const [index, { path, heading }] of policies.entries()) {
+    test(`${path} modal URL selects its tab and survives reload at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.route("**/api/**", (route) => route.abort());
+      await page.goto(`./?info=${path}&extra=keep#anchor`);
+      const dialog = page.getByRole("dialog", { name: "Information", exact: true });
+      await expect(dialog.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      const next = policies[(index + 1) % policies.length];
+      await dialog.getByRole("tab", { name: next.path[0].toUpperCase() + next.path.slice(1), exact: true }).click();
+      await expect.poll(() => new URL(page.url()).searchParams.get("info")).toBe(next.path);
+      await page.reload();
+      await expect(dialog.getByRole("heading", { name: next.heading, exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      const url = new URL(page.url());
+      expect(url.searchParams.get("info")).toBeNull();
+      expect(url.searchParams.get("extra")).toBe("keep");
+      expect(url.hash).toBe("#anchor");
+      await page.reload();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    });
+  }
   for (const { path, heading } of policies) {
     test(`${path} is public and readable without JavaScript at ${width}px`, async ({ browser, baseURL }) => {
       const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width, height: 900 } });
@@ -34,6 +56,14 @@ for (const width of [320, 1280]) {
   }
 }
 
+test("unknown information tabs do not open a modal or block editing", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.abort());
+  await page.goto("./?info=unknown");
+  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeEnabled();
+});
+
 test("policy navigation preserves the editor and is available when the account API is offline", async ({ page }) => {
   await page.route("**/api/**", (route) => route.abort());
   await page.goto("./?source=imported");
@@ -47,7 +77,8 @@ test("policy navigation preserves the editor and is available when the account A
   const editorUrl = page.url();
   await page.context().setOffline(true);
   await page.getByRole("menuitem", { name: "Information", exact: true }).click();
-  const information = page.getByRole("dialog", { name: "Policies and support", exact: true });
+  const information = page.getByRole("dialog", { name: "Information", exact: true });
+  await expect(information.getByRole("heading", { name: "Information", exact: true })).toBeVisible();
   await expect(information.getByRole("heading", { name: "Terms of Service", exact: true })).toBeVisible();
   await information.getByRole("link", { name: "Privacy Policy", exact: true }).click();
   await expect(information.getByRole("tab", { name: "Privacy", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -93,7 +124,7 @@ for (const width of [260, 320, 390, 1280]) {
       }
       await menu.getByRole("menuitem", { name: "Information", exact: true }).click();
       await expect(menu).toHaveCount(0);
-      const information = page.getByRole("dialog", { name: "Policies and support", exact: true });
+      const information = page.getByRole("dialog", { name: "Information", exact: true });
       const panel = page.locator("[data-modal-panel]");
       await expect(information).toBeVisible();
       await page.evaluate(() => document.fonts.ready);

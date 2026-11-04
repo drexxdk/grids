@@ -13,6 +13,11 @@ const pages = [
   { path: "support", label: "legal.support", icon: LifeBuoy, html: support },
 ] as const;
 
+export function readInformationPage(url: URL) {
+  const index = pages.findIndex(({ path }) => path === url.searchParams.get("info"));
+  return index < 0 ? null : index;
+}
+
 export function InformationDialog({
   open, onClose, onExited, returnFocus,
 }: {
@@ -21,10 +26,27 @@ export function InformationDialog({
   onExited: () => void;
   returnFocus: RefObject<HTMLButtonElement | null>;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(() => readInformationPage(new URL(location.href)) ?? 0);
   const [anchor, setAnchor] = useState("");
   const id = useId();
   const article = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const restore = () => {
+      const index = readInformationPage(new URL(location.href));
+      if (index !== null) {
+        setSelected(index);
+        setAnchor("");
+      }
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const url = new URL(location.href);
+    url.searchParams.set("info", pages[selected].path);
+    history.replaceState(history.state, "", url);
+  }, [open, selected]);
   const content = useMemo(() => {
     const main = new DOMParser().parseFromString(pages[selected].html, "text/html").querySelector("main");
     if (!main) throw new Error(`Missing information content: ${pages[selected].path}`);
@@ -43,9 +65,9 @@ export function InformationDialog({
     if (anchor) article.current.querySelector(`#${CSS.escape(anchor)}`)?.scrollIntoView({ block: "start" });
   }, [open, selected, anchor]);
   return (
-    <Modal open={open} onClose={onClose} onExited={() => { setSelected(0); setAnchor(""); onExited(); }} returnFocus={returnFocus} title={t("legal.navigation")} size="wide">
+    <Modal open={open} onClose={onClose} onExited={() => { setSelected(0); setAnchor(""); onExited(); }} returnFocus={returnFocus} title={t("legal.title")} size="wide">
       <div className="flex h-[min(42rem,calc(100dvh-10rem))] min-h-0 flex-col gap-4 max-[400px]:[&_[role=tab]_svg]:hidden">
-        <ImageTabs id={id} label={t("legal.navigation")} selectedIndex={selected}
+        <ImageTabs id={id} label={t("legal.title")} selectedIndex={selected}
           tabs={pages.map(({ label, icon }) => ({ label: t(label), icon }))}
           onChange={(index) => { setSelected(index); setAnchor(""); }}
         />

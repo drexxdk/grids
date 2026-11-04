@@ -27,7 +27,7 @@ export function AccountHeader({
         { label: error ? t("account.unavailable") : t("account.login"), icon: error ? AlertTriangle : LogIn, onSelect: onLogin, disabled: loading && !session },
       ]),
       { label: t("account.libraryTitle"), icon: Cloud, onSelect: onLibrary },
-      { label: t("legal.menu"), icon: Info, onSelect: onInformation },
+      { label: t("legal.title"), icon: Info, onSelect: onInformation },
       ...(session?.user && !error ? [
         { label: t("account.signOut"), icon: LogOut, onSelect: onSignOut, disabled: busy },
       ] : []),

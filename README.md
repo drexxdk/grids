@@ -59,6 +59,8 @@ Signing out invalidates the server session but deliberately leaves the browser d
 
 Public, JavaScript-independent pages are available at [Terms of Service](https://gritz.pages.dev/terms), [Privacy Policy](https://gritz.pages.dev/privacy) and [Support/data deletion](https://gritz.pages.dev/support). Their source lives in `apps/web/public` and is also bundled into the hamburger menu's **Information** modal, with Terms, Privacy and Support tabs. Internal policy links switch tabs without leaving the editor; external policy links open separately. The modal works without the account API or a network connection. Cloudflare serves the standalone `.html` pages at clean URLs for providers and direct access. The service worker must not replace these pages with the editor shell.
 
+Shareable editor links open the corresponding modal tab automatically: [Terms](https://gritz.pages.dev/?info=terms), [Privacy](https://gritz.pages.dev/?info=privacy) and [Support](https://gritz.pages.dev/?info=support). Switching tabs updates `info`; closing the modal removes it while preserving other parameters and fragments. This explicit information link is separate from locally saved editor navigation. Keep the standalone policy URLs above in Discord, Google and Facebook settings so their reviewers can read the documents without JavaScript or signing in.
+
 Discord uses server-side authorization-code sign-in with PKCE and only the `identify` scope. In the Discord Developer Portal, configure:
 
 - Terms of Service URL: `https://gritz.pages.dev/terms`

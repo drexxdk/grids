@@ -44,7 +44,7 @@ import { AccountDialog } from "./components/AccountDialog";
 import { AccountHeader } from "./components/AccountHeader";
 import { LoginDialog } from "./components/LoginDialog";
 import { SavedGridsDialog } from "./components/SavedGridsDialog";
-import { InformationDialog } from "./components/InformationDialog";
+import { InformationDialog, readInformationPage } from "./components/InformationDialog";
 import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
@@ -255,12 +255,15 @@ export default function App() {
   const account = useAccountSession();
   type AccountView = "login" | "account" | "library" | "information";
   const readAccountView = (): AccountView | null => {
+    if (readInformationPage(new URL(location.href)) !== null) return "information";
     const view: unknown = history.state?.gridsAccountView;
-    return view === "login" || view === "account" || view === "library" || view === "information" ? view : null;
+    return view === "login" || view === "account" || view === "library" ? view : null;
   };
   const [accountView, setAccountView] = useState<AccountView | null>(readAccountView);
   useEffect(() => {
-    history.replaceState({ ...history.state, gridsAccountView: accountView }, "");
+    const url = new URL(location.href);
+    if (accountView !== "information") url.searchParams.delete("info");
+    history.replaceState({ ...history.state, gridsAccountView: accountView }, "", url);
   }, [accountView]);
   useEffect(() => {
     const restore = () => setAccountView(readAccountView());
