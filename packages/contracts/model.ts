@@ -33,6 +33,8 @@ export const providerHosts = {
     source: ["www.flickr.com", "flickr.com", "commons.wikimedia.org"],
     image: ["live.staticflickr.com", "upload.wikimedia.org"],
   },
+  rijksmuseum: { source: ["id.rijksmuseum.nl"], image: ["iiif.micr.io"] },
+  wellcome: { source: ["wellcomecollection.org"], image: ["iiif.wellcomecollection.org"] },
 } as const;
 export const imageLicenseSchema = z.enum(["CC0", "Public domain"]);
 export function isProviderUrl(provider: keyof typeof providerHosts, kind: "source" | "image", value: string) {
@@ -47,7 +49,7 @@ export function isProviderUrl(provider: keyof typeof providerHosts, kind: "sourc
 }
 export const provenanceSchema = z
   .strictObject({
-    provider: z.enum(["commons", "met", "smk", "inaturalist", "openverse"]),
+    provider: z.enum(["commons", "met", "smk", "inaturalist", "openverse", "rijksmuseum", "wellcome"]),
     entityId: z.string().min(1).max(100).regex(/^[A-Za-z0-9._ -]+$/),
     sourcePage: z.url({ protocol: /^https$/ }).max(1000),
     originalUrl: z.url({ protocol: /^https$/ }).max(2000),
@@ -69,7 +71,8 @@ export const provenanceSchema = z
       return (
         isProviderUrl(value.provider, "source", value.sourcePage) &&
         isProviderUrl(value.provider, "image", value.originalUrl) &&
-        (!["commons", "met", "inaturalist"].includes(value.provider) || /^\d+$/.test(value.entityId)) &&
+        (!["commons", "met", "inaturalist", "rijksmuseum"].includes(value.provider) || /^\d+$/.test(value.entityId)) &&
+        (value.provider !== "wellcome" || /^[a-z0-9]{8}$/.test(value.entityId)) &&
         (value.provider !== "openverse" || z.uuid().safeParse(value.entityId).success) &&
         !license.username && !license.password && !license.port && !license.hash &&
         (!attributed || Boolean(value.title && value.creator.trim()) &&

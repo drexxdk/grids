@@ -280,6 +280,10 @@ export function fillImagePages(
             result.next > cursor
               ? result.next
               : undefined;
+          if (result.incomplete) {
+            incomplete = true;
+            break;
+          }
         } catch (error) {
           signal.throwIfAborted();
           if (deadline.aborted && images.length) {
@@ -730,16 +734,26 @@ function catalogProvider<Item>(
   metadata: Omit<ImageProvider, "search">,
   page: (query: string, topic: string | null, page: number, signal: AbortSignal) =>
     Promise<{ items: Item[]; total: number }>,
-  imageFor: (item: Item) => ProviderImage | null,
+  imageFor: (item: Item, signal: AbortSignal) => ProviderImage | null | Promise<ProviderImage | null>,
 ): ImageProvider {
   return cacheImageProvider(fillImagePages({
     ...metadata,
-    async search(query, signal, offset, limit, topic = null) {
+    async search(query, signal, offset, limit, topic = null, onImages) {
       const batch = await page(query, topic, Math.floor(offset / providerPageSize), signal);
       const images: ProviderImage[] = [];
       let cursor = offset % providerPageSize;
       while (cursor < batch.items.length && images.length < limit) {
-        const image = imageFor(batch.items[cursor++]!);
+        const index = cursor++;
+        let image: ProviderImage | null;
+        try {
+          image = await imageFor(batch.items[index]!, signal);
+        } catch (error) {
+          if (signal.aborted && signal.reason instanceof DOMException &&
+            signal.reason.name === "TimeoutError" && images.length) {
+            return { images, next: Math.floor(offset / providerPageSize) * providerPageSize + index, incomplete: true };
+          }
+          throw error;
+        }
         if (!image) continue;
         if (!provenanceSchema.safeParse({
           provider: image.provider, entityId: image.id, sourcePage: image.sourcePage,
@@ -748,6 +762,7 @@ function catalogProvider<Item>(
         }).success || (image.original.size ?? 0) > providerImageMaxBytes ||
           (image.original.width ?? 0) * (image.original.height ?? 0) > providerImageMaxPixels) continue;
         images.push(image);
+        onImages?.(images.slice());
       }
       const next = Math.floor(offset / providerPageSize) * providerPageSize + cursor;
       return { images, next: cursor > offset % providerPageSize && next < batch.total ? next : undefined };
@@ -911,7 +926,224 @@ export const openverse = catalogProvider(
   },
 );
 
-export const imageProviders: readonly ImageProvider[] = [commons, met, smk, inaturalist, openverse];
+function publicDomainRights(value: string) {
+  const url = value.replace(/\/$/, "");
+  if (url === "https://creativecommons.org/publicdomain/zero/1.0")
+    return { license: "CC0" as const, licenseUrl: `${url}/` };
+  if ([
+    "https://creativecommons.org/publicdomain/mark/1.0",
+    "https://creativecommons.org/share-your-work/public-domain/pdm",
+  ].includes(url))
+    return { license: "Public domain" as const, licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/" };
+  return null;
+}
+
+const iiifLimitsSchema = z.object({
+  maxWidth: z.number().int().positive().optional(),
+  maxHeight: z.number().int().positive().optional(),
+  maxArea: z.number().int().positive().optional(),
+});
+const iiifInfoSchema = iiifLimitsSchema.extend({
+  id: z.string().optional(), "@id": z.string().optional(),
+  width: z.number().int().positive(), height: z.number().int().positive(),
+  profile: z.union([z.string(), z.array(z.union([z.string(), iiifLimitsSchema]))]).optional(),
+});
+
+async function iiifImage(
+  image: Omit<ProviderImage, "thumbnail" | "original">,
+  base: string,
+  signal: AbortSignal,
+): Promise<ProviderImage | null> {
+  if (!isProviderUrl(image.provider, "image", base)) return null;
+  const info = await providerQuery(["provider-iiif", image.provider, base], async (requestSignal) => {
+    const parsed = iiifInfoSchema.safeParse(await catalogJson(new URL(`${base}/info.json`), requestSignal));
+    if (!parsed.success) throw new ProviderError("invalid");
+    if ((parsed.data.id ?? parsed.data["@id"]) !== base) throw new ProviderError("invalid");
+    return parsed.data;
+  }, signal);
+  const limits = [info, ...(Array.isArray(info.profile) ?
+    info.profile.filter((profile) => typeof profile !== "string") : [])];
+  const scale = Math.min(1, 4000 / Math.max(info.width, info.height), ...limits.flatMap((limit) => [
+    (limit.maxWidth ?? info.width) / info.width,
+    (limit.maxHeight ?? info.height) / info.height,
+    Math.sqrt((limit.maxArea ?? info.width * info.height) / (info.width * info.height)),
+  ]));
+  const width = Math.max(1, Math.floor(info.width * scale));
+  const height = Math.max(1, Math.floor(info.height * scale));
+  const previewSize = Math.min(400, Math.max(width, height));
+  return {
+    ...image,
+    thumbnail: `${base}/full/!${previewSize},${previewSize}/0/default.jpg`,
+    original: { url: `${base}/full/!${width},${height}/0/default.jpg`, width, height, mime: "image/jpeg" },
+  };
+}
+
+const linkedNameSchema = z.object({
+  type: z.string().optional(), content: z.string().optional(),
+  language: z.array(z.object({ id: z.string() })).optional(),
+});
+const rijksObjectSchema = z.object({
+  id: z.string(),
+  identified_by: z.array(linkedNameSchema).optional(),
+  produced_by: z.object({
+    carried_out_by: z.array(z.object({ identified_by: z.array(linkedNameSchema).optional() })).optional(),
+  }).optional(),
+  subject_of: z.array(z.object({
+    digitally_carried_by: z.array(z.object({
+      access_point: z.array(z.object({ id: z.string() })).optional(),
+      referred_to_by: z.array(z.object({
+        content: z.string().optional(),
+        classified_as: z.array(z.object({ id: z.string() })).optional(),
+      })).optional(),
+    })).optional(),
+  })).optional(),
+});
+const rijksPageSchema = z.object({
+  orderedItems: z.array(z.object({ id: z.string() })).max(100),
+  partOf: z.object({ totalItems: z.number().int().nonnegative() }),
+  next: z.object({ id: z.url() }).optional(),
+});
+
+async function rijksPage(query: string, page: number, signal: AbortSignal) {
+  let token: string | undefined;
+  for (let index = 0; index <= page; index++) {
+    const pageToken = token;
+    const result = await providerQuery(["provider-catalog", "rijksmuseum", query, index, pageToken ?? null], async (requestSignal) => {
+      const url = new URL("https://data.rijksmuseum.nl/search/collection");
+      url.searchParams.set("imageAvailable", "true");
+      if (query) url.searchParams.set("title", query);
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const parsed = rijksPageSchema.safeParse(await catalogJson(url, requestSignal));
+      if (!parsed.success) throw new ProviderError("invalid");
+      let next: string | undefined;
+      if (parsed.data.next) {
+        const nextUrl = new URL(parsed.data.next.id);
+        if (!safeUrl(nextUrl.href, "data.rijksmuseum.nl") || nextUrl.port || nextUrl.hash ||
+          nextUrl.pathname !== url.pathname || parsed.data.orderedItems.length !== 100)
+          throw new ProviderError("invalid");
+        next = nextUrl.searchParams.get("pageToken") || undefined;
+        if (!next || next === pageToken) throw new ProviderError("invalid");
+      }
+      return {
+        items: parsed.data.orderedItems,
+        total: next ? parsed.data.partOf.totalItems :
+          Math.min(parsed.data.partOf.totalItems, index * 100 + parsed.data.orderedItems.length),
+        next,
+      };
+    }, signal);
+    if (index === page) return result;
+    if (!result.next) return { items: [], total: result.total };
+    token = result.next;
+  }
+  throw new ProviderError("invalid");
+}
+
+export const rijksmuseum = catalogProvider(
+  {
+    id: "rijksmuseum", name: "Rijksmuseum", domain: "Dutch art and history",
+    policyUrl: "https://data.rijksmuseum.nl/policy",
+    browse: [], capabilities: commons.capabilities,
+  },
+  async (query, _topic, page, signal) => {
+    const items: { id: string }[] = [];
+    let offset = page * providerPageSize;
+    let total = 0;
+    while (items.length < providerPageSize) {
+      const batch = await rijksPage(query, Math.floor(offset / 100), signal);
+      total = batch.total;
+      const part = batch.items.slice(offset % 100, offset % 100 + providerPageSize - items.length);
+      items.push(...part);
+      offset += part.length;
+      if (!part.length || offset >= total) break;
+    }
+    return { items, total };
+  },
+  async (reference, signal) => {
+    const id = reference.id.match(/^https:\/\/id\.rijksmuseum\.nl\/(\d+)$/)?.[1];
+    if (!id) return null;
+    const item = await providerQuery(["provider-object", "rijksmuseum", id], async (requestSignal) => {
+      const parsed = rijksObjectSchema.safeParse(await catalogJson(new URL(`https://data.rijksmuseum.nl/${id}`), requestSignal));
+      return parsed.success ? parsed.data : null;
+    }, signal, (data) => data ? providerFreshTime : 0);
+    if (!item || item.id !== reference.id) return null;
+    const names = item.identified_by?.filter((name) => name.type === "Name");
+    const title = names?.find((name) => name.language?.some(({ id }) => id.endsWith("/300388277")))?.content ||
+      names?.[0]?.content;
+    if (!title) return null;
+    for (const digital of item.subject_of?.flatMap((subject) => subject.digitally_carried_by ?? []) ?? []) {
+      const rights = digital.referred_to_by?.filter((statement) =>
+        statement.classified_as?.some(({ id }) => /^https?:\/\/vocab\.getty\.edu\/aat\/300460240$/.test(id)));
+      const license = rights?.length === 1 ? publicDomainRights(rights[0]!.content ?? "") : null;
+      if (!license) continue;
+      const url = digital.access_point?.find(({ id }) =>
+        /^https:\/\/iiif\.micr\.io\/[A-Za-z0-9_-]+\/full\/max\/0\/default\.jpg$/.test(id))?.id;
+      if (!url) continue;
+      return iiifImage({
+        provider: "rijksmuseum", id, title: title.slice(0, captionMaxLength),
+        sourcePage: reference.id,
+        creator: (item.produced_by?.carried_out_by ?? []).map((agent) =>
+          agent.identified_by?.find((name) => name.type === "Name")?.content ?? "").filter(Boolean).join(", ").slice(0, 1000),
+        ...license,
+      }, url.replace("/full/max/0/default.jpg", ""), signal);
+    }
+    return null;
+  },
+);
+
+const wellcomeLocationSchema = z.object({
+  url: z.string().nullish(), credit: z.string().optional(),
+  locationType: z.object({ id: z.string() }),
+  license: z.object({ id: z.string(), url: z.string() }).nullish(),
+  accessConditions: z.array(z.object({
+    status: z.object({ id: z.string() }).optional(), terms: z.string().optional(),
+  })).optional(),
+});
+const wellcomeSchema = z.object({
+  totalResults: z.number().int().nonnegative(),
+  results: z.array(z.object({
+    id: z.string(), title: z.string(),
+    contributors: z.array(z.object({ agent: z.object({ label: z.string() }) })).optional(),
+    items: z.array(z.object({ locations: z.array(wellcomeLocationSchema).optional() })).optional(),
+  })),
+});
+
+export const wellcome = catalogProvider(
+  {
+    id: "wellcome", name: "Wellcome Collection", domain: "Historical art, science and nature",
+    policyUrl: "https://developers.wellcomecollection.org/docs/catalogue",
+    browse: [], capabilities: commons.capabilities,
+  },
+  async (query, _topic, page, signal) => {
+    const url = new URL("https://api.wellcomecollection.org/catalogue/v2/works");
+    url.search = new URLSearchParams({
+      query: query || "illustration", "items.locations.license": "pdm,cc-0",
+      include: "items,contributors", pageSize: String(providerPageSize), page: String(page + 1),
+    }).toString();
+    const parsed = wellcomeSchema.safeParse(await catalogJson(url, signal));
+    if (!parsed.success) throw new ProviderError("invalid");
+    return { items: parsed.data.results, total: parsed.data.totalResults };
+  },
+  async (item, signal) => {
+    if (!/^[a-z0-9]{8}$/.test(item.id) || !item.title.trim()) return null;
+    for (const location of item.items?.flatMap((item) => item.locations ?? []) ?? []) {
+      const license = location.license && publicDomainRights(location.license.url);
+      if (!license || location.license?.id !== (license.license === "CC0" ? "cc-0" : "pdm") ||
+        location.locationType.id !== "iiif-image" || !location.url ||
+        location.accessConditions?.some((condition) => condition.status?.id !== "open" || condition.terms?.trim()))
+        continue;
+      if (!/^https:\/\/iiif\.wellcomecollection\.org\/image\/[A-Za-z0-9._-]+\/info\.json$/.test(location.url)) continue;
+      return iiifImage({
+        provider: "wellcome", id: item.id, title: item.title.slice(0, captionMaxLength),
+        sourcePage: `https://wellcomecollection.org/works/${item.id}`,
+        creator: (item.contributors?.map(({ agent }) => agent.label).join(", ") || location.credit || "").slice(0, 1000),
+        ...license,
+      }, location.url.replace(/\/info\.json$/, ""), signal);
+    }
+    return null;
+  },
+);
+
+export const imageProviders: readonly ImageProvider[] = [commons, met, smk, inaturalist, openverse, rijksmuseum, wellcome];
 
 export async function downloadProviderImage(
   image: ProviderImage,

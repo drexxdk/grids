@@ -966,6 +966,182 @@ test("keyless catalogs reject unsafe rights and hosts and expose quota and malfo
   }
 });
 
+test("Wellcome requires image-level public-domain rights and open access before resolving IIIF images", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const location = {
+    url: "https://iiif.wellcomecollection.org/image/V1/info.json",
+    locationType: { id: "iiif-image" },
+    license: { id: "pdm", url: "https://creativecommons.org/share-your-work/public-domain/pdm/" },
+    accessConditions: [{ status: { id: "open" } }],
+  };
+  const work = (id, value) => ({ id, title: "Flowers", items: [{ locations: [
+    { locationType: { id: "closed-stores" } }, value,
+  ] }] });
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    requests.push(url);
+    if (url.hostname === "api.wellcomecollection.org")
+      return Response.json({ totalResults: 7, results: [
+        work("abcd1234", location),
+        { ...work("bbbb1234", { ...location, license: { id: "cc-by", url: "https://creativecommons.org/licenses/by/4.0/" } }),
+          thumbnail: { license: { id: "cc-0" } } },
+        work("cccc1234", { ...location, url: "https://evil.example/image/info.json" }),
+        work("dddd1234", { ...location, license: undefined }),
+        work("eeee1234", { ...location, accessConditions: [{ status: { id: "closed" } }] }),
+        work("ffff1234", { ...location, license: { ...location.license, id: "cc-0" } }),
+        work("abcd5678", { ...location, url: "https://iiif.wellcomecollection.org/image/V2/info.json",
+          license: { id: "cc-0", url: "https://creativecommons.org/publicdomain/zero/1.0/" } }),
+      ] });
+    expect(url.hostname).toBe("iiif.wellcomecollection.org");
+    expect(["/image/V1/info.json", "/image/V2/info.json"]).toContain(url.pathname);
+    return Response.json({
+      "@id": url.href.replace("/info.json", ""), width: 8000, height: 4000,
+      ...(url.pathname.includes("/V2/") ? {
+        profile: ["http://iiif.io/api/image/2/level2.json", { maxWidth: 1000, maxArea: 500000 }],
+      } : {}),
+    });
+  };
+  try {
+    const query = crypto.randomUUID();
+    const first = await providers.wellcome.search(query, new AbortController().signal, 0, null, 1);
+    expect(first.images.map(({ id }) => id)).toEqual(["abcd1234"]);
+    expect(first.next).toBe(1);
+    expect(first.images[0]).toMatchObject({
+      license: "Public domain", licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+      sourcePage: "https://wellcomecollection.org/works/abcd1234",
+      original: { width: 4000, height: 2000, mime: "image/jpeg" },
+    });
+    const second = await providers.wellcome.search(query, new AbortController().signal, first.next);
+    expect(second.images.map(({ id }) => id)).toEqual(["abcd5678"]);
+    expect(second.images[0].license).toBe("CC0");
+    expect(second.images[0].original).toMatchObject({ width: 1000, height: 500 });
+    expect(second.next).toBeUndefined();
+    expect(requests[0].searchParams.get("items.locations.license")).toBe("pdm,cc-0");
+    expect(requests[0].searchParams.get("include")).toBe("items,contributors");
+    expect(requests.every((url) => !url.searchParams.has("api_key"))).toBe(true);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("Rijksmuseum resolves image rights and opaque search tokens without skipping raw cursor positions", async () => {
+  const originalFetch = globalThis.fetch;
+  const searches = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/search/collection") {
+      searches.push(url);
+      const second = url.searchParams.has("pageToken");
+      if (second) expect(url.searchParams.get("pageToken")).toBe("opaque-next");
+      return Response.json({
+        partOf: { totalItems: 113 },
+        orderedItems: Array.from({ length: second ? 13 : 100 }, (_, index) =>
+          ({ id: `https://id.rijksmuseum.nl/${index + (second ? 101 : 1)}` })),
+        ...(second ? {} : { next: { id: "https://data.rijksmuseum.nl/search/collection?pageToken=opaque-next" } }),
+      });
+    }
+    if (url.hostname === "iiif.micr.io")
+      return Response.json({ id: url.href.replace("/info.json", ""), width: 8000, height: 4000 });
+    expect(url.hostname).toBe("data.rijksmuseum.nl");
+    const id = url.pathname.slice(1);
+    return Response.json({
+      id: `https://id.rijksmuseum.nl/${id}`,
+      identified_by: [{ type: "Name", content: `Artwork ${id}` }],
+      produced_by: { carried_out_by: [{ identified_by: [{ type: "Name", content: "Painter" }] }] },
+      subject_of: [{
+        digitally_carried_by: [{
+          access_point: [{ id: `https://iiif.micr.io/image${id}/full/max/0/default.jpg` }],
+          referred_to_by: [{ classified_as: [{ id: "https://vocab.getty.edu/aat/300460240" }],
+            content: id === "1" ? "https://creativecommons.org/licenses/by/4.0/" : "https://creativecommons.org/publicdomain/mark/1.0/" }],
+        }],
+        subject_to: [{ classified_as: [{ id: "https://creativecommons.org/publicdomain/zero/1.0/" }] }],
+      }],
+    });
+  };
+  try {
+    const query = crypto.randomUUID();
+    const first = await providers.rijksmuseum.search(query, new AbortController().signal, 0, null, 2);
+    expect(first.images.map(({ id }) => id)).toEqual(["2", "3"]);
+    expect(first.next).toBe(3);
+    expect(first.images[0]).toMatchObject({
+      creator: "Painter", license: "Public domain",
+      original: { width: 4000, height: 2000 },
+    });
+    const second = await providers.rijksmuseum.search(query, new AbortController().signal, first.next);
+    expect(second.images.map(({ id }) => id)).toEqual(Array.from({ length: 12 }, (_, index) => String(index + 4)));
+    const crossing = await providers.rijksmuseum.search(query, new AbortController().signal, 98, null, 3);
+    expect(crossing.images.map(({ id }) => id)).toEqual(["99", "100", "101"]);
+    expect(crossing.next).toBe(101);
+    expect(searches).toHaveLength(2);
+    expect(searches[0].searchParams.get("title")).toBe(query);
+    expect(searches.every((url) => url.searchParams.get("imageAvailable") === "true")).toBe(true);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("museum detail deadlines keep progressive results and resume at the first unprocessed image", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const deadline = new AbortController();
+  let timedOut = false;
+  AbortSignal.timeout = () => deadline.signal;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.hostname === "api.wellcomecollection.org")
+      return Response.json({ totalResults: 2, results: ["aaaa1234", "bbbb1234"].map((id, index) => ({
+        id, title: `Image ${index}`, items: [{ locations: [{
+          url: `https://iiif.wellcomecollection.org/image/deadline${index}/info.json`,
+          locationType: { id: "iiif-image" },
+          license: { id: "pdm", url: "https://creativecommons.org/publicdomain/mark/1.0/" },
+        }] }],
+      })) });
+    if (url.pathname.includes("deadline1") && !timedOut) {
+      timedOut = true;
+      deadline.abort(new DOMException("Search deadline exceeded", "TimeoutError"));
+      throw deadline.signal.reason;
+    }
+    return Response.json({ id: url.href.replace("/info.json", ""), width: 800, height: 600 });
+  };
+  try {
+    const query = crypto.randomUUID();
+    const first = await providers.wellcome.search(query, new AbortController().signal);
+    expect(first.images.map(({ id }) => id)).toEqual(["aaaa1234"]);
+    expect(first).toMatchObject({ next: 1, incomplete: true });
+    AbortSignal.timeout = originalTimeout;
+    const second = await providers.wellcome.search(query, new AbortController().signal, first.next);
+    expect(second.images.map(({ id }) => id)).toEqual(["bbbb1234"]);
+    expect(second.next).toBeUndefined();
+  } finally {
+    globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
+test("new museum catalogs report quotas and malformed metadata and respect cancellation", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const provider of [providers.rijksmuseum, providers.wellcome]) {
+      globalThis.fetch = async () => new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
+      await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
+        .rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
+      globalThis.fetch = async () => Response.json({});
+      await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
+        .rejects.toMatchObject({ kind: "invalid" });
+      if (provider.id === "rijksmuseum") {
+        globalThis.fetch = async () => Response.json({
+          partOf: { totalItems: 101 },
+          orderedItems: Array.from({ length: 100 }, (_, index) =>
+            ({ id: `https://id.rijksmuseum.nl/${index + 1}` })),
+          next: { id: "https://evil.example/search/collection?pageToken=unsafe" },
+        });
+        await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
+          .rejects.toMatchObject({ kind: "invalid" });
+      }
+      const controller = new AbortController();
+      controller.abort();
+      await expect(provider.search(crypto.randomUUID(), controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("translations render valid ICU messages, plurals and interpolated values", async () => {
   const en = JSON.parse(
     await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"),

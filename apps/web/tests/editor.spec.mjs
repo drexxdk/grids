@@ -4853,7 +4853,7 @@ test("imported captions preserve library capitalization in the canvas and export
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
 });
 
-for (const provider of ["smk", "inaturalist", "openverse"]) {
+for (const provider of ["smk", "inaturalist", "openverse", "rijksmuseum", "wellcome"]) {
   test(`${provider} searches without keys and imports durable references without image blobs`, async ({ page }) => {
     const bytes = await readFile(path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"));
     const requests = [];
@@ -4891,8 +4891,38 @@ for (const provider of ["smk", "inaturalist", "openverse"]) {
           width: 800, height: 600, filesize: bytes.length, mature: false,
         }] },
       },
+      rijksmuseum: {
+        api: "https://data.rijksmuseum.nl/search/collection?*",
+        image: /^https:\/\/iiif\.micr\.io\/test\/full\//,
+        title: "Artwork", license: "Public domain",
+        response: { partOf: { totalItems: 1 }, orderedItems: [{ id: "https://id.rijksmuseum.nl/123" }] },
+      },
+      wellcome: {
+        api: "https://api.wellcomecollection.org/catalogue/v2/works?*",
+        image: /^https:\/\/iiif\.wellcomecollection\.org\/image\/V1\/full\//,
+        title: "Flowers", license: "Public domain",
+        response: { totalResults: 1, results: [{ id: "abcd1234", title: "Flowers", items: [{ locations: [{
+          url: "https://iiif.wellcomecollection.org/image/V1/info.json",
+          license: { id: "pdm", url: "https://creativecommons.org/share-your-work/public-domain/pdm/" },
+          locationType: { id: "iiif-image" }, accessConditions: [{ status: { id: "open" } }],
+        }] }] }] },
+      },
     };
     const fixture = routes[provider];
+    if (provider === "rijksmuseum") {
+      await page.route("https://data.rijksmuseum.nl/123", (route) => route.fulfill({ json: {
+        id: "https://id.rijksmuseum.nl/123",
+        identified_by: [{ type: "Name", content: "Artwork" }],
+        subject_of: [{ digitally_carried_by: [{
+          access_point: [{ id: "https://iiif.micr.io/test/full/max/0/default.jpg" }],
+          referred_to_by: [{ classified_as: [{ id: "https://vocab.getty.edu/aat/300460240" }],
+            content: "https://creativecommons.org/publicdomain/mark/1.0/" }],
+        }] }],
+      } }));
+    }
+    for (const base of ["https://iiif.micr.io/test", "https://iiif.wellcomecollection.org/image/V1"])
+      await page.route(`${base}/info.json`, (route) =>
+        route.fulfill({ json: { id: base, width: 800, height: 600 } }));
     await page.route(fixture.image, (route) => route.fulfill({ contentType: "image/jpeg", body: bytes }));
     await page.route(fixture.api, (route) => {
       requests.push(new URL(route.request().url()));
@@ -4913,6 +4943,13 @@ for (const provider of ["smk", "inaturalist", "openverse"]) {
     const saved = await localDatabase(page);
     expect(saved.document.assets[0].provenance).toMatchObject({ provider, license: fixture.license });
     expect(saved.images).toEqual([]);
+    if (provider === "rijksmuseum" || provider === "wellcome") {
+      await page.locator("#export-grid-header").click();
+      await selectField(page, "resolution", "150");
+      const download = await downloadBoard(page);
+      const exported = await readFile(await download.path());
+      expect([...exported.subarray(0, 4)]).toEqual([137, 80, 78, 71]);
+    }
     expect(requests.length).toBeGreaterThan(0);
     for (const url of requests) {
       for (const key of ["api_key", "apiKey", "key", "access_token", "token", "secret"])

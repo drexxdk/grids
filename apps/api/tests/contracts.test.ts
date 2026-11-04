@@ -92,6 +92,8 @@ test("new public-domain provider references round-trip without image bytes", () 
   for (const [provider, entityId, sourcePage, originalUrl] of [
     ["smk", "KKS123", "https://open.smk.dk/artwork/image/KKS123", "https://iip.smk.dk/iiif/jp2/123.jp2/full/!4000,4000/0/default.jpg"],
     ["inaturalist", "123", "https://www.inaturalist.org/photos/123", "https://inaturalist-open-data.s3.amazonaws.com/photos/123/original.jpg"],
+    ["rijksmuseum", "200106530", "https://id.rijksmuseum.nl/200106530", "https://iiif.micr.io/KpXzv/full/!3071,4000/0/default.jpg"],
+    ["wellcome", "pvqvftnf", "https://wellcomecollection.org/works/pvqvftnf", "https://iiif.wellcomecollection.org/image/V0047265/full/!3130,2229/0/default.jpg"],
   ] as const) {
     const candidate = structuredClone(saved);
     candidate.assets[0].provenance = {
