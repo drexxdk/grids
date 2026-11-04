@@ -138,9 +138,10 @@ async function browserDraft(page) {
 async function presetDraft(page) {
   const mock = await mockAccount(page);
   let samples = 0;
+  const sample = await readFile(image);
   await page.route(/https:\/\/(?:iiif\.wellcomecollection\.org|iiif\.micr\.io)\//, async (route) => {
     samples++;
-    await route.fulfill({ contentType: "image/jpeg", body: await readFile(image) });
+    await route.fulfill({ contentType: "image/jpeg", body: sample, headers: { "Access-Control-Allow-Origin": "*" } });
   });
   await page.goto("./");
   await page.locator("#replace-upload").setInputFiles({
@@ -155,21 +156,108 @@ async function presetDraft(page) {
   return { mock, before, samples: () => samples };
 }
 
+async function themeThumbnail(page, name) {
+  const thumbnail = page.getByRole("button", { name: `Preview ${name}`, exact: true }).locator("[data-theme-thumbnail]");
+  await thumbnail.scrollIntoViewIfNeeded();
+  await expect(thumbnail).toHaveAttribute("data-thumbnail-state", "ready");
+  return thumbnail.locator("img").evaluate(async (image) => {
+    await image.decode();
+    const bytes = await (await fetch(image.src)).arrayBuffer();
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].join(",");
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const colors = new Set();
+    const stride = Math.max(1, Math.floor(pixels.length / 4 / 4096)) * 4;
+    for (let offset = 0; offset < pixels.length; offset += stride)
+      colors.add(`${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]}`);
+    return { hash, width: canvas.width, height: canvas.height, background: [...pixels.slice(0, 3)], colors: colors.size };
+  });
+}
+
+test("theme cards render all original canvases with photos instead of generic icons", async ({ page }) => {
+  const { before } = await presetDraft(page);
+  const labels = JSON.parse(await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"));
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  const hashes = new Set();
+  for (const name of Object.values(labels.presets.names)) {
+    const thumbnail = await themeThumbnail(page, name);
+    expect(thumbnail.width, name).toBeGreaterThan(0);
+    expect(thumbnail.height, name).toBeGreaterThan(0);
+    expect(thumbnail.width * thumbnail.height, name).toBeLessThanOrEqual(2_000_000);
+    expect(thumbnail.colors, `${name}: actual sample photos`).toBeGreaterThan(5);
+    hashes.add(thumbnail.hash);
+  }
+  expect(hashes.size).toBe(24);
+  await expect(page.getByRole("region", { name: "Themes", exact: true }).locator(".lucide-layout-grid")).toHaveCount(0);
+  await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
+  expect(await browserDraft(page)).toEqual(before);
+});
+
+test("theme thumbnails stay original after customization and follow the current grid dimensions", async ({ page }) => {
+  const { before } = await presetDraft(page);
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  const original = await themeThumbnail(page, "Warm gallery");
+  expect(original.background).toEqual([245, 241, 232]);
+  await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
+  const bounds = await page.locator("[data-preview-content]").boundingBox();
+  expect(Math.abs(original.width / original.height - bounds.width / bounds.height)).toBeLessThan(0.03);
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await page.getByRole("group", { name: "Warm gallery settings", exact: true })
+    .getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#background-value").fill("#123456");
+  await page.locator("#background-value").press("Enter");
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  expect(await themeThumbnail(page, "Warm gallery")).toEqual(original);
+  await page.getByRole("button", { name: "Remove row", exact: true }).click();
+  const resized = await themeThumbnail(page, "Warm gallery");
+  expect(resized.width).toBe(original.width);
+  expect(resized.height).toBeLessThan(original.height);
+  expect(resized.background).toEqual(original.background);
+  await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS("background-color", "rgb(18, 52, 86)");
+  await expect(page.locator("#board-grid .image-card")).toHaveCount(6);
+  await page.getByRole("button", { name: "Back to my grid", exact: true }).click();
+  const after = await browserDraft(page);
+  expect(after.document.assets).toEqual(before.document.assets);
+  expect(after.images).toEqual(before.images);
+  expect(JSON.stringify(after)).not.toContain("preset-preview");
+});
+
+test("theme thumbnail failures are visible without blocking the theme gallery", async ({ page }) => {
+  await mockAccount(page);
+  await page.route(/https:\/\/(?:iiif\.wellcomecollection\.org|iiif\.micr\.io)\//,
+    (route) => route.fulfill({ status: 503, body: "Image service unavailable", headers: { "Access-Control-Allow-Origin": "*" } }));
+  await page.goto("./?panel=themes");
+  const tile = page.getByRole("button", { name: "Preview Warm gallery", exact: true });
+  await expect(tile.locator("[data-theme-thumbnail]")).toHaveAttribute("data-thumbnail-state", "error");
+  await expect(tile).toContainText("Preview unavailable");
+  await expect(tile).toBeEnabled();
+  await tile.click();
+  await expect(page.locator("[data-preset-preview]")).toBeVisible();
+  await page.getByRole("button", { name: "Back to my grid", exact: true }).click();
+  await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
+});
+
 test("preset gallery tiles preview only on activation and applying preserves content", async ({ page }) => {
   const { before, samples } = await presetDraft(page);
   expect(samples()).toBe(0);
-  await expect(page.getByRole("tab")).toHaveText(["Presets", "Images", "Settings"]);
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveText(["Themes", "Images", "Settings"]);
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await expect(page.getByRole("region", { name: "Starting points", exact: true }).getByRole("listitem")).toHaveCount(24);
-  expect(samples()).toBe(0);
   const tile = page.getByRole("button", { name: "Preview Warm gallery", exact: true });
-  await expect(tile).toContainText("Warm gallery");
+  await expect(tile.locator("[data-theme-thumbnail]")).toHaveAttribute("data-thumbnail-state", "ready");
+  expect(samples()).toBeGreaterThan(0);
+  await expect(tile).not.toContainText("Warm gallery");
+  await expect(tile).toHaveAttribute("title", "Warm gallery");
   await expect(page.getByRole("region", { name: "Starting points", exact: true })).not.toContainText(/\d+\s*×\s*\d+/);
-  await expect(page.getByRole("region", { name: "Presets", exact: true }).getByRole("button", { name: /^Apply / })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Themes", exact: true }).getByRole("button", { name: /^Apply / })).toHaveCount(0);
   await tile.hover();
   await tile.focus();
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
-  expect(samples()).toBe(0);
   await tile.click();
   await expect(page.locator("[data-preset-preview]")).toContainText("Warm gallery");
   await expect(page.locator("#board-grid .image-card")).toHaveCount(before.document.grid.rows * before.document.grid.columns);
@@ -198,7 +286,8 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await expect(tile).toContainText("Applied");
   await expect(tile).toBeEnabled();
   await expect(tile).toHaveAttribute("data-applied", "");
-  await expect(tile.locator(".lucide-layout-grid")).toHaveCount(1);
+  await expect(tile.locator("[data-theme-thumbnail] img")).toHaveCount(1);
+  await expect(tile.locator(".lucide-layout-grid")).toHaveCount(0);
   await expect(tile.locator(".lucide-check")).toHaveCount(0);
   const otherTile = page.getByRole("button", { name: "Preview Midnight squares", exact: true });
   await otherTile.click();
@@ -224,7 +313,7 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await page.getByRole("tab", { name: "Settings", exact: true }).click();
   await page.locator("#background-value").fill("#112233");
   await page.locator("#background-value").press("Enter");
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await expect(tile).toHaveAttribute("data-applied", "");
   await expect(tile).toHaveAttribute("data-customized", "");
   await expect(tile).toContainText("Modified");
@@ -236,7 +325,7 @@ test("preset gallery tiles preview only on activation and applying preserves con
 touchTest("preset gallery mobile preview reveals canvas and can close or apply without losing uploads", async ({ page }) => {
   const { before } = await presetDraft(page);
   await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).tap();
   await expect(page.locator("[data-editor-sidebar]")).toHaveCount(0);
   await expect(page.locator("[data-preset-preview]")).toBeVisible();
@@ -258,12 +347,12 @@ touchTest("preset gallery mobile preview reveals canvas and can close or apply w
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
 });
 
-touchTest("preset gallery fits three tile columns without per-item apply buttons on narrow screens", async ({ page }) => {
+touchTest("preset gallery fits two thumbnail columns without visible titles or per-item apply buttons", async ({ page }) => {
   const { before, samples } = await presetDraft(page);
   await page.getByRole("button", { name: "Show sidebar", exact: true }).tap();
-  await expect(page.getByRole("tab")).toHaveText(["Presets", "Settings"]);
-  await page.getByRole("tab", { name: "Presets", exact: true }).tap();
-  const gallery = page.getByRole("region", { name: "Presets", exact: true });
+  await expect(page.getByRole("tab")).toHaveText(["Themes", "Settings"]);
+  await page.getByRole("tab", { name: "Themes", exact: true }).tap();
+  const gallery = page.getByRole("region", { name: "Themes", exact: true });
   await expect(gallery.getByRole("button", { name: /^Apply / })).toHaveCount(0);
   const starters = gallery.getByRole("region", { name: "Starting points", exact: true });
   for (const width of [320, 390, 780]) {
@@ -274,15 +363,17 @@ touchTest("preset gallery fits three tile columns without per-item apply buttons
         return { x, y, width, height };
       }));
     expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
-    expect(Math.abs(boxes[1].y - boxes[2].y)).toBeLessThan(1);
+    expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
     expect(boxes[0].x).toBeLessThan(boxes[1].x);
-    expect(boxes[1].x).toBeLessThan(boxes[2].x);
-    expect(boxes[3].y).toBeGreaterThan(boxes[0].y);
+    expect(Math.abs(boxes[0].x - boxes[2].x)).toBeLessThan(1);
+    expect(Math.abs(boxes[1].x - boxes[3].x)).toBeLessThan(1);
+    expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
     expect(boxes.every((box) => box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
-  expect(samples()).toBe(0);
+  await expect(gallery.getByRole("button", { name: "Preview Warm gallery", exact: true })).not.toContainText("Warm gallery");
+  expect(samples()).toBeGreaterThan(0);
   expect(await browserDraft(page)).toEqual(before);
 });
 
@@ -296,11 +387,11 @@ test("preset customizations are independent, persistent, preview-safe and indivi
     await expect(page.getByRole("tab", { name: "Settings", exact: true })).toHaveAttribute("aria-selected", "true");
     await page.locator("#background-value").fill(color);
     await page.locator("#background-value").press("Enter");
-    await page.getByRole("tab", { name: "Presets", exact: true }).click();
+    await page.getByRole("tab", { name: "Themes", exact: true }).click();
     await expect(tile(name)).toHaveAttribute("data-customized", "");
     await expect(controls(name).getByRole("button", { name: "Reset", exact: true })).toBeVisible();
   };
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await tile("Warm gallery").click();
   await expect(controls("Warm gallery")).toHaveCount(0);
   await page.getByRole("button", { name: "Apply settings", exact: true }).click();
@@ -351,7 +442,7 @@ test("preset customizations are independent, persistent, preview-safe and indivi
 touchTest("preset settings and reset remain reachable on mobile", async ({ page }) => {
   const { before } = await presetDraft(page);
   await page.getByRole("button", { name: "Show sidebar", exact: true }).tap();
-  await page.getByRole("tab", { name: "Presets", exact: true }).tap();
+  await page.getByRole("tab", { name: "Themes", exact: true }).tap();
   await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).tap();
   await page.getByRole("button", { name: "Apply settings", exact: true }).tap();
   await page.getByRole("button", { name: "Show sidebar", exact: true }).tap();
@@ -359,7 +450,7 @@ touchTest("preset settings and reset remain reachable on mobile", async ({ page 
   await controls.getByRole("button", { name: "Settings", exact: true }).tap();
   await page.locator("#background-value").fill("#334455");
   await page.locator("#background-value").press("Enter");
-  await page.getByRole("tab", { name: "Presets", exact: true }).tap();
+  await page.getByRole("tab", { name: "Themes", exact: true }).tap();
   for (const width of [320, 390, 780]) {
     await page.setViewportSize({ width, height: 844 });
     const card = await controls.locator("..").boundingBox();
@@ -404,7 +495,7 @@ for (const signedIn of [false, true]) {
     await page.getByRole("button", { name: "Menu", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Library", exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
-    const gallery = page.getByRole("region", { name: "Presets", exact: true });
+    const gallery = page.getByRole("region", { name: "Themes", exact: true });
     await expect(gallery.getByRole("button", { name: /^Preview / })).toHaveCount(24);
     await expect(gallery.getByRole("region", { name: "My presets", exact: true })).toHaveCount(0);
     await expect(gallery.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
@@ -443,10 +534,10 @@ test("preset drop zones stay visible on every starter background and cell size",
   await mockAccount(page);
   const file = await readFile(image);
   await page.route(/https:\/\/(?:iiif\.wellcomecollection\.org|iiif\.micr\.io)\//,
-    (route) => route.fulfill({ contentType: "image/jpeg", body: file }));
+    (route) => route.fulfill({ contentType: "image/jpeg", body: file, headers: { "Access-Control-Allow-Origin": "*" } }));
   const labels = JSON.parse(await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"));
   await page.goto("./");
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   for (const name of Object.values(labels.presets.names)) {
     await page.getByRole("button", { name: `Preview ${name}`, exact: true }).click();
     await expect(page.locator("#board-grid .image-card")).toHaveCount(9);
@@ -495,9 +586,9 @@ test("preset canvas palettes persist and match exported PNG backgrounds", async 
   await mockAccount(page);
   const file = await readFile(image);
   await page.route(/https:\/\/(?:iiif\.wellcomecollection\.org|iiif\.micr\.io)\//,
-    (route) => route.fulfill({ contentType: "image/jpeg", body: file }));
+    (route) => route.fulfill({ contentType: "image/jpeg", body: file, headers: { "Access-Control-Allow-Origin": "*" } }));
   await page.goto("./");
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
   for (const name of ["Warm gallery", "Midnight squares"]) {
     await page.getByRole("button", { name: `Preview ${name}`, exact: true }).click();
     await page.getByRole("button", { name: "Apply settings", exact: true }).click();

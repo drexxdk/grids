@@ -112,7 +112,7 @@ export function readNavigation(
   const source = parsedSource.success ? parsedSource.data : "imported";
   const next = {
     ...state,
-    selectedPanel: panel === "presets" ? 2 : panel === "settings" ? 1 : 0,
+    selectedPanel: panel === "themes" || panel === "presets" ? 2 : panel === "settings" ? 1 : 0,
     librarySource: source,
   };
   const provider = imageProviders.find((item) => item.id === source);

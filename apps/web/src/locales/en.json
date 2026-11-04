@@ -1,7 +1,7 @@
 {
   "presets": {
-    "title": "Presets",
-    "help": "Preview and apply a preset without changing your grid size or content. Use Settings in the applied preset card to customize it. Changes are remembered in this browser.",
+    "title": "Themes",
+    "help": "Cards show each original theme in your grid size. Preview and apply without changing your images or captions. Use Settings in the applied card to customize it. Changes stay in this browser.",
     "starters": "Starting points",
     "appliedNamed": "{name} is applied",
     "applied": "Applied",
@@ -9,6 +9,8 @@
     "reset": "Reset",
     "controlsNamed": "{name} settings",
     "saveError": "Browser preferences could not be saved. Changes may be lost after reloading. Check your browser storage and try again.",
+    "thumbnailNamed": "Original theme: {name}",
+    "thumbnailError": "Preview unavailable",
     "previewNamed": "Preview {name}",
     "previewing": "Preview: {name}",
     "samples": "Sample images only. Your draft is unchanged.",

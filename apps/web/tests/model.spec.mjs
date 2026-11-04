@@ -74,6 +74,7 @@ test("preset starters adapt to current layouts and sample previews stay separate
     expect(draft).toEqual(original);
   }
   expect(navigation.readNavigation(navigation.parseEditorState({}), new URL("https://example.com/?panel=presets")).selectedPanel).toBe(2);
+  expect(navigation.readNavigation(navigation.parseEditorState({}), new URL("https://example.com/?panel=themes")).selectedPanel).toBe(2);
 });
 
 test("preset palettes theme headings, card surfaces and captions with readable colors", () => {
@@ -124,20 +125,6 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
     },
   });
 
-  test("browser preset customizations contain validated settings and ignore grid dimensions when matching", () => {
-    const original = presets.starterPresets[0].settings;
-    const customized = model.editorSettingsSchema.parse({
-      ...original, style: { ...original.style, background: "#123456" },
-    });
-    const state = navigation.parseEditorState({ presetCustomizations: { "starter:gallery": customized } });
-    expect(state.presetCustomizations).toEqual({ "starter:gallery": customized });
-    expect(navigation.parseEditorState({}).presetCustomizations).toEqual({});
-    expect(presets.samePresetSettings(customized, { ...customized, layout: { rows: 1, columns: 8 } })).toBe(true);
-    expect(presets.samePresetSettings(original, customized)).toBe(false);
-    expect(presets.samePresetSettings(customized, { ...customized, exportSettings: {
-      ...customized.exportSettings, resolution: customized.exportSettings.resolution + 1,
-    } })).toBe(false);
-  });
   const url = navigation.navigationUrl(
     restored,
     new URL("https://example.com/grids/?panel=settings&source=commons&q=earth&topic=all&offset=27&other=keep#anchor"),
@@ -206,6 +193,21 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
       .navigationUrl(all, new URL("https://example.com/"))
       .searchParams.get("topic"),
   ).toBeNull();
+});
+
+test("browser preset customizations contain validated settings and ignore grid dimensions when matching", () => {
+  const original = presets.starterPresets[0].settings;
+  const customized = model.editorSettingsSchema.parse({
+    ...original, style: { ...original.style, background: "#123456" },
+  });
+  const state = navigation.parseEditorState({ presetCustomizations: { "starter:gallery": customized } });
+  expect(state.presetCustomizations).toEqual({ "starter:gallery": customized });
+  expect(navigation.parseEditorState({}).presetCustomizations).toEqual({});
+  expect(presets.samePresetSettings(customized, { ...customized, layout: { rows: 1, columns: 8 } })).toBe(true);
+  expect(presets.samePresetSettings(original, customized)).toBe(false);
+  expect(presets.samePresetSettings(customized, { ...customized, exportSettings: {
+    ...customized.exportSettings, resolution: customized.exportSettings.resolution + 1,
+  } })).toBe(false);
 });
 
 test("provider topic scopes reach every batch and use separate page cache entries", async () => {

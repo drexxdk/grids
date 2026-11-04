@@ -1,8 +1,9 @@
-import { LayoutGrid, RotateCcw, Settings2 } from "lucide-react";
+import { RotateCcw, Settings2 } from "lucide-react";
 import type { EditorSettings } from "../model";
 import { samePresetSettings, starterPresets, type PresetChoice } from "../presets";
 import { t } from "../i18n";
 import { Button } from "./ui/controls";
+import { ThemeThumbnail } from "./ThemeThumbnail";
 
 export function PresetsPanel({ previewId, currentSettings, appliedPresetId, customizations, disabled, onPreview, onSettings, onReset }: {
   previewId?: string;
@@ -18,7 +19,7 @@ export function PresetsPanel({ previewId, currentSettings, appliedPresetId, cust
     <p className="m-0 text-xs leading-relaxed text-(--muted)">{t("presets.help")}</p>
     <section aria-label={t("presets.starters")} className="flex min-w-0 flex-col gap-2">
       <h3 className="field-label font-normal">{t("presets.starters")}</h3>
-      <ul className="m-0 grid list-none grid-cols-3 gap-2 p-0">
+      <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0">
         {starterPresets.map((starter) => {
           const original = { ...starter, name: t(`presets.names.${starter.nameKey}`) };
           const choice = { ...original, settings: customizations[starter.id] ?? starter.settings };
@@ -36,14 +37,8 @@ export function PresetsPanel({ previewId, currentSettings, appliedPresetId, cust
               className="flex min-h-34 w-full flex-1 flex-col items-center justify-center gap-2 border-0 bg-transparent p-2 text-center text-(--text) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-50"
               onClick={() => onPreview(choice)}
             >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-solid border-(--line)"
-                style={{ background: choice.settings.style.background, color: choice.settings.style.headingTextColor ?? "#d8f36a" }}>
-                <LayoutGrid aria-hidden="true" className="size-5" />
-              </span>
-              <span className="min-w-0 w-full">
-                <span className="flex min-h-8 items-center justify-center wrap-anywhere text-xs leading-4 font-semibold">{choice.name}</span>
-                {metadata && <span className={`mt-1 block text-xs ${applied ? "text-(--accent)" : "text-(--muted)"}`}>{metadata}</span>}
-              </span>
+              <ThemeThumbnail theme={starter} name={original.name} rows={currentSettings.layout.rows} columns={currentSettings.layout.columns} />
+              {metadata && <span className={`min-w-0 w-full text-xs ${applied ? "text-(--accent)" : "text-(--muted)"}`}>{metadata}</span>}
             </button>
             {applied && <div role="group" aria-label={t("presets.controlsNamed", { name: choice.name })}
               className="flex shrink-0 divide-x divide-(--line) border-0 border-t border-solid border-(--line)">
