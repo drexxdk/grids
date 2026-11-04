@@ -360,12 +360,32 @@ touchTest("preset settings and reset remain reachable on mobile", async ({ page 
   await page.locator("#background-value").fill("#334455");
   await page.locator("#background-value").press("Enter");
   await page.getByRole("tab", { name: "Presets", exact: true }).tap();
-  for (const button of await controls.getByRole("button").all()) {
-    const bounds = await button.boundingBox();
-    expect(bounds.width).toBeGreaterThanOrEqual(44);
-    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  for (const width of [320, 390, 780]) {
+    await page.setViewportSize({ width, height: 844 });
+    const card = await controls.locator("..").boundingBox();
+    const settings = await controls.getByRole("button", { name: "Settings", exact: true }).boundingBox();
+    const reset = await controls.getByRole("button", { name: "Reset", exact: true }).boundingBox();
+    expect(Math.abs(settings.y - reset.y)).toBeLessThan(1);
+    expect(settings.x + settings.width).toBeLessThanOrEqual(reset.x + 1);
+    await expect(page.getByRole("button", { name: "Preview Warm gallery", exact: true }).locator("button")).toHaveCount(0);
+    for (const button of await controls.getByRole("button").all()) {
+      const bounds = await button.boundingBox();
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      expect(bounds.x).toBeGreaterThanOrEqual(card.x);
+      expect(bounds.y).toBeGreaterThanOrEqual(card.y);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(card.x + card.width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(card.y + card.height);
+      expect(await button.textContent()).toBe("");
+      await expect(button).toHaveAttribute("title", await button.getAttribute("aria-label"));
+      const icon = await button.locator("svg").boundingBox();
+      expect(icon.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(icon.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(icon.x + icon.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      expect(icon.y + icon.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await controls.getByRole("button", { name: "Reset", exact: true }).tap();
   await expect(controls.getByRole("button", { name: "Reset", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#f5f1e8");

@@ -1,7 +1,7 @@
 {
   "presets": {
     "title": "Presets",
-    "help": "Preview and apply a preset without changing your grid size or content. Use Settings below the applied preset to customize it. Changes are remembered in this browser.",
+    "help": "Preview and apply a preset without changing your grid size or content. Use Settings in the applied preset card to customize it. Changes are remembered in this browser.",
     "starters": "Starting points",
     "appliedNamed": "{name} is applied",
     "applied": "Applied",

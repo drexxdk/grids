@@ -25,14 +25,15 @@ export function PresetsPanel({ previewId, currentSettings, appliedPresetId, cust
           const applied = appliedPresetId === choice.id || (appliedPresetId === null && samePresetSettings(choice.settings, currentSettings));
           const modified = !samePresetSettings(starter.settings, applied ? currentSettings : choice.settings);
           const metadata = [applied ? t("presets.applied") : "", modified ? t("presets.modified") : ""].filter(Boolean).join(" / ");
-          return <li key={choice.id} className="flex min-w-0 flex-col gap-2">
+          return <li key={choice.id} data-applied={applied ? "" : undefined}
+            className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-solid border-(--line) bg-(--bg) data-applied:border-(--accent) data-applied:bg-(--selected) has-[button:enabled:hover]:border-(--accent) focus-within:border-(--accent)">
             <button type="button" disabled={disabled}
               aria-label={t("presets.previewNamed", { name: choice.name })}
               title={applied ? t("presets.appliedNamed", { name: choice.name }) : choice.name}
               aria-pressed={previewId === choice.id}
               data-applied={applied ? "" : undefined}
               data-customized={modified ? "" : undefined}
-              className="flex min-h-34 w-full flex-col items-center justify-center gap-2 rounded-lg border border-solid border-(--line) bg-(--bg) p-2 text-center text-(--text) data-applied:border-(--accent) data-applied:bg-(--selected) enabled:hover:border-(--accent) focus-visible:outline-2 focus-visible:outline-(--accent) disabled:opacity-50"
+              className="flex min-h-34 w-full flex-1 flex-col items-center justify-center gap-2 border-0 bg-transparent p-2 text-center text-(--text) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-50"
               onClick={() => onPreview(choice)}
             >
               <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-solid border-(--line)"
@@ -44,12 +45,15 @@ export function PresetsPanel({ previewId, currentSettings, appliedPresetId, cust
                 {metadata && <span className={`mt-1 block text-xs ${applied ? "text-(--accent)" : "text-(--muted)"}`}>{metadata}</span>}
               </span>
             </button>
-            {applied && <div role="group" aria-label={t("presets.controlsNamed", { name: choice.name })} className="flex flex-col gap-2">
-              <Button disabled={disabled} className="min-h-11 w-full gap-1 px-2 text-xs" onClick={() => onSettings(choice)}>
-                <Settings2 aria-hidden="true" className="size-4!" />{t("editor.settings")}
+            {applied && <div role="group" aria-label={t("presets.controlsNamed", { name: choice.name })}
+              className="flex shrink-0 divide-x divide-(--line) border-0 border-t border-solid border-(--line)">
+              <Button disabled={disabled} aria-label={t("editor.settings")} title={t("editor.settings")}
+                className="min-h-11 min-w-0 flex-1 rounded-none! border-0 p-0! focus-visible:-outline-offset-2!" onClick={() => onSettings(choice)}>
+                <Settings2 aria-hidden="true" className="size-5!" />
               </Button>
-              {modified && <Button disabled={disabled} className="min-h-11 w-full gap-1 px-2 text-xs" onClick={() => onReset(original)}>
-                <RotateCcw aria-hidden="true" className="size-4!" />{t("presets.reset")}
+              {modified && <Button disabled={disabled} aria-label={t("presets.reset")} title={t("presets.reset")}
+                className="min-h-11 min-w-0 flex-1 rounded-none! border-0 p-0! focus-visible:-outline-offset-2!" onClick={() => onReset(original)}>
+                <RotateCcw aria-hidden="true" className="size-5!" />
               </Button>}
             </div>}
           </li>;
