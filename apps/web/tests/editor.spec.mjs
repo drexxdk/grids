@@ -4565,9 +4565,11 @@ test("export combines settings and downloads on desktop and mobile", async ({
     await expect(dialog).toBeVisible();
     await selectField(page, "format", format);
     await selectField(page, "resolution", "150");
-    if (format === "image/png")
-      await expect(dialog.locator("#quality")).toBeDisabled();
-    else {
+    if (format === "image/png") {
+      await expect(dialog.locator("#quality")).toHaveCount(0);
+      await expect(dialog.locator('label[for="quality"]')).toHaveCount(0);
+      await expect(dialog.locator("#quality-value")).toHaveCount(0);
+    } else {
       await expect(dialog.locator("#quality")).toBeEnabled();
       await dialog.locator("#quality").fill("60");
     }
@@ -4592,10 +4594,15 @@ test("export combines settings and downloads on desktop and mobile", async ({
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   await selectField(page, "format", "image/png");
-  await expect(dialog.locator("#quality")).toBeDisabled();
+  await expect(dialog.locator("#quality")).toHaveCount(0);
+  await expect(dialog.locator('label[for="quality"]')).toHaveCount(0);
+  await expect(dialog.locator("#quality-value")).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("export-dialog-mobile.png"),
   });
+  await selectField(page, "format", "image/jpeg");
+  await expect(dialog.locator("#quality")).toBeEnabled();
+  await expect(dialog.locator("#quality")).toHaveValue("60");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();

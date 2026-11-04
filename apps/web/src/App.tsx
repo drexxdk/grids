@@ -2004,17 +2004,18 @@ export default function App() {
               patchExport({ resolution: Number(resolution) })
             }
           />
-          <PercentField
-            id="quality"
-            label={t("export.quality")}
-            outputId="quality-value"
-            min={50}
-            max={100}
-            step={1}
-            value={quality}
-            disabled={format === "image/png"}
-            onChange={(quality) => patchExport({ quality })}
-          />
+          {format !== "image/png" && (
+            <PercentField
+              id="quality"
+              label={t("export.quality")}
+              outputId="quality-value"
+              min={50}
+              max={100}
+              step={1}
+              value={quality}
+              onChange={(quality) => patchExport({ quality })}
+            />
+          )}
           <p className="text-sm text-(--muted)">
             {size.width} × {size.height}
             {t("export.pixelUnit")}
