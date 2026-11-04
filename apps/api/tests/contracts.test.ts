@@ -120,7 +120,7 @@ test("all three code exchanges validate provider identities and discard access t
 test("production configuration requires HTTPS and complete credentials", () => {
   const production = {
     DATABASE_URL: "test", NODE_ENV: "production",
-    WEB_URL: "https://gritz.pages.dev/", PUBLIC_API_URL: "https://gritz.pages.dev",
+    WEB_URL: "https://gridz.pages.dev/", PUBLIC_API_URL: "https://gridz.pages.dev",
   };
   assert.throws(() => readConfig(production), /GRIDS_PROXY_SECRET/);
   assert.throws(() => readConfig({ ...production, GRIDS_PROXY_SECRET: "short" }));

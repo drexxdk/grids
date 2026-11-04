@@ -4,7 +4,7 @@ import { onRequest } from "../../../functions/api/[[path]].js";
 
 const env = {
   GRIDS_API_URL: "https://upstream.example/grids-api",
-  GRIDS_PUBLIC_ORIGIN: "https://gritz.pages.dev",
+  GRIDS_PUBLIC_ORIGIN: "https://gridz.pages.dev",
   GRIDS_PROXY_SECRET: "a".repeat(64),
 };
 const url = `${env.GRIDS_PUBLIC_ORIGIN}/api`;
@@ -68,7 +68,7 @@ test("Pages streams JSON writes and retains origin and CSRF headers", async (t) 
 test("Pages blocks previews, missing bindings, unsafe configuration and non-API paths without contacting upstream", async (t) => {
   const forwarded = t.mock.method(globalThis, "fetch", async () => { throw new Error("Must not fetch"); });
   for (const [requestUrl, bindings, status] of [
-    ["https://preview.gritz.pages.dev/api/session", env, 403],
+    ["https://preview.gridz.pages.dev/api/session", env, 403],
     [`${url}/session`, { ...env, GRIDS_PROXY_SECRET: undefined }, 503],
     [`${url}/session`, { ...env, GRIDS_API_URL: "http://upstream.example" }, 503],
     [`${url}/session`, { ...env, GRIDS_API_URL: "invalid" }, 503],

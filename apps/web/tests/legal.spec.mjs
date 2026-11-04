@@ -39,7 +39,7 @@ for (const width of [320, 1280]) {
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
       await expect(page.locator("main").getByRole("link", { name: "incrementish@gmail.com" }).first())
         .toHaveAttribute("href", "mailto:incrementish@gmail.com");
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://gritz.pages.dev/${path}`);
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://gridz.pages.dev/${path}`);
       for (const name of ["Terms", "Privacy", "Support"]) {
         await expect(page.getByRole("navigation").getByRole("link", { name, exact: true })).toBeVisible();
       }

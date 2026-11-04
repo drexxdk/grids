@@ -10089,11 +10089,11 @@ test("page metadata assets resolve and desktop library keeps mouse dragging", as
   }
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     "href",
-    "https://gritz.pages.dev/",
+    "https://gridz.pages.dev/",
   );
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
-    "https://gritz.pages.dev/assets/grids-icon.png",
+    "https://gridz.pages.dev/assets/grids-icon.png",
   );
   for (const relation of ["icon", "apple-touch-icon"]) {
     const url = await page

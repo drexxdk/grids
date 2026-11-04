@@ -57,17 +57,17 @@ Signing out invalidates the server session but deliberately leaves the browser d
 
 ### Public Policies And Discord
 
-Public, JavaScript-independent pages are available at [Terms of Service](https://gritz.pages.dev/terms), [Privacy Policy](https://gritz.pages.dev/privacy) and [Support/data deletion](https://gritz.pages.dev/support). Their source lives in `apps/web/public` and is also bundled into the hamburger menu's **Information** modal, with Terms, Privacy and Support tabs. Internal policy links switch tabs without leaving the editor; external policy links open separately. The modal works without the account API or a network connection. Cloudflare serves the standalone `.html` pages at clean URLs for providers and direct access. The service worker must not replace these pages with the editor shell.
+Public, JavaScript-independent pages are available at [Terms of Service](https://gridz.pages.dev/terms), [Privacy Policy](https://gridz.pages.dev/privacy) and [Support/data deletion](https://gridz.pages.dev/support). Their source lives in `apps/web/public` and is also bundled into the hamburger menu's **Information** modal, with Terms, Privacy and Support tabs. Internal policy links switch tabs without leaving the editor; external policy links open separately. The modal works without the account API or a network connection. Cloudflare serves the standalone `.html` pages at clean URLs for providers and direct access. The service worker must not replace these pages with the editor shell.
 
-Shareable editor links open the corresponding modal tab automatically: [Terms](https://gritz.pages.dev/?info=terms), [Privacy](https://gritz.pages.dev/?info=privacy) and [Support](https://gritz.pages.dev/?info=support). Switching tabs updates `info`; closing the modal removes it while preserving other parameters and fragments. This explicit information link is separate from locally saved editor navigation. Keep the standalone policy URLs above in Discord, Google and Facebook settings so their reviewers can read the documents without JavaScript or signing in.
+Shareable editor links open the corresponding modal tab automatically: [Terms](https://gridz.pages.dev/?info=terms), [Privacy](https://gridz.pages.dev/?info=privacy) and [Support](https://gridz.pages.dev/?info=support). Switching tabs updates `info`; closing the modal removes it while preserving other parameters and fragments. This explicit information link is separate from locally saved editor navigation. Keep the standalone policy URLs above in Discord, Google and Facebook settings so their reviewers can read the documents without JavaScript or signing in.
 
 Discord uses server-side authorization-code sign-in with PKCE and only the `identify` scope. In the Discord Developer Portal, configure:
 
-- Terms of Service URL: `https://gritz.pages.dev/terms`
-- Privacy Policy URL: `https://gritz.pages.dev/privacy`
-- Production OAuth2 redirect: `https://gritz.pages.dev/api/auth/discord/callback`
+- Terms of Service URL: `https://gridz.pages.dev/terms`
+- Privacy Policy URL: `https://gridz.pages.dev/privacy`
+- Production OAuth2 redirect: `https://gridz.pages.dev/api/auth/discord/callback`
 - Development OAuth2 redirect: `http://localhost:5841/api/auth/discord/callback`
-- Support URL, if requested: `https://gritz.pages.dev/support`
+- Support URL, if requested: `https://gridz.pages.dev/support`
 
 Keep **Public Client** disabled: the API, not the browser, holds `DISCORD_CLIENT_SECRET`. No bot, bot permissions, interactions endpoint or linked-role verification endpoint is required. The URL generator is not the application's login flow; use Gridz's Continue with Discord action. Store `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` only in ignored local `.env` and protected production `deploy/api.env`, then restart the API. Do not put either secret into `VITE_*` variables or source control. Provider deauthorization does not delete Gridz data; the support page explains both steps.
 
@@ -118,7 +118,9 @@ All editor document changes use typed commands and a React reducer: grid/cell/ex
 
 ## Deploy To Cloudflare Pages
 
-The Git-connected Cloudflare Pages project is `gritz`, at **https://gritz.pages.dev/**. Production builds follow `main` in `incrementish/grids`, using repository root, Node 22, build command `npm run build:web` and output `apps/web/dist`. GitHub Actions independently runs builds, model/browser tests and API/Postgres tests; it no longer publishes a second GitHub Pages site. Pages deploys successful builds without waiting for those independent tests.
+The Git-connected Cloudflare Pages project is `gridz`, at **https://gridz.pages.dev/**. Production builds follow `main` in `incrementish/grids`, using repository root, Node 22, build command `npm run build:web` and output `apps/web/dist`. GitHub Actions independently runs builds, model/browser tests and API/Postgres tests; it no longer publishes a second GitHub Pages site. Pages deploys successful builds without waiting for those independent tests.
+
+Renaming a Pages project does not change its assigned `pages.dev` subdomain. The previous project, now named `grids`, still owns `gritz.pages.dev`; the `gridz` project was created separately to obtain the correct address. Keep the legacy site available for recovering browser-local drafts/uploads rather than redirecting users away from their old origin.
 
 Root [functions/api/[[path]].ts](functions/api/[[path]].ts) forwards only `/api` requests to the fixed Oracle upstream. All browser API calls remain same-origin; do not set `VITE_API_URL` to the DuckDNS host. This preserves secure SameSite=Lax cookies without relying on third-party cookies. Functions stream API JSON and redirects, never image files. [wrangler.jsonc](wrangler.jsonc) defines public production bindings. Set `GRIDS_PROXY_SECRET` as a **production-only encrypted Pages secret**, identical to the API secret. Preview builds are disabled and the function independently rejects other origins; do not give previews production secrets. Use separate infrastructure/secrets for preview accounts.
 
@@ -130,7 +132,7 @@ The isolated Oracle stack is `/opt/grids`, Compose project `grids-prod`. Its pri
 2. With `umask 077`, copy [deploy/stack.env.example](deploy/stack.env.example) to `deploy/stack.env` and [deploy/api.env.example](deploy/api.env.example) to `deploy/api.env`. Generate independent database and proxy secrets with `openssl rand -hex 32`. Never commit these files. The stack password must remain hexadecimal because Compose constructs `DATABASE_URL` from it.
 3. Ensure Chatter's tracked API Caddy block has `import extras/*.caddy`. Its deploy copies files without deleting the unmanaged `extras` directory, preserving Gridz routing.
 4. Run `TAG=<release-id> bash deploy/deploy.sh`. It builds the ARM-compatible non-root API image, backs up an already-running Gridz database before migration, waits for both containers to be healthy, validates Caddy and reloads only Caddy. It does not restart Chatter's application or database containers.
-5. Upload the proxy secret to Pages without displaying it: `npm exec -- wrangler pages secret put GRIDS_PROXY_SECRET --project-name gritz`. Set it only for production in the dashboard/API. Redeploy Pages after changing secrets or function bindings.
+5. Upload the proxy secret to Pages without displaying it: `npm exec -- wrangler pages secret put GRIDS_PROXY_SECRET --project-name gridz`. Set it only for production in the dashboard/API. Redeploy Pages after changing secrets or function bindings.
 
 The API applies transactional migrations on startup. Protected SQL backups are stored in `/opt/grids/backups`; copy them to separate protected storage, define retention and test restoration before relying on them. A named volume alone is not a backup. Request-rate limits are process-local; keep one API process until introducing a shared limiter.
 
@@ -138,11 +140,11 @@ The API applies transactional migrations on startup. Protected SQL backups are s
 
 Create separate provider applications and put their paired credentials only in `/opt/grids/deploy/api.env`, then recreate the API with `docker compose --env-file deploy/stack.env -f docker-compose.prod.yml up -d --wait api`. Unconfigured providers remain hidden.
 
-- Google: `https://gritz.pages.dev/api/auth/google/callback`
-- Facebook: `https://gritz.pages.dev/api/auth/facebook/callback`
-- Discord: `https://gritz.pages.dev/api/auth/discord/callback`
+- Google: `https://gridz.pages.dev/api/auth/google/callback`
+- Facebook: `https://gridz.pages.dev/api/auth/facebook/callback`
+- Discord: `https://gridz.pages.dev/api/auth/discord/callback`
 
-Google's authorized JavaScript origin is `https://gritz.pages.dev`. Register the exact callbacks above and complete each provider's consent/test-user/app-review requirements. Actual provider consent flows require configured credentials and manual checks.
+Google's authorized JavaScript origin is `https://gridz.pages.dev`. Register the exact callbacks above and complete each provider's consent/test-user/app-review requirements. Actual provider consent flows require configured credentials and manual checks.
 
 When changing the domain, update `GRIDS_PUBLIC_ORIGIN` in Wrangler, API `WEB_URL`/`PUBLIC_API_URL`, page metadata and all provider-console URLs together, then redeploy both services. Browser drafts/uploads belong to the old origin and do not automatically migrate to a new domain. Local Compose remains development-only.
 
