@@ -9,6 +9,7 @@ let model;
 let providers;
 let cache;
 let navigation;
+let presets;
 async function loadModule(relativePath) {
   const result = await build({
     configFile: false,
@@ -30,12 +31,67 @@ async function loadModule(relativePath) {
   );
 }
 test.beforeAll(async () => {
-  [model, providers, cache, navigation] = await Promise.all([
+  [model, providers, cache, navigation, presets] = await Promise.all([
     loadModule("../src/model.ts"),
     loadModule("../src/providers/index.ts"),
     loadModule("../src/providers/cache.ts"),
     loadModule("../src/browser/navigation.ts"),
+    loadModule("../src/presets.ts"),
   ]);
+});
+
+test("preset starters adapt to current layouts and sample previews stay separate from content", () => {
+  expect(presets.starterPresets).toHaveLength(24);
+  expect(new Set(presets.starterPresets.map((preset) => preset.id)).size).toBe(24);
+  const draft = model.makeWorkspace();
+  draft.assets = [{ id: crypto.randomUUID(), title: "Keep me", category: "local", src: "blob:local" }];
+  draft.grid.cells[0] = { ...draft.grid.cells[0], assetId: draft.assets[0].id, title: "My caption" };
+  draft.grid.cells[8] = { ...draft.grid.cells[8], assetId: draft.assets[0].id, title: "Keep in overflow",
+    crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } };
+  const original = structuredClone(draft);
+  for (const starter of presets.starterPresets) {
+    expect(model.editorSettingsSchema.safeParse(starter.settings).success).toBe(true);
+    const choice = { ...starter, name: starter.nameKey };
+    for (const [rows, columns] of [[1, 1], [2, 5], [5, 2], [6, 4]]) {
+      const current = model.applyEditorSettings(draft, { ...model.getEditorSettings(draft), layout: { rows, columns } });
+      const settings = presets.presetSettingsForLayout(starter.settings, current.grid);
+      expect(settings.layout).toEqual({ rows, columns });
+      expect(settings.style).toEqual(starter.settings.style);
+      const preview = presets.presetPreviewWorkspace(choice, current.grid);
+      expect(preview.grid).toMatchObject({ rows, columns });
+      expect(preview.grid.cells).toHaveLength(rows * columns);
+      expect(preview.grid.cells.every((cell) => preview.assets.some((asset) => asset.id === cell.assetId))).toBe(true);
+      expect(preview.assets.every((asset) => asset.category === "preset-preview")).toBe(true);
+      const applied = model.applyEditorSettings(current, settings);
+      expect(applied.grid).toMatchObject({ rows, columns });
+      expect(applied.assets).toEqual(original.assets);
+      expect(applied.grid.cells).toEqual(current.grid.cells);
+      expect(applied.grid.overflow).toEqual(current.grid.overflow);
+      const retained = [...applied.grid.cells, ...applied.grid.overflow.map((item) => item.cell)];
+      expect(retained).toContainEqual(original.grid.cells[0]);
+      expect(retained).toContainEqual(original.grid.cells[8]);
+    }
+    expect(draft).toEqual(original);
+  }
+  expect(navigation.readNavigation(navigation.parseEditorState({}), new URL("https://example.com/?panel=presets")).selectedPanel).toBe(2);
+});
+
+test("preset palettes theme headings, card surfaces and captions with readable colors", () => {
+  const luminance = (color) => [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => {
+    const channel = parseInt(color.slice(1 + index * 2, 3 + index * 2), 16) / 255;
+    return sum + weight * (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  }, 0);
+  const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) /
+    (Math.min(luminance(a), luminance(b)) + 0.05);
+  for (const { id, settings: { style } } of presets.starterPresets) {
+    expect(style.headingBackgroundColor, id).toBe(style.background);
+    expect(style.cellBackgroundColor, id).toMatch(/^#[0-9a-f]{6}$/);
+    expect(contrast(style.headingTextColor, style.headingBackgroundColor), `${id}: heading`).toBeGreaterThanOrEqual(4.5);
+    const captionBackground = style.captionPlacement === "overlay" ? style.captionOverlayColor : style.cellBackgroundColor;
+    expect(contrast(style.cellTextColor, captionBackground), `${id}: captions`).toBeGreaterThanOrEqual(4.5);
+    if (luminance(style.background) >= 0.5)
+      expect(luminance(style.cellBackgroundColor), `${id}: light cards`).toBeGreaterThanOrEqual(0.5);
+  }
 });
 
 test("editor navigation migrates legacy URLs and restores browser-local history", () => {

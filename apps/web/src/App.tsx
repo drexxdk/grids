@@ -7,6 +7,7 @@ import {
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -53,6 +54,9 @@ import {
   type CardDragVisual,
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
+import { PresetsPanel } from "./components/PresetsPanel";
+import { presetPreviewWorkspace, presetSettingsForLayout, type PresetChoice } from "./presets";
+import { isLightCanvasColor } from "./canvasTheme";
 import {
   LibraryImage,
   LibraryImagePlaceholder,
@@ -80,6 +84,8 @@ import {
   documentReducer,
   publishers,
   getEditorSettings,
+  editorSettingsSchema,
+  applyEditorSettings,
   cellGeometry,
   headingGeometry,
   gridSpacing,
@@ -117,7 +123,7 @@ function BoardHeading({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const fieldClass =
-    "board-heading-text border-0! rounded-none! bg-transparent p-(--heading-padding)! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-(--muted)";
+    "board-heading-text border-0! rounded-none! bg-transparent p-(--heading-padding)! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-current placeholder:opacity-70";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
@@ -160,7 +166,7 @@ function BoardHeading({
   return (
     <h2
       ref={headingRef}
-      className="board-export-heading group relative overflow-hidden p-0! after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-solid after:border-transparent after:transition-colors hover:after:border-(--accent) focus-within:after:border-(--accent)"
+      className="board-export-heading group relative overflow-hidden p-0! after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-solid after:border-transparent after:transition-colors hover:after:border-(--heading-feedback-color) focus-within:after:border-(--heading-feedback-color)"
       style={
         {
           borderRadius: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${(board.cornerRadius ?? 12.5) / 100})`,
@@ -168,6 +174,8 @@ function BoardHeading({
             board.headingFont,
             board.headingFontWeight,
           ),
+          textShadow: board.publisher === "none" ? "none" : undefined,
+          "--heading-feedback-color": isLightCanvasColor(board.headingBackgroundColor ?? board.background) ? "#202325" : "var(--accent)",
           height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).height})`,
           "--heading-padding": `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).padding})`,
           ...(!board.heading.trim()
@@ -223,7 +231,7 @@ function BoardHeading({
           ) : (
             <span
               data-heading-placeholder
-              className="normal-case text-(--muted)"
+              className="normal-case text-inherit opacity-70"
             >
               {t("editor.headingPlaceholder")}
             </span>
@@ -247,6 +255,32 @@ export default function App() {
   const [conflict, setConflict] = useState(false);
   const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [presetPreview, setPresetPreview] = useState<{ choice: PresetChoice; key: string } | null>(null);
+  const [selectedPanel] = useEditorState("selectedPanel");
+  const [sidebarOpen] = useEditorState("sidebarOpen");
+  const [appliedPreset, setAppliedPreset] = useEditorState("appliedPreset");
+  const previewWorkspace = useMemo(
+    () => presetPreview ? presetPreviewWorkspace(presetPreview.choice, workspace.grid) : null,
+    [presetPreview?.choice, workspace.grid.rows, workspace.grid.columns],
+  );
+  const displayAssets = previewWorkspace?.assets ?? workspace.assets;
+  function applyPreset(choice: PresetChoice) {
+    dispatchDocument({ type: "workspace/restore", workspace: applyEditorSettings(workspace, presetSettingsForLayout(choice.settings, workspace.grid)) });
+    setAppliedPreset({ id: choice.id, settings: editorSettingsSchema.parse(choice.settings), updatedAt: choice.updatedAt });
+    setPresetPreview(null);
+    setHeadingEditing(false);
+  }
+  useEffect(() => {
+    if (selectedPanel !== 2 || (!sidebarOpen && !window.matchMedia("(max-width: 900px)").matches))
+      setPresetPreview(null);
+  }, [selectedPanel, sidebarOpen]);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPresetPreview(null);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
   const [canSave, setCanSave] = useState(false);
   const activeAssets = workspace.assets.filter(
     (asset) => asset.trashedAt === undefined && !asset.libraryHidden,
@@ -262,6 +296,9 @@ export default function App() {
   };
   const [accountView, setAccountView] = useState<AccountView | null>(readAccountView);
   useEffect(() => {
+    if (accountView) setPresetPreview(null);
+  }, [accountView]);
+  useEffect(() => {
     const url = new URL(location.href);
     if (accountView !== "information") url.searchParams.delete("info");
     history.replaceState({ ...history.state, gridsAccountView: accountView }, "", url);
@@ -276,6 +313,7 @@ export default function App() {
   const signOutInFlight = useRef(false);
   const accountButton = useRef<HTMLButtonElement>(null);
   function openAccountView(view: AccountView) {
+    setPresetPreview(null);
     if (accountView && accountView !== view) {
       queuedAccountView.current = view;
       setAccountView(null);
@@ -398,7 +436,7 @@ export default function App() {
   const [resetOpen, setResetOpen] = useState(false);
   const resetGridButton = useRef<HTMLButtonElement>(null);
   const [resetGridOpen, setResetGridOpen] = useState(false);
-  const board = workspace.grid;
+  const board = previewWorkspace?.grid ?? workspace.grid;
   useLayoutEffect(() => {
     const cleaned = removeCreditRequiredImages(workspace);
     if (cleaned === workspace) return;
@@ -459,7 +497,7 @@ export default function App() {
       const headingAreaRatio = board.headingVisible
         ? headingRatio + headingGapRatio + paddingRatio
         : 0;
-      const assetIds = new Set(workspace.assets.map((asset) => asset.id));
+      const assetIds = new Set(displayAssets.map((asset) => asset.id));
       const rowHeights = Array.from({ length: board.rows }, (_, row) => {
         const hasImage = board.cells
           .slice(row * board.columns, (row + 1) * board.columns)
@@ -557,14 +595,14 @@ export default function App() {
     board.headingFontSize,
     board.headingPadding,
     board.cells,
-    workspace.assets,
+    displayAssets,
     captionRows,
   ]);
   useLayoutEffect(() => {
     let active = true;
     const update = () => {
       if (active)
-        setCaptionRows(sharedCaptionRows(board, workspace.assets, true));
+        setCaptionRows(sharedCaptionRows(board, displayAssets, true));
     };
     update();
     void document.fonts
@@ -580,7 +618,7 @@ export default function App() {
     board.cellFont,
     board.cellFontSize,
     board.cellFontWeight,
-    workspace.assets,
+    displayAssets,
   ]);
   const palette = publishers[board.publisher];
   const size = dimensions(
@@ -1092,6 +1130,8 @@ export default function App() {
       />
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
+          previewing={presetPreview !== null}
+          previewId={presetPreview?.key}
           canvasControls={
             compactCanvasControls ? (
               <>
@@ -1135,7 +1175,7 @@ export default function App() {
               title={t("export.title")}
               aria-label={t("export.title")}
               className="button secondary h-11! shrink-0 gap-2! px-3! py-0! group-data-compact-export/header:size-11! group-data-compact-export/header:gap-0! group-data-compact-export/header:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
-              disabled={exporting}
+              disabled={exporting || presetPreview !== null}
               onClick={() => setExportOpen(true)}
             >
               <Download />
@@ -1329,11 +1369,22 @@ export default function App() {
                   </Button>
                 </div>
               )}
+              {presetPreview && <div role="status" data-preset-preview
+                className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) bg-(--panel) p-3">
+                <div className="min-w-0 text-sm">
+                  <strong>{t("presets.previewing", { name: presetPreview.choice.name })}</strong>
+                  <p className="m-0 text-xs text-(--muted)">{t("presets.samples")}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => applyPreset(presetPreview.choice)}>{t("presets.apply")}</Button>
+                  <Button onClick={() => setPresetPreview(null)}>{t("presets.close")}</Button>
+                </div>
+              </div>}
               <div
                 data-workspace-scroll
                 className="relative min-h-0 flex-1 overflow-auto overscroll-contain scrollbar-gutter-stable"
               >
-                <div className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!">
+                <div inert={presetPreview !== null} className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!">
                   <GridResizer
                     ref={setPreviewFrame}
                     bottomControls={
@@ -1422,7 +1473,7 @@ export default function App() {
                       {board.cells
                         .slice(0, board.rows * board.columns)
                         .map((item, index) => {
-                          const asset = workspace.assets.find(
+                          const asset = displayAssets.find(
                             (asset) => asset.id === item.assetId,
                           );
                           const isSource =
@@ -1917,6 +1968,17 @@ export default function App() {
               </div>
             </aside>
           )}
+          {() => accountView ? null : <PresetsPanel
+            session={account.session}
+            currentSettings={getEditorSettings(workspace)}
+            appliedPreset={appliedPreset}
+            previewId={presetPreview?.choice.id}
+            disabled={!loaded || conflict || importProgress !== null || exporting}
+            onPreview={(choice) => {
+              setHeadingEditing(false);
+              setPresetPreview({ choice, key: crypto.randomUUID() });
+            }}
+          />}
         </EditorLayout>
       </main>
       {cardDrag?.visual &&

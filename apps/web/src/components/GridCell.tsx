@@ -38,6 +38,7 @@ import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 import { CardFrame } from "./CardFrame";
+import { isLightCanvasColor } from "../canvasTheme";
 
 const cardToolButtonStyles = cva(
   "pointer-events-auto absolute p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!",
@@ -157,6 +158,7 @@ export function GridCell({
 }) {
   const coarsePointer = useCoarsePointer();
   const dropPlaceholder = !asset && !library;
+  const darkDropFrame = !library && isLightCanvasColor(gridStyle.background);
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
@@ -450,13 +452,16 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--accent)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--card-frame-hover-color)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
           "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
           borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
           "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
+          "--card-placeholder-color": isLightCanvasColor(gridStyle.cellBackgroundColor ?? "#111315") ? "#202325" : "#eef1f3",
+          "--card-frame-hover-color": darkDropFrame ? "#202325" : "var(--accent)",
+          "--card-drop-color": darkDropFrame ? "#202325" : "var(--mint)",
           backgroundColor: "var(--card-background)",
           borderColor: "var(--line)",
         } as React.CSSProperties

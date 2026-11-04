@@ -1,5 +1,6 @@
 import {
   Images,
+  LayoutGrid,
   PanelRightOpen,
   PanelsTopLeft,
   Settings2,
@@ -32,14 +33,19 @@ export function EditorLayout({
   actions,
   canvasControls,
   status,
+  previewId,
+  previewing = false,
 }: {
   actions: ReactNode;
   canvasControls: ReactNode;
   status?: ReactNode;
+  previewId?: string;
+  previewing?: boolean;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
     (actions: ReactNode) => ReactNode,
     (actions: ReactNode) => ReactNode,
+    () => ReactNode,
   ];
 }) {
   const { t } = useTranslation();
@@ -50,8 +56,12 @@ export function EditorLayout({
     () => false,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (compact && previewId) setSettingsOpen(false);
+  }, [compact, previewId]);
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
+  const panelOrder = compact ? [2, 1] : [2, 0, 1];
   const panelsId = useId();
   const settingsButton = useRef<HTMLButtonElement>(null);
   const headerElement = useRef<HTMLElement>(null);
@@ -183,7 +193,7 @@ export function EditorLayout({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [compact, settingsOpen]);
-  const [library, workspace, settings] = children;
+  const [library, workspace, settings, presets] = children;
   const brand = (
     <a className="brand shrink-0" href="./">
       <span className="brand-mark">
@@ -205,6 +215,7 @@ export function EditorLayout({
       </div>
       <div
         ref={resizeControls}
+        inert={previewing}
         data-canvas-controls
         className={`flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden scrollbar-gutter-stable px-3 ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
       >
@@ -326,7 +337,7 @@ export function EditorLayout({
                       {brand}
                     </div>
                   )}
-                  {!compact && (
+                  {(
                     <div
                       data-panel-controls
                       className="flex shrink-0 flex-col gap-2 p-4"
@@ -334,9 +345,13 @@ export function EditorLayout({
                       <ImageTabs
                         id={panelsId}
                         label={t("editor.panels")}
-                        selectedIndex={selectedPanel}
-                        onChange={setSelectedPanel}
-                        tabs={[
+                        selectedIndex={panelOrder.indexOf(compact && selectedPanel === 0 ? 1 : selectedPanel)}
+                        onChange={(index) => setSelectedPanel(panelOrder[index]!)}
+                        tabs={compact ? [
+                          { label: t("presets.title"), icon: LayoutGrid },
+                          { label: t("editor.settings"), icon: Settings2 },
+                        ] : [
+                          { label: t("presets.title"), icon: LayoutGrid },
                           { label: t("editor.images"), icon: Images },
                           { label: t("editor.settings"), icon: Settings2 },
                         ]}
@@ -351,8 +366,8 @@ export function EditorLayout({
                   {!compact && (
                     <div
                       role="tabpanel"
-                      id={`${panelsId}-panel-0`}
-                      aria-labelledby={`${panelsId}-tab-0`}
+                      id={`${panelsId}-panel-1`}
+                      aria-labelledby={`${panelsId}-tab-1`}
                       hidden={selectedPanel !== 0}
                       className="min-h-0"
                     >
@@ -360,14 +375,20 @@ export function EditorLayout({
                     </div>
                   )}
                   <div
-                    role={compact ? undefined : "tabpanel"}
-                    id={`${panelsId}-panel-1`}
-                    aria-labelledby={compact ? undefined : `${panelsId}-tab-1`}
-                    hidden={!compact && selectedPanel !== 1}
+                    role="tabpanel"
+                    id={`${panelsId}-panel-${compact ? 1 : 2}`}
+                    aria-labelledby={`${panelsId}-tab-${compact ? 1 : 2}`}
+                    hidden={compact ? selectedPanel === 2 : selectedPanel !== 1}
                     className="min-h-0"
                   >
                     {settings(null)}
                   </div>
+                  {selectedPanel === 2 && <div
+                    role="tabpanel"
+                    id={`${panelsId}-panel-0`}
+                    aria-labelledby={`${panelsId}-tab-0`}
+                    className="min-h-0"
+                  >{presets()}</div>}
                 </div>
               </aside>
             </MotionDiv>

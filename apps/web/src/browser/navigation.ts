@@ -2,6 +2,7 @@ import { useSyncExternalStore, type SetStateAction } from "react";
 import { z } from "zod";
 import { imageProviders, type ImageProvider } from "../providers";
 import { providerQueryMaxLength } from "../config";
+import { editorSettingsSchema } from "../model";
 
 const navigationHistoryLimit = 100;
 
@@ -26,8 +27,13 @@ const browsingSchema = z.object({
   history: z.array(offsetSchema).max(navigationHistoryLimit),
 });
 const stateSchema = z.object({
-  selectedPanel: z.number().int().min(0).max(1).default(0),
+  selectedPanel: z.number().int().min(0).max(2).default(0),
   sidebarOpen: z.boolean().default(true),
+  appliedPreset: z.object({
+    id: z.string().min(1).max(200),
+    settings: editorSettingsSchema,
+    updatedAt: z.string().optional(),
+  }).nullable().default(null),
   librarySource: sourceSchema.default("imported"),
   pickerSource: sourceSchema.default("imported"),
   browsing: z.record(z.string().max(60), browsingSchema).default({}),
@@ -103,7 +109,7 @@ export function readNavigation(
   const source = parsedSource.success ? parsedSource.data : "imported";
   const next = {
     ...state,
-    selectedPanel: panel === "settings" ? (1 as const) : (0 as const),
+    selectedPanel: panel === "presets" ? 2 : panel === "settings" ? 1 : 0,
     librarySource: source,
   };
   const provider = imageProviders.find((item) => item.id === source);

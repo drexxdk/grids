@@ -14,6 +14,7 @@ import {
   toSavedGrid,
 } from "@grids/contracts/cloud";
 import { applyEditorSettings, getEditorSettings, imageLicenseSchema, type Workspace } from "../model";
+import { presetSettingsForLayout } from "../presets";
 import { apiRequest } from "../browser/api";
 import type { AccountSession } from "../browser/account";
 import { t } from "../i18n";
@@ -110,7 +111,8 @@ export function SavedGridsDialog({
   }
   async function applyPreset(item: PresetSummary) {
     const saved = await apiRequest(`/presets/${item.id}`, presetItemSchema);
-    onRestore(applyEditorSettings(latestWorkspace.current, saved.settings));
+    const current = latestWorkspace.current;
+    onRestore(applyEditorSettings(current, presetSettingsForLayout(saved.settings, current.grid)));
     toast.success(t("account.applied"));
     onClose();
   }

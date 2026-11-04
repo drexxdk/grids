@@ -509,11 +509,11 @@ h1 {
 .image-card {
   --card-radius: var(--board-item-radius);
   --card-frame-edge: 0.25cqw;
-  --card-frame-stroke: 0.5cqw;
+  --card-frame-stroke: max(1px, 0.5cqw);
   --card-frame-gap: clamp(6px, 3cqw, 12px);
   --card-frame-dash: clamp(3px, 1.5cqw, 6px);
   --card-frame-dash-gap: clamp(4px, 2cqw, 8px);
-  --card-drop-stroke: 1cqw;
+  --card-drop-stroke: max(1px, 1cqw);
 }
 .grid-cell {
   position: relative;
@@ -597,7 +597,7 @@ h1 {
   content: "";
   position: absolute;
   inset: var(--card-frame-edge);
-  border: var(--card-drop-stroke) solid var(--mint);
+  border: var(--card-drop-stroke) solid var(--card-drop-color, var(--mint));
   border-radius: max(
     0px,
     calc(var(--card-radius) - 1px - var(--card-frame-edge))
@@ -635,7 +635,7 @@ h1 {
   flex-direction: column;
   gap: 10px;
   font-size: 11px;
-  color: #7e898a;
+  color: var(--card-placeholder-color, #7e898a);
 }
 .empty-cell svg {
   width: 24px;

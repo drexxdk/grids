@@ -3052,7 +3052,7 @@ test("sidebar keyboard navigation skips selected tabs and preserves settings acr
     header.getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
 
-  await expect(commands.locator(":scope > button")).toHaveCount(2);
+  await expect(commands.locator(":scope > button")).toHaveCount(3);
   const images = commands.getByRole("tab", { name: "Images", exact: true });
   const settings = commands.getByRole("tab", { name: "Settings", exact: true });
   const exportButton = page
@@ -3133,7 +3133,7 @@ test("sidebar keyboard navigation skips selected tabs and preserves settings acr
   await canvasSettings.click();
   const mobileSettings = page.locator("[data-editor-settings]");
   await expect(mobileSettings).toBeVisible();
-  await expect(mobileSettings.getByRole("tab")).toHaveCount(0);
+  await expect(mobileSettings.getByRole("tab")).toHaveCount(2);
   await page
     .locator("[data-canvas-header]")
     .getByRole("button", { name: "Close sidebar", exact: true })
@@ -3193,7 +3193,7 @@ test("mobile settings remain reachable, preserve edits and restore focus without
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
 
-  await expect(sidebar.getByRole("tab")).toHaveCount(2);
+  await expect(sidebar.getByRole("tab")).toHaveCount(3);
   for (const width of [390, 320, 780]) {
     await setEditorViewport(page, { width, height: 844 });
     await expect(sidebar).toHaveCount(0);
@@ -3231,7 +3231,7 @@ test("mobile settings remain reachable, preserve edits and restore focus without
     const dialog = page.locator("[data-editor-settings]");
     await expect(dialog).toBeVisible();
 
-    await expect(dialog.getByRole("tab")).toHaveCount(0);
+    await expect(dialog.getByRole("tab")).toHaveCount(2);
     await expect(
       dialog.locator(".asset-panel, #sidebar-image-source"),
     ).toHaveCount(0);
@@ -3292,7 +3292,7 @@ test("mobile settings remain reachable, preserve edits and restore focus without
   await expect(
     page.getByRole("dialog", { name: "Settings", exact: true }),
   ).toHaveCount(0);
-  await expect(sidebar.getByRole("tab")).toHaveCount(2);
+  await expect(sidebar.getByRole("tab")).toHaveCount(3);
   await setEditorViewport(page, { width: 390, height: 844 });
   await expect(
     page.getByRole("dialog", { name: "Settings", exact: true }),
@@ -3719,6 +3719,19 @@ test("full grid reset confirms a clean slate and retains library images through 
       const controls = await controlsOwner
         .getByRole("button", { name: label, exact: true })
         .boundingBox();
+      const button = controlsOwner.getByRole("button", { name: label, exact: true });
+      await page.mouse.move(0, 0);
+      await expect(button.locator(label.startsWith("Add") ? ".lucide-plus" : ".lucide-minus")).toHaveCount(1);
+      expect(await button.textContent()).toBe("");
+      const colors = await button.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const reset = getComputedStyle(document.querySelector('button[aria-label="Reset grid"]'));
+        return {
+          actual: [style.backgroundColor, style.color, style.borderColor],
+          reset: [reset.backgroundColor, reset.color, reset.borderColor],
+        };
+      });
+      expect(colors.actual).toEqual(colors.reset);
       expect(
         gridBounds.x < controls.x + controls.width &&
           gridBounds.x + gridBounds.width > controls.x &&
