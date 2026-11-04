@@ -44,7 +44,6 @@ import { Modal } from "./components/ui/Modal";
 import { AccountDialog } from "./components/AccountDialog";
 import { AccountHeader } from "./components/AccountHeader";
 import { LoginDialog } from "./components/LoginDialog";
-import { SavedGridsDialog } from "./components/SavedGridsDialog";
 import { InformationDialog, readInformationPage } from "./components/InformationDialog";
 import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
@@ -55,7 +54,7 @@ import {
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
 import { PresetsPanel } from "./components/PresetsPanel";
-import { presetPreviewWorkspace, presetSettingsForLayout, type PresetChoice } from "./presets";
+import { presetPreviewWorkspace, presetSettingsForLayout, samePresetSettings, starterPresets, type PresetChoice } from "./presets";
 import { isLightCanvasColor } from "./canvasTheme";
 import {
   LibraryImage,
@@ -256,9 +255,26 @@ export default function App() {
   const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [presetPreview, setPresetPreview] = useState<{ choice: PresetChoice; key: string } | null>(null);
-  const [selectedPanel] = useEditorState("selectedPanel");
-  const [sidebarOpen] = useEditorState("sidebarOpen");
+  const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
+  const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [appliedPreset, setAppliedPreset] = useEditorState("appliedPreset");
+  const [presetCustomizations, setPresetCustomizations] = useEditorState("presetCustomizations");
+  const currentSettings = getEditorSettings(workspace);
+  const currentSettingsSignature = JSON.stringify(currentSettings);
+  useEffect(() => {
+    const starter = starterPresets.find((choice) => choice.id === appliedPreset?.id);
+    if (!loaded || conflict || !starter) return;
+    const customized = !samePresetSettings(starter.settings, currentSettings);
+    const saved = presetCustomizations[starter.id];
+    if (customized && saved && samePresetSettings(saved, currentSettings)) return;
+    if (!customized && !saved) return;
+    setPresetCustomizations((previous) => {
+      const next = { ...previous };
+      if (customized) next[starter.id] = editorSettingsSchema.parse(presetSettingsForLayout(currentSettings, starter.settings.layout));
+      else delete next[starter.id];
+      return next;
+    });
+  }, [loaded, conflict, appliedPreset?.id, currentSettingsSignature, presetCustomizations]);
   const previewWorkspace = useMemo(
     () => presetPreview ? presetPreviewWorkspace(presetPreview.choice, workspace.grid) : null,
     [presetPreview?.choice, workspace.grid.rows, workspace.grid.columns],
@@ -288,11 +304,11 @@ export default function App() {
   const [headingEditing, setHeadingEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const account = useAccountSession();
-  type AccountView = "login" | "account" | "library" | "information";
+  type AccountView = "login" | "account" | "information";
   const readAccountView = (): AccountView | null => {
     if (readInformationPage(new URL(location.href)) !== null) return "information";
     const view: unknown = history.state?.gridsAccountView;
-    return view === "login" || view === "account" || view === "library" ? view : null;
+    return view === "login" || view === "account" ? view : null;
   };
   const [accountView, setAccountView] = useState<AccountView | null>(readAccountView);
   useEffect(() => {
@@ -1048,11 +1064,13 @@ export default function App() {
     input.value = "";
   };
   const resetDefaults = () => {
+    setAppliedPreset(null);
     dispatchDocument(createResetCommand());
     setImageTarget(null);
     setResetOpen(false);
   };
   const resetGrid = () => {
+    setAppliedPreset(null);
     dispatchDocument(createResetGridCommand());
     setHeadingEditing(false);
     setImageTarget(null);
@@ -1110,23 +1128,6 @@ export default function App() {
         loading={account.loading}
         error={account.error}
         onRetry={() => { void account.refresh().catch(() => undefined); }}
-      />
-      <SavedGridsDialog
-        open={accountView === "library"}
-        onClose={() => setAccountView(null)}
-        onExited={accountViewExited}
-        returnFocus={accountButton}
-        session={account.session}
-        loading={account.loading}
-        error={account.error}
-        onRefresh={account.refresh}
-        onLogin={() => openAccountView("login")}
-        workspace={workspace}
-        onRestore={(restored) => {
-          dispatchDocument({ type: "workspace/restore", workspace: restored });
-          setHeadingEditing(false);
-          setImageTarget(null);
-        }}
       />
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
         <EditorLayout
@@ -1192,7 +1193,6 @@ export default function App() {
               buttonRef={accountButton}
               onLogin={() => openAccountView("login")}
               onAccount={() => openAccountView("account")}
-              onLibrary={() => openAccountView("library")}
               onInformation={() => openAccountView("information")}
               onSignOut={() => { void signOutAccount(); }}
             />
@@ -1969,15 +1969,22 @@ export default function App() {
             </aside>
           )}
           {() => accountView ? null : <PresetsPanel
-            session={account.session}
-            currentSettings={getEditorSettings(workspace)}
-            appliedPreset={appliedPreset}
+            currentSettings={currentSettings}
+            appliedPresetId={appliedPreset?.id ?? null}
+            customizations={presetCustomizations}
             previewId={presetPreview?.choice.id}
             disabled={!loaded || conflict || importProgress !== null || exporting}
             onPreview={(choice) => {
               setHeadingEditing(false);
               setPresetPreview({ choice, key: crypto.randomUUID() });
             }}
+            onSettings={(choice) => {
+              setAppliedPreset({ id: choice.id, settings: editorSettingsSchema.parse(choice.settings) });
+              setPresetPreview(null);
+              setSelectedPanel(1);
+              setSidebarOpen(true);
+            }}
+            onReset={(choice) => applyPreset(choice)}
           />}
         </EditorLayout>
       </main>

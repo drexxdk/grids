@@ -87,6 +87,10 @@ export function presetSettingsForLayout(settings: EditorSettings, { rows, column
   return { ...settings, layout: { rows, columns } };
 }
 
+export function samePresetSettings(a: EditorSettings, b: EditorSettings): boolean {
+  return JSON.stringify(presetSettingsForLayout(a, b.layout)) === JSON.stringify(b);
+}
+
 export function presetPreviewWorkspace(choice: PresetChoice, layout: EditorSettings["layout"]): Workspace {
   const preview = applyEditorSettings(makeWorkspace(), presetSettingsForLayout(choice.settings, layout));
   const assets = sampleSets[choice.samples ?? "botanical"];

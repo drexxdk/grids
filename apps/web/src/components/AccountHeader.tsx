@@ -1,11 +1,11 @@
 import type { RefObject } from "react";
-import { AlertTriangle, Cloud, Info, LogIn, LogOut, Menu, UserRound } from "lucide-react";
+import { AlertTriangle, Info, LogIn, LogOut, Menu, UserRound } from "lucide-react";
 import type { AccountSession } from "../browser/account";
 import { t } from "../i18n";
 import { ActionMenu } from "./ui/controls";
 
 export function AccountHeader({
-  session, loading, error, busy, disabled, buttonRef, onLogin, onAccount, onLibrary, onInformation, onSignOut,
+  session, loading, error, busy, disabled, buttonRef, onLogin, onAccount, onInformation, onSignOut,
 }: {
   session: AccountSession | null;
   loading: boolean;
@@ -15,7 +15,6 @@ export function AccountHeader({
   buttonRef: RefObject<HTMLButtonElement | null>;
   onLogin: () => void;
   onAccount: () => void;
-  onLibrary: () => void;
   onInformation: () => void;
   onSignOut: () => void;
 }) {
@@ -26,7 +25,6 @@ export function AccountHeader({
       ] : [
         { label: error ? t("account.unavailable") : t("account.login"), icon: error ? AlertTriangle : LogIn, onSelect: onLogin, disabled: loading && !session },
       ]),
-      { label: t("account.libraryTitle"), icon: Cloud, onSelect: onLibrary },
       { label: t("legal.title"), icon: Info, onSelect: onInformation },
       ...(session?.user && !error ? [
         { label: t("account.signOut"), icon: LogOut, onSelect: onSignOut, disabled: busy },

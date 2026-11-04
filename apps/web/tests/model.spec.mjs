@@ -123,6 +123,21 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
       },
     },
   });
+
+  test("browser preset customizations contain validated settings and ignore grid dimensions when matching", () => {
+    const original = presets.starterPresets[0].settings;
+    const customized = model.editorSettingsSchema.parse({
+      ...original, style: { ...original.style, background: "#123456" },
+    });
+    const state = navigation.parseEditorState({ presetCustomizations: { "starter:gallery": customized } });
+    expect(state.presetCustomizations).toEqual({ "starter:gallery": customized });
+    expect(navigation.parseEditorState({}).presetCustomizations).toEqual({});
+    expect(presets.samePresetSettings(customized, { ...customized, layout: { rows: 1, columns: 8 } })).toBe(true);
+    expect(presets.samePresetSettings(original, customized)).toBe(false);
+    expect(presets.samePresetSettings(customized, { ...customized, exportSettings: {
+      ...customized.exportSettings, resolution: customized.exportSettings.resolution + 1,
+    } })).toBe(false);
+  });
   const url = navigation.navigationUrl(
     restored,
     new URL("https://example.com/grids/?panel=settings&source=commons&q=earth&topic=all&offset=27&other=keep#anchor"),

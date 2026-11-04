@@ -1,10 +1,14 @@
 {
   "presets": {
     "title": "Presets",
-    "help": "Preview a preset with sample images in your current rows and columns. Apply settings keeps your grid size, images and captions.",
+    "help": "Preview and apply a preset without changing your grid size or content. Use Settings below the applied preset to customize it. Changes are remembered in this browser.",
     "starters": "Starting points",
     "appliedNamed": "{name} is applied",
     "applied": "Applied",
+    "modified": "Modified",
+    "reset": "Reset",
+    "controlsNamed": "{name} settings",
+    "saveError": "Browser preferences could not be saved. Changes may be lost after reloading. Check your browser storage and try again.",
     "previewNamed": "Preview {name}",
     "previewing": "Preview: {name}",
     "samples": "Sample images only. Your draft is unchanged.",

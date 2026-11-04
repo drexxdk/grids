@@ -3,6 +3,8 @@ import { z } from "zod";
 import { imageProviders, type ImageProvider } from "../providers";
 import { providerQueryMaxLength } from "../config";
 import { editorSettingsSchema } from "../model";
+import { toast } from "sonner";
+import { t } from "../i18n";
 
 const navigationHistoryLimit = 100;
 
@@ -34,6 +36,7 @@ const stateSchema = z.object({
     settings: editorSettingsSchema,
     updatedAt: z.string().optional(),
   }).nullable().default(null),
+  presetCustomizations: z.record(z.string().min(1).max(200), editorSettingsSchema).default({}),
   librarySource: sourceSchema.default("imported"),
   pickerSource: sourceSchema.default("imported"),
   browsing: z.record(z.string().max(60), browsingSchema).default({}),
@@ -192,7 +195,9 @@ function snapshot(): EditorState {
 function persist() {
   try {
     localStorage.setItem(storageKey, JSON.stringify(snapshot()));
-  } catch {}
+  } catch {
+    toast.error(t("presets.saveError"), { id: "editor-preferences-save" });
+  }
 }
 function update(next: EditorState, mode: HistoryMode) {
   state = next;
@@ -253,7 +258,7 @@ export function useEditorState<Key extends keyof Omit<EditorState, "browsing">>(
     const next = typeof value === "function" ? value(previous[key]) : value;
     update(
       { ...previous, [key]: next },
-      key === "pickerSource" || key === "sidebarOpen" ? "silent" : "push",
+      key === "pickerSource" || key === "sidebarOpen" || key === "appliedPreset" || key === "presetCustomizations" ? "silent" : "push",
     );
   };
   return [current[key], set] as const;

@@ -88,17 +88,6 @@ async function openAccount(page) {
   await expect(dialog.getByRole("region", { name: "Connected sign-in providers", exact: true })).toBeVisible();
   return dialog;
 }
-async function openLibrary(page) {
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Library", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Library", exact: true });
-  await expect(dialog.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
-  await expect(dialog.getByRole("complementary")).toHaveCount(0);
-  await expect(dialog.getByRole("navigation", { name: "Policies and support", exact: true })).toHaveCount(0);
-  return dialog;
-}
 async function openLogin(page) {
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("menuitem", { name: "Log in", exact: true }).click();
@@ -236,8 +225,12 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await page.locator("#background-value").fill("#112233");
   await page.locator("#background-value").press("Enter");
   await page.getByRole("tab", { name: "Presets", exact: true }).click();
-  await expect(tile).not.toHaveAttribute("data-applied", "");
-  await expect(tile).not.toContainText("Applied");
+  await expect(tile).toHaveAttribute("data-applied", "");
+  await expect(tile).toHaveAttribute("data-customized", "");
+  await expect(tile).toContainText("Modified");
+  const controls = page.getByRole("group", { name: "Warm gallery settings", exact: true });
+  await expect(controls.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(controls.getByRole("button", { name: "Reset", exact: true })).toBeVisible();
 });
 
 touchTest("preset gallery mobile preview reveals canvas and can close or apply without losing uploads", async ({ page }) => {
@@ -293,128 +286,137 @@ touchTest("preset gallery fits three tile columns without per-item apply buttons
   expect(await browserDraft(page)).toEqual(before);
 });
 
-test("preset gallery loads private and shared presets, paginates, and cancels stale previews", async ({ page }) => {
-  const { mock, before } = await presetDraft(page);
-  const settings = { version: 1, layout: { rows: 1, columns: 2 },
-    style: Object.fromEntries(Object.keys(before.document.grid).filter((key) =>
-      !["id", "name", "heading", "rows", "columns", "cells", "overflow"].includes(key)).map((key) => [key, before.document.grid[key]])),
-    exportSettings: before.document.exportSettings };
-  const own = { id: randomUUID(), name: "My published style", public: true, owned: true, settings, updatedAt: new Date().toISOString() };
-  const shared = { ...own, id: randomUUID(), name: "Community style", owned: false };
-  mock.presets.set(own.id, own);
-  mock.presets.set(shared.id, shared);
-  const summary = ({ settings, ...rest }) => rest;
-  await page.route("**/api/presets?scope=public*", (route) => {
-    const next = new URL(route.request().url()).searchParams.has("page");
-    return route.fulfill({ json: { items: next ? [summary(shared)] : [summary(own)], nextPage: next ? null : 2 } });
-  });
-  let release, previewStarted = false;
-  const wait = new Promise((resolve) => { release = resolve; });
-  await page.route(`**/api/presets/${shared.id}`, async (route) => {
-    previewStarted = true;
-    await wait;
-    await route.fulfill({ json: shared });
-  });
+test("preset customizations are independent, persistent, preview-safe and individually resettable", async ({ page }) => {
+  const { before, mock } = await presetDraft(page);
+  const preferences = () => page.evaluate(() => JSON.parse(localStorage.getItem("grids-ui-v1")).presetCustomizations);
+  const tile = (name) => page.getByRole("button", { name: `Preview ${name}`, exact: true });
+  const controls = (name) => page.getByRole("group", { name: `${name} settings`, exact: true });
+  const customize = async (name, color) => {
+    await controls(name).getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Settings", exact: true })).toHaveAttribute("aria-selected", "true");
+    await page.locator("#background-value").fill(color);
+    await page.locator("#background-value").press("Enter");
+    await page.getByRole("tab", { name: "Presets", exact: true }).click();
+    await expect(tile(name)).toHaveAttribute("data-customized", "");
+    await expect(controls(name).getByRole("button", { name: "Reset", exact: true })).toBeVisible();
+  };
   await page.getByRole("tab", { name: "Presets", exact: true }).click();
-  const gallery = page.getByRole("region", { name: "Presets", exact: true });
-  await expect(gallery.getByRole("region", { name: "My presets", exact: true })).toContainText("My published style");
-  const publicSection = gallery.getByRole("region", { name: "Shared presets", exact: true });
-  await expect(publicSection.getByRole("button", { name: "Preview My published style", exact: true })).toBeVisible();
-  await publicSection.getByRole("button", { name: "Load more", exact: true }).click();
-  const eye = publicSection.getByRole("button", { name: "Preview Community style", exact: true });
-  try {
-    await page.mouse.move(50, 100);
-    await eye.click();
-    await expect.poll(() => previewStarted).toBe(true);
-    await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
-  } finally { release(); }
-  await expect(page.locator("[data-preset-preview]")).toContainText("Warm gallery");
-  await page.getByRole("button", { name: "Back to my grid", exact: true }).click();
-  await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
-  expect(await browserDraft(page)).toEqual(before);
-  let releaseApply;
-  let detailStarted = false;
-  const applyWait = new Promise((resolve) => { releaseApply = resolve; });
-  await page.route(`**/api/presets/${own.id}`, async (route) => {
-    detailStarted = true;
-    await applyWait;
-    await route.fulfill({ json: own });
-  });
-  await page.mouse.move(50, 100);
-  await gallery.getByRole("region", { name: "My presets", exact: true })
-    .getByRole("button", { name: "Preview My published style", exact: true }).press("Enter");
-  try {
-    await expect.poll(() => detailStarted).toBe(true);
-    await page.getByRole("textbox", { name: "Heading for cell 1", exact: true }).fill("Changed during loading");
-    await page.getByRole("textbox", { name: "Heading for cell 1", exact: true }).blur();
-    await expect(page.getByRole("textbox", { name: "Heading for cell 1", exact: true })).toHaveValue("Changed during loading");
-    await expect.poll(async () => (await browserDraft(page)).document.grid.cells[0].title).toBe("Changed during loading");
-    await page.getByRole("button", { name: "Add row", exact: true }).click();
-    await page.getByRole("button", { name: "Remove column", exact: true }).click();
-  } finally { releaseApply(); }
-  await expect(page.locator("#board-grid .image-card")).toHaveCount(8);
-  await expect(page.locator("[data-preset-preview]")).toContainText("My published style");
+  await tile("Warm gallery").click();
+  await expect(controls("Warm gallery")).toHaveCount(0);
   await page.getByRole("button", { name: "Apply settings", exact: true }).click();
-  const after = await browserDraft(page);
-  expect(after.document.grid.rows).toBe(4);
-  expect(after.document.grid.columns).toBe(2);
-  expect(after.document.assets).toEqual(before.document.assets);
-  expect(after.document.grid.cells[0].title).toBe("Changed during loading");
-  const dialog = await openLibrary(page);
-  await dialog.getByLabel("Save name", { exact: true }).fill("Freshly saved style");
-  await dialog.getByRole("button", { name: "Save settings as new preset", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "My presets", exact: true })).toContainText("Freshly saved style");
-  await page.keyboard.press("Escape");
-  await expect(gallery.getByRole("region", { name: "My presets", exact: true })).toContainText("Freshly saved style");
-  await expect(gallery.getByRole("region", { name: "My presets", exact: true })
-    .getByRole("button", { name: "Preview My published style", exact: true })).toHaveAttribute("data-applied", "");
+  await expect(controls("Warm gallery").getByRole("button", { name: "Reset", exact: true })).toHaveCount(0);
+  await customize("Warm gallery", "#123456");
+  await expect.poll(async () => (await preferences())["starter:gallery"]?.style.background).toBe("#123456");
+  await page.getByRole("button", { name: "Remove row", exact: true }).click();
+  await tile("Midnight squares").click();
+  await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#123456");
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await expect(controls("Warm gallery")).toHaveCount(0);
+  await customize("Midnight squares", "#223344");
+  await tile("Warm gallery").click();
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS("background-color", "rgb(18, 52, 86)");
+  await expect(page.locator("#board-grid .image-card")).toHaveCount(6);
+  expect((await browserDraft(page)).document.grid.background).toBe("#223344");
+  await page.getByRole("button", { name: "Back to my grid", exact: true }).click();
+  expect((await browserDraft(page)).document.grid.background).toBe("#223344");
+  await tile("Warm gallery").click();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#123456");
   await page.reload();
-  await expect(gallery.getByRole("region", { name: "My presets", exact: true })
-    .getByRole("button", { name: "Preview My published style", exact: true })).toHaveAttribute("data-applied", "");
-});
-
-test("preset gallery Escape cancels a pending pinned preview", async ({ page }) => {
-  const { mock, before } = await presetDraft(page);
-  const dialog = await openLibrary(page);
-  await dialog.getByLabel("Save name", { exact: true }).fill("Delayed style");
-  await dialog.getByRole("button", { name: "Save settings as new preset", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "My presets", exact: true })).toContainText("Delayed style");
+  await expect(tile("Warm gallery")).toHaveAttribute("data-applied", "");
+  await expect(controls("Warm gallery").getByRole("button", { name: "Reset", exact: true })).toBeVisible();
+  const saved = await preferences();
+  expect(Object.keys(saved).sort()).toEqual(["starter:gallery", "starter:midnight"]);
+  expect(saved["starter:midnight"].style.background).toBe("#223344");
+  expect(JSON.stringify(saved)).not.toMatch(/assetId|"cells"|"heading"|"src"|"assets"|preset-preview|blob:/);
+  const beforeReset = await browserDraft(page);
+  await controls("Warm gallery").getByRole("button", { name: "Reset", exact: true }).click();
+  await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#f5f1e8");
+  await expect(controls("Warm gallery").getByRole("button", { name: "Reset", exact: true })).toHaveCount(0);
+  await expect.poll(async () => Object.keys(await preferences())).toEqual(["starter:midnight"]);
+  const after = await browserDraft(page);
+  expect(after.document.grid.cells).toEqual(beforeReset.document.grid.cells);
+  expect(after.document.grid.overflow).toEqual(beforeReset.document.grid.overflow);
+  expect([after.document.grid.rows, after.document.grid.columns]).toEqual([2, 3]);
+  expect(after.document.assets).toEqual(before.document.assets);
+  expect(after.images).toEqual(before.images);
+  await page.reload();
+  await expect(tile("Warm gallery")).not.toHaveAttribute("data-customized", "");
+  await tile("Midnight squares").click();
+  await expect(page.locator("[data-image-canvas-background]")).toHaveCSS("background-color", "rgb(34, 51, 68)");
   await page.keyboard.press("Escape");
-  const preset = [...mock.presets.values()][0];
-  let release, started = false, delivered = false;
-  const pending = new Promise((resolve) => { release = resolve; });
-  await page.route(`**/api/presets/${preset.id}`, async (route) => {
-    started = true;
-    await pending;
-    await route.fulfill({ json: preset });
-    delivered = true;
-  });
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
-  await page.getByRole("button", { name: "Preview Delayed style", exact: true }).click();
-  try {
-    await expect.poll(() => started).toBe(true);
-    await page.keyboard.press("Escape");
-  } finally { release(); }
-  await expect.poll(() => delivered).toBe(true);
-  await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
-  expect(await browserDraft(page)).toEqual(before);
+  expect(mock.writes).toEqual([]);
 });
 
-test("preset gallery keeps starters usable and reports remote errors with retry", async ({ page }) => {
-  await mockAccount(page, { signedIn: false });
-  let failed = true;
-  await page.route("**/api/presets?scope=public", (route) => route.fulfill(failed
-    ? { status: 503, json: { error: "Preset service unavailable" } }
-    : { json: { items: [], nextPage: null } }));
-  await page.goto("./");
-  await page.getByRole("tab", { name: "Presets", exact: true }).click();
-  const gallery = page.getByRole("region", { name: "Presets", exact: true });
-  await expect(gallery.getByRole("alert")).toBeVisible();
-  await expect(gallery.getByRole("button", { name: "Preview Warm gallery", exact: true })).toBeEnabled();
-  failed = false;
-  await gallery.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(gallery.getByRole("alert")).toHaveCount(0);
-  await expect(gallery.getByRole("region", { name: "My presets", exact: true })).toHaveCount(0);
+touchTest("preset settings and reset remain reachable on mobile", async ({ page }) => {
+  const { before } = await presetDraft(page);
+  await page.getByRole("button", { name: "Show sidebar", exact: true }).tap();
+  await page.getByRole("tab", { name: "Presets", exact: true }).tap();
+  await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).tap();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).tap();
+  await page.getByRole("button", { name: "Show sidebar", exact: true }).tap();
+  const controls = page.getByRole("group", { name: "Warm gallery settings", exact: true });
+  await controls.getByRole("button", { name: "Settings", exact: true }).tap();
+  await page.locator("#background-value").fill("#334455");
+  await page.locator("#background-value").press("Enter");
+  await page.getByRole("tab", { name: "Presets", exact: true }).tap();
+  for (const button of await controls.getByRole("button").all()) {
+    const bounds = await button.boundingBox();
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await controls.getByRole("button", { name: "Reset", exact: true }).tap();
+  await expect(controls.getByRole("button", { name: "Reset", exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#f5f1e8");
+  const after = await browserDraft(page);
+  expect(after.document.grid.cells).toEqual(before.document.grid.cells);
+  expect(after.images).toEqual(before.images);
+});
+
+for (const signedIn of [false, true]) {
+  test(`preset gallery hides Library and cloud sections without touching saved data (${signedIn ? "account" : "guest"})`, async ({ page }) => {
+    const mock = await mockAccount(page, { signedIn });
+    const id = randomUUID();
+    mock.grids.set(id, { id, name: "Existing saved grid", updatedAt: new Date().toISOString() });
+    mock.presets.set(id, { id, name: "Existing public preset", public: true, owned: true, updatedAt: new Date().toISOString() });
+    await page.goto("./?panel=presets");
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Library", exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    const gallery = page.getByRole("region", { name: "Presets", exact: true });
+    await expect(gallery.getByRole("button", { name: /^Preview / })).toHaveCount(24);
+    await expect(gallery.getByRole("region", { name: "My presets", exact: true })).toHaveCount(0);
+    await expect(gallery.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
+    await page.evaluate(() => history.replaceState({ ...history.state, gridsAccountView: "library" }, ""));
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Preview Warm gallery", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Library", exact: true })).toHaveCount(0);
+    expect(mock.reads.every((resource) => resource === "session")).toBe(true);
+    expect(mock.writes).toEqual([]);
+    expect(mock.grids.size).toBe(1);
+    expect(mock.presets.size).toBe(1);
+  });
+}
+
+test("preset customization storage failures are reported explicitly", async ({ page }) => {
+  await mockAccount(page);
+  await page.goto("./?panel=presets");
+  await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await page.evaluate(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "grids-ui-v1") throw new DOMException("Storage full", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  await page.getByRole("group", { name: "Warm gallery settings", exact: true })
+    .getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#background-value").fill("#334455");
+  await page.locator("#background-value").press("Enter");
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Browser preferences could not be saved" })).toBeVisible();
+  await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#334455");
 });
 
 test("preset drop zones stay visible on every starter background and cell size", async ({ page }) => {
@@ -523,45 +525,6 @@ test("preset canvas palettes persist and match exported PNG backgrounds", async 
   }
 });
 
-test("library reports pending saved grids and restores focus after loading", async ({ page }) => {
-  const mock = await mockAccount(page);
-  for (let index = 0; index < 3; index++) {
-    const id = randomUUID();
-    mock.grids.set(id, { id, name: `Saved grid ${index}`, updatedAt: new Date().toISOString() });
-  }
-  let release;
-  const ready = new Promise((resolve) => { release = resolve; });
-  await page.route("**/api/grids", async (route) => {
-    await ready;
-    await route.fallback();
-  });
-  await page.goto("./");
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Library", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Library", exact: true });
-  try {
-    await expect(dialog.getByRole("status")).toContainText("Loading...");
-  } finally { release(); }
-  await expect(dialog.getByRole("region", { name: "My saved grids", exact: true }).getByRole("listitem")).toHaveCount(3);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeFocused();
-});
-
-test("saved-grid errors retain retry without a manual refresh button", async ({ page }) => {
-  await mockAccount(page);
-  const unavailable = (route) => route.fulfill({ status: 503, json: { error: "Saved grids unavailable" } });
-  await page.route("**/api/grids", unavailable);
-  await page.goto("./");
-  await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeVisible();
-  const dialog = await openLibrary(page);
-  await expect(dialog.getByRole("alert")).toContainText("Saved grids unavailable");
-  await page.unroute("**/api/grids", unavailable);
-  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await expect(dialog.getByLabel("Save name", { exact: true })).toBeEnabled();
-});
-
 async function expectProvidersReachable(tiles, panel) {
   for (const tile of await tiles.all()) {
     await expect(tile).toBeInViewport();
@@ -610,7 +573,7 @@ for (const width of [260, 320, 390, 1280]) {
   });
 }
 
-test("login is provider-only and switching from the guest library preserves focus and the browser draft", async ({ page }) => {
+test("login is provider-only and reopening it preserves focus and the browser draft", async ({ page }) => {
   const mock = await mockAccount(page, { signedIn: false });
   await page.goto("./?source=imported");
   await expectGuestMenu(page);
@@ -624,9 +587,7 @@ test("login is provider-only and switching from the guest library preserves focu
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeFocused();
-  const library = await openLibrary(page);
-  await library.getByRole("button", { name: "Log in", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Log in", exact: true });
+  dialog = await openLogin(page);
   await expect(dialog).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(1);
   await expect(dialog.getByRole("button", { name: "Close dialog", exact: true })).toBeFocused();
@@ -647,7 +608,7 @@ test("the hamburger menu supports keyboard navigation and keeps account manageme
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem")).toHaveText([
-    "Account", "Library", "Information", "Sign out",
+    "Account", "Information", "Sign out",
   ]);
 
   await page.keyboard.press("Escape");
@@ -1084,25 +1045,12 @@ test("failed disconnect keeps the provider selected and displays the server erro
 for (const width of [320, 390, 1280]) {
   test(`account controls and destructive confirmations fit a ${width}px viewport`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const mock = await mockAccount(page);
-    const id = randomUUID();
-    const presetId = randomUUID();
-    mock.grids.set(id, { id, name: "Long saved grid ".repeat(4), updatedAt: new Date().toISOString() });
-    mock.presets.set(presetId, {
-      id: presetId, name: "A private style", public: false, owned: true, updatedAt: new Date().toISOString(),
-    });
+    await mockAccount(page);
     await page.goto("./?source=imported");
     const dialog = await openAccount(page);
     await dialog.getByRole("button", { name: "Delete account", exact: true }).click();
 
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    const library = await openLibrary(page);
-    await library.getByLabel("Save name", { exact: true }).click({ trial: true });
-    await library.getByRole("checkbox").check();
-    await expect(library.getByRole("checkbox")).toBeChecked();
-
     const panel = page.locator("[data-modal-panel]");
     const dimensions = await panel.evaluate((element) => ({
       width: element.clientWidth, scroll: element.scrollWidth,
@@ -1111,130 +1059,10 @@ for (const width of [320, 390, 1280]) {
     expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
     expect(dimensions.left).toBeGreaterThanOrEqual(0);
     expect(dimensions.right).toBeLessThanOrEqual(width);
-    const mine = library.getByRole("region", { name: "My saved grids", exact: true });
-    await mine.getByRole("button", { name: "Delete", exact: true }).click();
-
-    await expect(library.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-    await library.getByRole("button", { name: "Cancel", exact: true }).click();
-    expect(mock.grids.has(id)).toBe(true);
-    await mine.getByRole("button", { name: "Delete", exact: true }).click();
-    await library.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect(mine).toContainText("Nothing saved here yet.");
-    expect(mock.grids.has(id)).toBe(false);
-    await expect(library.getByRole("region", { name: "Connected sign-in providers", exact: true })).toHaveCount(0);
-    await expect(library.getByRole("button", { name: "Delete account", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("region", { name: "Shared presets", exact: true })).toHaveCount(0);
+    await expect(dialog.getByLabel("Save name", { exact: true })).toHaveCount(0);
   });
 }
-
-for (const mobile of [false, true]) {
-  (mobile ? touchTest : test)(`account ${mobile ? "mobile" : "desktop"} saves named reference-only grids and public/private settings presets`, async ({ page }) => {
-    const mock = await mockAccount(page);
-    await page.goto("./?source=imported");
-    await page.locator("#replace-upload").setInputFiles({
-      name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
-    });
-    await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-    const dialog = await openLibrary(page);
-    await dialog.getByLabel("Save name", { exact: true }).fill("My grid");
-    await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
-    const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });
-    await expect(mine).toContainText("My grid");
-    const gridWrite = mock.writes.find((write) => write.resource === "grids");
-    expect(gridWrite.body.document.localAssetIds).toHaveLength(1);
-    expect(gridWrite.body.document.assets).toEqual([]);
-    expect(JSON.stringify(gridWrite.body)).not.toMatch(/blob:|data:image|"src"|"source"/);
-    expect(gridWrite.headers["x-grids-request"]).toBe("1");
-    await dialog.getByLabel("Save name", { exact: true }).fill("Shared style");
-    await dialog.getByRole("checkbox").check();
-    await dialog.getByRole("button", { name: "Save settings as new preset", exact: true }).click();
-    const publicSection = dialog.getByRole("region", { name: "Shared presets", exact: true });
-    await expect(publicSection).toContainText("Shared style");
-    const presetWrite = mock.writes.find((write) => write.resource === "presets");
-    expect(presetWrite.body.public).toBe(true);
-    expect(Object.keys(presetWrite.body.settings).sort()).toEqual(["exportSettings", "layout", "style", "version"]);
-    expect(JSON.stringify(presetWrite.body.settings)).not.toMatch(/assetId|"cells"|"heading"|"src"|"assets"/);
-    const ownPresets = dialog.getByRole("region", { name: "My presets", exact: true });
-    await ownPresets.getByRole("button", { name: "Make private", exact: true }).click();
-    await expect(publicSection).not.toContainText("Shared style");
-    await mine.getByRole("button", { name: "Replace", exact: true }).click();
-    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect.poll(() => mock.writes.filter((write) => write.method === "PUT" && write.resource === "grids").length).toBe(1);
-    expect(mock.writes.at(-1).headers["if-match"]).toBeTruthy();
-    await mine.getByRole("button", { name: "Load", exact: true }).click();
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(mine).toContainText("My grid");
-    await mine.getByRole("button", { name: "Load", exact: true }).click();
-    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-    await page.reload();
-    await signOut(page);
-    const again = await openLibrary(page);
-    await expect(again.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
-    await expect(again.getByRole("region", { name: "My saved grids" })).toHaveCount(0);
-    await again.getByRole("button", { name: "Close dialog", exact: true }).click();
-    await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-    expect(await page.evaluate(async () => {
-      const database = await new Promise((resolve, reject) => {
-        const request = indexedDB.open("grids-client-v1");
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      return new Promise((resolve, reject) => {
-        const transaction = database.transaction("images", "readonly");
-        const count = transaction.objectStore("images").count();
-        count.onsuccess = () => { database.close(); resolve(count.result); };
-        count.onerror = () => reject(count.error);
-      });
-    })).toBe(1);
-  });
-}
-
-test("account reference grids restore images from providers and export without uploading or persisting image bytes", async ({ page }) => {
-  const mock = await mockAccount(page);
-  const file = await readFile(image);
-  await page.route("https://upload.wikimedia.org/**", (route) => route.fulfill({
-    contentType: "image/jpeg", body: file, headers: { "Access-Control-Allow-Origin": "*" },
-  }));
-  await page.goto("./?source=imported");
-  await page.locator("#upload").setInputFiles({ name: "temporary.jpg", mimeType: "image/jpeg", buffer: file });
-  const dialog = await openLibrary(page);
-  await dialog.getByLabel("Save name", { exact: true }).fill("Reference grid");
-  await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "My saved grids" })).toContainText("Reference grid");
-  const saved = [...mock.grids.values()][0];
-  const remoteId = randomUUID();
-  saved.document.localAssetIds = [];
-  saved.document.assets = [{
-    id: remoteId, title: "Remote example", category: "Imported",
-    provenance: {
-      provider: "commons", entityId: "123",
-      sourcePage: "https://commons.wikimedia.org/wiki/File:Example.jpg",
-      originalUrl: "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg",
-      creator: "Example", license: "Public domain",
-      licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
-    },
-  }];
-  saved.document.grid.cells[0].assetId = remoteId;
-  saved.document.grid.cells[0].title = "Remote caption";
-  await dialog.getByRole("region", { name: "My saved grids" }).getByRole("button", { name: "Load", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  const remote = page.locator("#board-grid img").first();
-  await expect(remote).toHaveAttribute("src", saved.document.assets[0].provenance.originalUrl);
-  await expect.poll(() => remote.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Export grid", exact: true }).click();
-  const downloadEvent = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download image", exact: true }).click();
-  const download = await downloadEvent;
-  expect(download.suggestedFilename()).toMatch(/\.png$/);
-  expect(await readFile(await download.path())).not.toHaveLength(0);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-  await page.reload();
-  await expect(page.locator("#board-grid img").first()).toHaveAttribute("src", saved.document.assets[0].provenance.originalUrl);
-  await expect.poll(() => page.locator("#board-grid img").first().evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
-});
 
 test("account failures are visible and do not break guest editing", async ({ page }) => {
   await page.route("**/api/**", (route) => route.fulfill({ status: 503, json: { error: "Account service unavailable" } }));
@@ -1246,73 +1074,4 @@ test("account failures are visible and do not break guest editing", async ({ pag
   await expect(page.locator("#board-grid")).toBeVisible();
   await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
   expect(new URL(page.url()).searchParams.has("auth")).toBe(false);
-});
-
-test("account shared presets apply for guests without publishing captions or replacing local images", async ({ page }) => {
-  const mock = await mockAccount(page);
-  await page.goto("./?source=imported");
-  await page.locator("#replace-upload").setInputFiles({
-    name: "local.jpg", mimeType: "image/jpeg", buffer: await readFile(image),
-  });
-  let dialog = await openLibrary(page);
-  await dialog.getByLabel("Save name", { exact: true }).fill("Two columns");
-  await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Save settings as new preset", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "Shared presets" })).toContainText("Two columns");
-  const before = await browserDraft(page);
-  const preset = [...mock.presets.values()][0];
-  preset.settings.layout = { rows: 1, columns: 2 };
-  preset.settings.style.background = "#334455";
-  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await page.getByRole("button", { name: "Close toast", exact: true }).click();
-  await signOut(page);
-  dialog = await openLibrary(page);
-  const shared = dialog.getByRole("region", { name: "Shared presets" });
-  await expect(shared.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
-  await expect(shared.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
-  await shared.getByRole("button", { name: "Apply", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.locator("#board-grid .grid-cell")).toHaveCount(before.document.grid.cells.length);
-  await expect(page.locator("#save-status")).toHaveAttribute("data-save-state", "saved");
-  const after = await browserDraft(page);
-  expect(after.document.grid).toMatchObject({
-    rows: before.document.grid.rows, columns: before.document.grid.columns,
-    cells: before.document.grid.cells, background: "#334455",
-  });
-  expect(after.document.assets).toEqual(before.document.assets);
-  expect(after.images).toEqual(before.images);
-  await page.reload();
-  await expect(page.locator("#board-grid .grid-cell")).toHaveCount(before.document.grid.cells.length);
-  dialog = await openLibrary(page);
-  await expect(dialog.getByRole("link", { name: "Continue with Google", exact: true })).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Log in", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Log in", exact: true });
-  await expect(dialog.getByRole("link", { name: "Continue with Google", exact: true }))
-    .toHaveAttribute("href", /\/api\/auth\/google\/start$/);
-  await expect(dialog.getByRole("link", { name: "Continue with Facebook", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("link", { name: "Continue with Discord", exact: true })).toBeVisible();
-});
-
-test("account grids warn about unavailable local uploads but preserve captions and layout", async ({ page }) => {
-  const mock = await mockAccount(page);
-  await page.goto("./?source=imported");
-  const dialog = await openLibrary(page);
-  await dialog.getByLabel("Save name", { exact: true }).fill("Missing local");
-  await dialog.getByRole("button", { name: "Save current grid as new", exact: true }).click();
-  const mine = dialog.getByRole("region", { name: "My saved grids", exact: true });
-  await expect(mine).toContainText("Missing local");
-  const saved = [...mock.grids.values()][0];
-  const localId = randomUUID();
-  saved.document.localAssetIds = [localId];
-  saved.document.grid.cells[0].assetId = localId;
-  saved.document.grid.cells[0].title = "Keep this caption";
-  await mine.getByRole("button", { name: "Load", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Some local images are unavailable" })).toBeVisible();
-  await expect(page.locator("#board-grid .grid-cell")).toHaveCount(9);
-  await expect(page.locator("#board-grid img")).toHaveCount(0);
-  await expect(page.locator("#board-grid .cell-heading").first()).toHaveValue("Keep this caption");
 });
