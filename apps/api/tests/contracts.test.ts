@@ -60,6 +60,48 @@ test("saved grids contain references only and restore browser-local images only 
   }).success);
 });
 
+test("new public-domain provider references round-trip without image bytes", () => {
+  const workspace = makeWorkspace();
+  workspace.assets = [{
+    id: randomUUID(), title: "Caption", category: "Imported", src: "blob:temporary",
+    provenance: {
+      provider: "openverse", entityId: randomUUID(), title: "Original title", creator: "Photographer",
+      sourcePage: "https://www.flickr.com/photos/example/123",
+      originalUrl: "https://live.staticflickr.com/1/photo.jpg",
+      license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+    },
+  }];
+  workspace.grid.cells[0].assetId = workspace.assets[0].id;
+  workspace.grid.cells[0].title = "A normal caption";
+  workspace.grid.titlesVisible = false;
+  const saved = toSavedGrid(workspace);
+  const restored = fromSavedGrid(saved);
+  assert.equal(restored.assets[0].src, workspace.assets[0].provenance?.originalUrl);
+  assert.equal(restored.grid.cells[0].title, "A normal caption");
+  const legacy = structuredClone(saved);
+  legacy.assets[0].provenance = {
+    ...legacy.assets[0].provenance, title: "Original title",
+    license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+  };
+  assert.ok(!gridWriteSchema.safeParse({ name: "Grid", document: legacy }).success);
+  const migrated = fromSavedGrid(legacy);
+  assert.equal(migrated.assets.length, 0);
+  assert.equal(migrated.grid.cells[0].assetId, null);
+  assert.equal(migrated.grid.cells[0].title, "");
+  assert.ok(!JSON.stringify(saved).includes("blob:"));
+  for (const [provider, entityId, sourcePage, originalUrl] of [
+    ["smk", "KKS123", "https://open.smk.dk/artwork/image/KKS123", "https://iip.smk.dk/iiif/jp2/123.jp2/full/!4000,4000/0/default.jpg"],
+    ["inaturalist", "123", "https://www.inaturalist.org/photos/123", "https://inaturalist-open-data.s3.amazonaws.com/photos/123/original.jpg"],
+  ] as const) {
+    const candidate = structuredClone(saved);
+    candidate.assets[0].provenance = {
+      provider, entityId, sourcePage, originalUrl, creator: "Creator",
+      license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+    };
+    assert.ok(gridWriteSchema.safeParse({ name: "Grid", document: candidate }).success);
+  }
+});
+
 test("public presets exclude captions, identities, image references and local paths", () => {
   const workspace = makeWorkspace();
   workspace.grid.heading = "Must not publish";

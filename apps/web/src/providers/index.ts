@@ -9,7 +9,8 @@ import {
 } from "../config";
 import {
   provenanceSchema,
-  providerHosts,
+  imageLicenseSchema,
+  isProviderUrl,
   previewCardMaxWidth,
   type Asset,
 } from "../model";
@@ -28,7 +29,7 @@ export interface ProviderImage {
   title: string;
   sourcePage: string;
   creator: string;
-  license: "CC0" | "Public domain";
+  license: NonNullable<Asset["provenance"]>["license"];
   licenseUrl: string;
   thumbnail: string;
   original: {
@@ -99,7 +100,10 @@ export interface ImageProvider {
       | "sculpture"
       | "portraits"
       | "prints"
-      | "ceramics";
+      | "ceramics"
+      | "animals"
+      | "birds"
+      | "plants";
     query: string;
   }[];
   capabilities: {
@@ -461,8 +465,11 @@ export const commons = cacheImageProvider(
           )
         )
           continue;
-        const license = meta.LicenseShortName?.value;
-        if (license !== "CC0" && license !== "Public domain") continue;
+        const parsedLicense = imageLicenseSchema.safeParse(meta.LicenseShortName?.value);
+        if (!parsedLicense.success) continue;
+        const license = parsedLicense.data;
+        const title = page.title.replace(/^File:/, "").replace(/\.[^.]+$/, "").slice(0, captionMaxLength);
+        const creator = plainText(meta.Artist?.value ?? "");
         if (
           meta.Copyrighted?.value !== "False" ||
           meta.Restrictions?.value ||
@@ -493,9 +500,9 @@ export const commons = cacheImageProvider(
         images.push({
           provider: "commons",
           id: String(page.pageid),
-          title: page.title.replace(/^File:/, "").replace(/\.[^.]+$/, ""),
+          title,
           sourcePage: info.descriptionurl,
-          creator: plainText(meta.Artist?.value ?? ""),
+          creator,
           license,
           licenseUrl,
           thumbnail: info.thumburl ?? info.url,
@@ -700,12 +707,218 @@ export const met = cacheImageProvider(
   }),
 );
 
-export const imageProviders: readonly ImageProvider[] = [commons, met];
+async function catalogJson(url: URL, signal: AbortSignal): Promise<unknown> {
+  const response = await fetch(url, { signal, credentials: "omit", referrerPolicy: "no-referrer" });
+  if (response.status === 429) {
+    const retry = response.headers.get("Retry-After");
+    const seconds = Number(retry);
+    const wait = retry === null ? providerRetryDelayMs :
+      Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retry) - Date.now();
+    throw new ProviderError("quota", Math.max(providerMinimumRetryDelayMs, Number.isFinite(wait) ? wait : providerRetryDelayMs));
+  }
+  if (!response.ok) throw new ProviderError("unavailable");
+  try {
+    return await response.json();
+  } catch (error) {
+    signal.throwIfAborted();
+    if (error instanceof SyntaxError) throw new ProviderError("invalid");
+    throw error;
+  }
+}
+
+function catalogProvider<Item>(
+  metadata: Omit<ImageProvider, "search">,
+  page: (query: string, topic: string | null, page: number, signal: AbortSignal) =>
+    Promise<{ items: Item[]; total: number }>,
+  imageFor: (item: Item) => ProviderImage | null,
+): ImageProvider {
+  return cacheImageProvider(fillImagePages({
+    ...metadata,
+    async search(query, signal, offset, limit, topic = null) {
+      const batch = await page(query, topic, Math.floor(offset / providerPageSize), signal);
+      const images: ProviderImage[] = [];
+      let cursor = offset % providerPageSize;
+      while (cursor < batch.items.length && images.length < limit) {
+        const image = imageFor(batch.items[cursor++]!);
+        if (!image) continue;
+        if (!provenanceSchema.safeParse({
+          provider: image.provider, entityId: image.id, sourcePage: image.sourcePage,
+          originalUrl: image.original.url, creator: image.creator, license: image.license,
+          licenseUrl: image.licenseUrl,
+        }).success || (image.original.size ?? 0) > providerImageMaxBytes ||
+          (image.original.width ?? 0) * (image.original.height ?? 0) > providerImageMaxPixels) continue;
+        images.push(image);
+      }
+      const next = Math.floor(offset / providerPageSize) * providerPageSize + cursor;
+      return { images, next: cursor > offset % providerPageSize && next < batch.total ? next : undefined };
+    },
+  }));
+}
+
+const smkSchema = z.object({
+  found: z.number().int().nonnegative(),
+  items: z.array(z.object({
+    object_number: z.string(),
+    frontend_url: z.string().optional(),
+    titles: z.array(z.object({ title: z.string() })).optional(),
+    artist: z.array(z.string()).optional(),
+    public_domain: z.boolean().optional(),
+    rights: z.string().optional(),
+    image_iiif_id: z.string().optional(),
+    image_width: z.number().positive().optional(),
+    image_height: z.number().positive().optional(),
+  })),
+});
+
+export const smk = catalogProvider(
+  {
+    id: "smk", name: "SMK", domain: "National Gallery of Denmark",
+    policyUrl: "https://www.smk.dk/en/article/smk-open/",
+    browse: [], capabilities: commons.capabilities,
+  },
+  async (query, _topic, page, signal) => {
+    const url = new URL("https://api.smk.dk/api/v1/art/search");
+    url.search = new URLSearchParams({
+      keys: query || "*",
+      offset: String(page * providerPageSize), rows: String(providerPageSize),
+      filters: "public_domain:true,has_image:true",
+    }).toString();
+    const result = smkSchema.safeParse(await catalogJson(url, signal));
+    if (!result.success) throw new ProviderError("invalid");
+    return { items: result.data.items, total: result.data.found };
+  },
+  (item) => {
+    if (!item.public_domain || !item.image_iiif_id ||
+      !isProviderUrl("smk", "image", item.image_iiif_id) ||
+      item.rights !== "https://creativecommons.org/publicdomain/mark/1.0/") return null;
+    const scale = item.image_width && item.image_height ?
+      Math.min(1, 4000 / Math.max(item.image_width, item.image_height)) : undefined;
+    return {
+      provider: "smk", id: item.object_number,
+      title: (item.titles?.[0]?.title || item.object_number).slice(0, 1000),
+      sourcePage: item.frontend_url || `https://open.smk.dk/artwork/image/${encodeURIComponent(item.object_number)}`,
+      creator: (item.artist ?? []).join(", ").slice(0, 1000),
+      license: "Public domain", licenseUrl: item.rights,
+      thumbnail: `${item.image_iiif_id}/full/!400,400/0/default.jpg`,
+      original: {
+        url: `${item.image_iiif_id}/full/!4000,4000/0/default.jpg`, mime: "image/jpeg",
+        ...(scale && item.image_width && item.image_height ? {
+          width: Math.round(item.image_width * scale), height: Math.round(item.image_height * scale),
+        } : {}),
+      },
+    };
+  },
+);
+
+const natureTopics: ImageProvider["browse"] = [
+  { id: "animals", query: "animals" }, { id: "birds", query: "birds" }, { id: "plants", query: "plants" },
+];
+const observationSchema = z.object({
+  total_results: z.number().int().nonnegative(),
+  results: z.array(z.object({
+    taxon: z.object({ name: z.string(), preferred_common_name: z.string().optional() }).nullable().optional(),
+    photos: z.array(z.object({
+      id: z.number().int().positive(), url: z.string(), license_code: z.string().nullable(),
+      attribution: z.string(), hidden: z.boolean().optional(),
+      original_dimensions: z.object({ width: z.number().positive(), height: z.number().positive() }),
+    })),
+  })),
+});
+
+export const inaturalist = catalogProvider(
+  {
+    id: "inaturalist", name: "iNaturalist", domain: "Wildlife and plants",
+    policyUrl: "https://www.inaturalist.org/pages/terms",
+    browse: natureTopics, capabilities: commons.capabilities,
+  },
+  async (query, topic, page, signal) => {
+    const url = new URL("https://api.inaturalist.org/v1/observations");
+    url.search = new URLSearchParams({
+      photos: "true", photo_license: "cc0", per_page: String(providerPageSize),
+      page: String(page + 1), order_by: "id", order: "desc",
+    }).toString();
+    if (query) url.searchParams.set("taxon_name", query);
+    const taxon = topic === "birds" ? "3" : topic === "plants" ? "47126" : topic === "animals" ? "1" : null;
+    if (taxon) url.searchParams.set("taxon_id", taxon);
+    const result = observationSchema.safeParse(await catalogJson(url, signal));
+    if (!result.success) throw new ProviderError("invalid");
+    return { items: result.data.results, total: Math.min(10000, result.data.total_results) };
+  },
+  (item) => {
+    const photo = item.photos.find((photo) => photo.license_code === "cc0" && !photo.hidden &&
+      isProviderUrl("inaturalist", "image", photo.url) && /\/square\.(jpg|jpeg|png)$/i.test(new URL(photo.url).pathname));
+    if (!photo) return null;
+    const mime = /\.png$/i.test(new URL(photo.url).pathname) ? "image/png" : "image/jpeg";
+    return {
+      provider: "inaturalist", id: String(photo.id),
+      title: (item.taxon?.preferred_common_name || item.taxon?.name || "Wildlife").slice(0, 1000),
+      sourcePage: `https://www.inaturalist.org/photos/${photo.id}`,
+      creator: photo.attribution.slice(0, 1000), license: "CC0",
+      licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+      thumbnail: photo.url.replace(/\/square\./, "/medium."),
+      original: { url: photo.url.replace(/\/square\./, "/original."), mime, ...photo.original_dimensions },
+    };
+  },
+);
+
+const openverseSchema = z.object({
+  result_count: z.number().int().nonnegative(),
+  page_count: z.number().int().nonnegative(),
+  results: z.array(z.object({
+    id: z.uuid(), title: z.string().nullable(), creator: z.string().nullable(),
+    url: z.string(), foreign_landing_url: z.string(),
+    license: z.string(), license_version: z.string(), license_url: z.string(),
+    width: z.number().positive().nullable(), height: z.number().positive().nullable(),
+    filesize: z.number().nonnegative().nullable().optional(), mature: z.boolean().optional(),
+  })),
+});
+export const openverse = catalogProvider(
+  {
+    id: "openverse", name: "Openverse", domain: "Flickr and Wikimedia images",
+    policyUrl: "https://openverse.org/about",
+    browse: [], capabilities: commons.capabilities,
+  },
+  async (query, _topic, page, signal) => {
+    const url = new URL("https://api.openverse.org/v1/images/");
+    url.search = new URLSearchParams({
+      q: query || "nature",
+      license: "cc0,pdm", source: "flickr,wikimedia", mature: "false",
+      page_size: String(providerPageSize), page: String(page + 1),
+    }).toString();
+    const result = openverseSchema.safeParse(await catalogJson(url, signal));
+    if (!result.success) throw new ProviderError("invalid");
+    return { items: result.data.results, total: Math.min(result.data.result_count, result.data.page_count * providerPageSize) };
+  },
+  (item) => {
+    if (item.mature || !isProviderUrl("openverse", "image", item.url)) return null;
+    const license = imageLicenseSchema.safeParse(
+      item.license === "cc0" ? "CC0" : item.license === "pdm" ? "Public domain" : "",
+    );
+    if (!license.success) return null;
+    const extension = new URL(item.url).pathname.match(/\.(jpe?g|png|webp)$/i)?.[1]?.toLowerCase();
+    if (!extension) return null;
+    return {
+      provider: "openverse", id: item.id, title: plainText(item.title || "Image"),
+      sourcePage: item.foreign_landing_url, creator: plainText(item.creator || ""),
+      license: license.data, licenseUrl: item.license_url,
+      thumbnail: `https://api.openverse.org/v1/images/${item.id}/thumb/`,
+      original: {
+        url: item.url, mime: extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg",
+        ...(item.width && item.height ? { width: item.width, height: item.height } : {}),
+        ...(item.filesize !== null && item.filesize !== undefined ? { size: item.filesize } : {}),
+      },
+    };
+  },
+);
+
+export const imageProviders: readonly ImageProvider[] = [commons, met, smk, inaturalist, openverse];
 
 export async function downloadProviderImage(
   image: ProviderImage,
   signal: AbortSignal,
 ): Promise<{ blob: Blob; provenance: NonNullable<Asset["provenance"]> }> {
+  if (!imageLicenseSchema.safeParse(image.license).success)
+    throw new ProviderError("invalid");
   const provenance = provenanceSchema.safeParse({
     provider: image.provider,
     entityId: image.id,
@@ -728,7 +941,7 @@ export async function downloadProviderImage(
   if (
     !response.ok ||
     (response.url &&
-      !safeUrl(response.url, providerHosts[image.provider].image)) ||
+      !isProviderUrl(image.provider, "image", response.url)) ||
     response.headers.get("Content-Type")?.split(";")[0] !==
       image.original.mime ||
     !response.body

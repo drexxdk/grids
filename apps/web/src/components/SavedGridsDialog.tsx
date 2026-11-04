@@ -13,7 +13,7 @@ import {
   fromSavedGrid,
   toSavedGrid,
 } from "@grids/contracts/cloud";
-import { applyEditorSettings, getEditorSettings, type Workspace } from "../model";
+import { applyEditorSettings, getEditorSettings, imageLicenseSchema, type Workspace } from "../model";
 import { apiRequest } from "../browser/api";
 import type { AccountSession } from "../browser/account";
 import { t } from "../i18n";
@@ -98,6 +98,8 @@ export function SavedGridsDialog({
     const saved = await apiRequest(`/grids/${item.id}`, gridItemSchema);
     const current = latestWorkspace.current;
     const restored = fromSavedGrid(saved.document, current.assets);
+    if (saved.document.assets.some((asset) => !imageLicenseSchema.safeParse(asset.provenance.license).success))
+      toast.info(t("save.removedAttributed"));
     const restoredIds = new Set(restored.assets.map((asset) => asset.id));
     if (saved.document.localAssetIds.some((id) => !restoredIds.has(id))) {
       toast.warning(t("account.unavailableLocal"));

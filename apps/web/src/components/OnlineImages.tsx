@@ -19,6 +19,9 @@ import {
   Coffee,
   Grid2X2,
   Search,
+  PawPrint,
+  Bird,
+  Flower2,
 } from "lucide-react";
 import { t } from "../i18n";
 import {
@@ -49,6 +52,9 @@ const topicIcons = {
   portraits: UserRound,
   prints: Layers,
   ceramics: Coffee,
+  animals: PawPrint,
+  birds: Bird,
+  plants: Flower2,
 };
 
 function OnlineImage({
@@ -125,6 +131,7 @@ function OnlineImage({
       })
       .catch(() => {
         if (url) URL.revokeObjectURL(url);
+        if (!controller.signal.aborted) setReady(true);
       });
     return () => {
       controller.abort();
@@ -158,6 +165,10 @@ function OnlineImage({
             });
         }}
         onImageError={(loaded) => {
+          if (image.provider === "met" && loaded.src === image.thumbnail && !needsOriginal) {
+            setThumbnailSize({ width: 0, height: 0 });
+            return;
+          }
           if (loaded.src !== image.thumbnail) setFailedPreview(loaded.src);
           else setReady(true);
         }}

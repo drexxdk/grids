@@ -83,6 +83,7 @@ import {
   cellGeometry,
   headingGeometry,
   gridSpacing,
+  removeCreditRequiredImages,
   type Asset,
   type Board,
   type GridPatch,
@@ -398,6 +399,12 @@ export default function App() {
   const resetGridButton = useRef<HTMLButtonElement>(null);
   const [resetGridOpen, setResetGridOpen] = useState(false);
   const board = workspace.grid;
+  useLayoutEffect(() => {
+    const cleaned = removeCreditRequiredImages(workspace);
+    if (cleaned === workspace) return;
+    dispatchDocument({ type: "workspace/restore", workspace: cleaned });
+    toast.info(t("save.removedAttributed"), { id: "unsupported-image-licenses" });
+  }, [workspace]);
   const [captionRows, setCaptionRows] = useState(1);
   const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
   const [canvasOverflow, setCanvasOverflow] = useState({ width: 0, height: 0 });

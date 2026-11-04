@@ -815,6 +815,157 @@ test("provider provenance validates safe source URLs and stays out of settings",
     ).toBe(false);
 });
 
+test("removing legacy credited images preserves other images, captions, crops and settings", () => {
+  const workspace = model.makeWorkspace();
+  const asset = {
+    id: crypto.randomUUID(), title: "Original image", category: "Imported",
+    src: "https://live.staticflickr.com/1/photo.jpg",
+    provenance: {
+      provider: "openverse", entityId: crypto.randomUUID(),
+      title: "Original image", creator: "Example photographer",
+      sourcePage: "https://www.flickr.com/photos/example/123",
+      originalUrl: "https://live.staticflickr.com/1/photo.jpg",
+      license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+    },
+  };
+  const local = { id: crypto.randomUUID(), title: "Local", category: "Imported", src: "blob:local" };
+  const publicDomain = {
+    ...asset, id: crypto.randomUUID(),
+    provenance: { ...asset.provenance, license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/" },
+  };
+  workspace.assets = [asset, local, publicDomain];
+  workspace.grid.cells[0] = { ...workspace.grid.cells[0], assetId: asset.id, title: "Credit", crop: { x: 0, y: 0, width: 0.5, height: 0.5 } };
+  workspace.grid.cells[1] = { ...workspace.grid.cells[1], assetId: local.id, title: "Keep caption", crop: { x: 0, y: 0, width: 0.5, height: 0.5 } };
+  workspace.grid.cells[2].assetId = publicDomain.id;
+  workspace.grid.overflow = [{ row: 3, column: 0, cell: { ...workspace.grid.cells[0], id: crypto.randomUUID() } }];
+  workspace.grid.gap = 42;
+  const clean = model.removeCreditRequiredImages(workspace);
+  expect(clean.assets).toEqual([local, publicDomain]);
+  expect(clean.grid.cells[0]).toMatchObject({ assetId: null, title: "", crop: undefined });
+  expect(clean.grid.overflow[0].cell).toMatchObject({ assetId: null, title: "", crop: undefined });
+  expect(clean.grid.cells[1]).toEqual(workspace.grid.cells[1]);
+  expect(clean.grid.cells[2]).toEqual(workspace.grid.cells[2]);
+  expect(model.getEditorSettings(clean)).toEqual(model.getEditorSettings(workspace));
+  expect(model.removeCreditRequiredImages(clean)).toBe(clean);
+  expect(model.workspaceSchema.safeParse(clean).success).toBe(true);
+  expect(workspace.assets).toHaveLength(3);
+  for (const license of ["CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0", "CC BY-SA 4.0"])
+    expect(model.imageLicenseSchema.safeParse(license).success).toBe(false);
+});
+
+test("keyless catalog cursors retain filtered rows across differently sized pages", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    requests.push(url);
+    const offset = Number(url.searchParams.get("offset"));
+    return Response.json({
+      found: 24,
+      items: Array.from({ length: 12 }, (_, index) => {
+        const id = offset + index;
+        return {
+          object_number: `KKS${id}`, frontend_url: `https://open.smk.dk/artwork/image/KKS${id}`,
+          titles: [{ title: `Artwork ${id}` }], artist: ["Artist"],
+          public_domain: true, rights: id === 0 ? "Restricted" : "https://creativecommons.org/publicdomain/mark/1.0/",
+          image_iiif_id: `https://iip.smk.dk/iiif/jp2/${id}.jp2`, image_width: 8000, image_height: 4000,
+        };
+      }),
+    });
+  };
+  try {
+    const query = crypto.randomUUID();
+    const first = await providers.smk.search(query, new AbortController().signal, 0, null, 2);
+    expect(first.images.map((image) => image.id)).toEqual(["KKS1", "KKS2"]);
+    expect(first.next).toBe(3);
+    const second = await providers.smk.search(query, new AbortController().signal, first.next, null, 10);
+    expect(second.images.map((image) => image.id)).toEqual(Array.from({ length: 10 }, (_, index) => `KKS${index + 3}`));
+    expect(second.next).toBe(13);
+    expect(requests.map((url) => url.searchParams.get("rows"))).toEqual(["12", "12", "12"]);
+    expect(requests.map((url) => url.searchParams.get("offset"))).toEqual(["0", "0", "12"]);
+    expect(first.images[0].original).toMatchObject({ width: 4000, height: 2000, mime: "image/jpeg" });
+    expect(first.images[0].original.url).toContain("/full/!4000,4000/");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("keyless nature searches combine topics and text and require photo-level CC0 rights", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const photo = {
+    id: 123, url: "https://inaturalist-open-data.s3.amazonaws.com/photos/123/square.jpg",
+    license_code: "cc0", attribution: "Photographer",
+    original_dimensions: { width: 800, height: 600 },
+  };
+  globalThis.fetch = async (input) => {
+    requests.push(new URL(input));
+    return Response.json({
+      total_results: 3,
+      results: [
+        { license_code: "cc0", photos: [{ ...photo, license_code: "cc-by" }] },
+        { photos: [{ ...photo, url: "https://evil.example/square.jpg" }] },
+        { taxon: { name: "Erithacus rubecula" }, photos: [photo] },
+      ],
+    });
+  };
+  try {
+    const query = crypto.randomUUID();
+    const result = await providers.inaturalist.search(query, new AbortController().signal, 0, "birds");
+    expect(result.images.map((image) => image.id)).toEqual(["123"]);
+    expect(requests[0].searchParams.get("taxon_name")).toBe(query);
+    expect(requests[0].searchParams.get("taxon_id")).toBe("3");
+    await providers.inaturalist.search(crypto.randomUUID(), new AbortController().signal, 0, null);
+    expect(requests[1].searchParams.has("taxon_id")).toBe(false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("keyless catalogs reject unsafe rights and hosts and expose quota and malformed responses", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalParser = globalThis.DOMParser;
+  globalThis.DOMParser = class {
+    parseFromString(value) { return { body: { textContent: value } }; }
+  };
+  const id = crypto.randomUUID();
+  const image = {
+    id, title: "Photo", creator: "Photographer", url: "https://live.staticflickr.com/1/photo.jpg",
+    foreign_landing_url: "https://www.flickr.com/photos/example/123",
+    license: "cc0", license_version: "1.0", license_url: "https://creativecommons.org/publicdomain/zero/1.0/",
+    width: 800, height: 600, filesize: null, mature: false,
+  };
+  try {
+    globalThis.fetch = async () => Response.json({
+      result_count: 5, page_count: 1,
+      results: [
+        { ...image, id: crypto.randomUUID(), license: "by-sa" },
+        { ...image, id: crypto.randomUUID(), license: "by", license_version: "4.0" },
+        { ...image, id: crypto.randomUUID(), url: "https://evil.example/photo.jpg" },
+        { ...image, id: crypto.randomUUID(), foreign_landing_url: "https://localhost/private" },
+        image,
+      ],
+    });
+    const result = await providers.openverse.search(crypto.randomUUID(), new AbortController().signal);
+    expect(result.images.map((item) => item.id)).toEqual([id]);
+    expect(result.images[0].license).toBe("CC0");
+    globalThis.fetch = async () => { throw new Error("Unsupported downloads must not reach the network."); };
+    await expect(providers.downloadProviderImage({
+      ...result.images[0], license: "CC BY 4.0",
+    }, new AbortController().signal)).rejects.toMatchObject({ kind: "invalid" });
+    globalThis.fetch = async () => new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
+    await expect(providers.openverse.search(crypto.randomUUID(), new AbortController().signal))
+      .rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
+    globalThis.fetch = async () => new Response("not JSON");
+    await expect(providers.smk.search(crypto.randomUUID(), new AbortController().signal))
+      .rejects.toMatchObject({ kind: "invalid" });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(providers.inaturalist.search("bird", controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.DOMParser = originalParser;
+  }
+});
+
 test("translations render valid ICU messages, plurals and interpolated values", async () => {
   const en = JSON.parse(
     await readFile(new URL("../src/locales/en.json", import.meta.url), "utf8"),
@@ -1135,9 +1286,9 @@ test("multiline caption geometry caps shared bands at three rows without changin
   ).toMatchObject({
     aspectRatio: 4 / 3,
     imageHeight: 450,
-    captionHeight: 150,
+    captionHeight: 142,
     imageTop: 0,
-    captionTop: 300,
+    captionTop: 308,
     height: 450,
   });
   for (const imageAspect of ["portrait", "landscape", "square"])
@@ -1152,6 +1303,31 @@ test("multiline caption geometry caps shared bands at three rows without changin
         geometry.imageHeight - geometry.captionHeight,
       ).toBeGreaterThanOrEqual(300);
     }
+});
+
+test("overlay bands reserve only the caption rows that fit at the selected font size", () => {
+  const style = {
+    ...model.makeWorkspace().grid,
+    captionPlacement: "overlay",
+    imageAspect: "portrait",
+    cellFontSize: 36,
+  };
+  for (const width of [150, 300, 600, 1200]) {
+    for (const imageAspect of ["portrait", "square", "landscape"]) {
+      const settings = { ...style, imageAspect };
+      const short = model.cellGeometry(settings, width, 1);
+      const long = model.cellGeometry(settings, width, 3);
+      expect(long.captionHeight).toBe(short.captionHeight);
+      expect(long.imageHeight - long.captionHeight).toBeGreaterThanOrEqual(width * 0.5);
+      expect(model.cellGeometry(settings, width, 0).captionHeight).toBe(0);
+      expect(model.cellGeometry({ ...settings, titlesVisible: false }, width, 3).captionHeight).toBe(0);
+    }
+    const smaller = { ...style, cellFontSize: 24 };
+    expect(model.cellGeometry(smaller, width, 3).captionHeight)
+      .toBe(model.cellGeometry(smaller, width, 2).captionHeight);
+    expect(model.cellGeometry(smaller, width, 2).captionHeight)
+      .toBeGreaterThan(model.cellGeometry(smaller, width, 1).captionHeight);
+  }
 });
 
 test("grid appearance settings roundtrip and share cell geometry", () => {

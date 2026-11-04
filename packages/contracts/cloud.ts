@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   editorSettingsSchema,
+  imageLicenseSchema,
+  removeCreditRequiredImages,
   provenanceSchema,
   workspaceSchema,
   type Cell,
@@ -67,6 +69,9 @@ export const itemNameSchema = z.string().trim().min(1).max(70);
 export const gridWriteSchema = z.strictObject({
   name: itemNameSchema,
   document: savedGridSchema,
+}).superRefine(({ document }, context) => {
+  if (document.assets.some((asset) => !imageLicenseSchema.safeParse(asset.provenance.license).success))
+    context.addIssue({ code: "custom", message: "Only public-domain and CC0 images are supported." });
 });
 export const presetWriteSchema = z.strictObject({
   name: itemNameSchema,
@@ -90,6 +95,7 @@ export const presetItemSchema = presetSummarySchema.extend({
 });
 
 export function toSavedGrid(workspace: Workspace): SavedGrid {
+  workspace = removeCreditRequiredImages(workspace);
   const assets = workspace.assets
     .filter((asset) => asset.provenance && asset.trashedAt === undefined)
     .map((asset) => ({
@@ -133,7 +139,7 @@ export function fromSavedGrid(input: unknown, localAssets: Workspace["assets"] =
     cell.assetId && !availableIds.has(cell.assetId)
       ? { ...cell, assetId: null, crop: undefined }
       : cell;
-  return workspaceSchema.parse({
+  return removeCreditRequiredImages(workspaceSchema.parse({
     version: saved.version,
     grid: {
       ...saved.grid,
@@ -148,5 +154,5 @@ export function fromSavedGrid(input: unknown, localAssets: Workspace["assets"] =
       })),
       ...local,
     ],
-  });
+  }));
 }

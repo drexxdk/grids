@@ -449,7 +449,7 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
     async (route) => {
       const url = new URL(route.request().url());
       const query = url.searchParams.get("gsrsearch");
-      expect(query).toContain("haslicense:unrestricted");
+      expect(query).toContain("filetype:bitmap");
       const offset = Number(url.searchParams.get("gsroffset"));
       const limit = Number(url.searchParams.get("gsrlimit"));
       requests.push({ query, offset, limit });
@@ -535,6 +535,15 @@ async function mockCommons(page, { width = 400, height = 600 } = {}) {
                   ),
                   result(2, "Moon"),
                 ]
+              : query.startsWith("credited")
+                ? [result(80, "Credit file", {
+                    ObjectName: { value: "<span>Credited photo</span>" },
+                    Attribution: { value: "Credit Fixture Archive" },
+                    LicenseShortName: { value: "CC BY 4.0" },
+                    LicenseUrl: { value: "https://creativecommons.org/licenses/by/4.0" },
+                    Copyrighted: { value: "True" },
+                    AttributionRequired: { value: "true" },
+                  })]
               : query.startsWith("moon")
                 ? [result(2, "Moon")]
                 : first;
@@ -978,6 +987,39 @@ test("Met preview variants upgrade only when necessary and release temporary ori
   expect(originals).toHaveLength(2);
   expect((await localDatabase(page)).images).toHaveLength(0);
 });
+
+for (const originalAvailable of [true, false]) {
+  test(`Met failed thumbnails ${originalAvailable ? "use a bounded original preview" : "show an error when the original also fails"}`, async ({ page }) => {
+    await mockMet(page);
+    const bytes = await readFile(path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"));
+    let originalRequests = 0;
+    await page.route("https://images.metmuseum.org/**", async (route) => {
+      if (route.request().url().includes("/web-large/")) return route.abort("failed");
+      originalRequests++;
+      return route.fulfill({
+        status: originalAvailable ? 200 : 503,
+        contentType: "image/jpeg",
+        body: bytes,
+      });
+    });
+    await page.goto("./");
+    await selectField(page, "sidebar-image-source", "met");
+    const online = page.getByRole("region", { name: "Online", exact: true });
+    if (originalAvailable) {
+      const image = online.locator(".asset img");
+      await expect(image).toHaveAttribute("src", /^blob:/);
+      await expect(image).toHaveJSProperty("naturalWidth", 1200);
+      await expect(online.getByText("Image unavailable. Check your connection or choose another image.", { exact: true })).toHaveCount(0);
+    } else {
+      await expect(online.getByText("Image unavailable. Check your connection or choose another image.", { exact: true })).toBeVisible();
+    }
+    await expect(online.locator("[data-online-image-loading]")).toHaveCount(0);
+    expect(originalRequests).toBe(1);
+    const saved = await localDatabase(page);
+    expect(saved.images).toHaveLength(0);
+    expect(saved.document.assets).toHaveLength(0);
+  });
+}
 
 async function showImageActions(container, touch = false) {
   const image = container.locator("[data-library-thumbnail]").first();
@@ -4804,6 +4846,154 @@ test("imported captions preserve library capitalization in the canvas and export
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
 });
 
+for (const provider of ["smk", "inaturalist", "openverse"]) {
+  test(`${provider} searches without keys and imports durable references without image blobs`, async ({ page }) => {
+    const bytes = await readFile(path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"));
+    const requests = [];
+    const id = "550e8400-e29b-41d4-a716-446655440000";
+    const routes = {
+      smk: {
+        api: "https://api.smk.dk/api/v1/art/search?*",
+        image: /^https:\/\/iip\.smk\.dk\//,
+        title: "Artwork", license: "Public domain",
+        response: { found: 1, items: [{
+          object_number: "KKS1", titles: [{ title: "Artwork" }], artist: ["Artist"],
+          frontend_url: "https://open.smk.dk/artwork/image/KKS1",
+          public_domain: true, rights: "https://creativecommons.org/publicdomain/mark/1.0/",
+          image_iiif_id: "https://iip.smk.dk/iiif/jp2/1.jp2", image_width: 800, image_height: 600,
+        }] },
+      },
+      inaturalist: {
+        api: "https://api.inaturalist.org/v1/observations?*",
+        image: /^https:\/\/inaturalist-open-data\.s3\.amazonaws\.com\//,
+        title: "Bird", license: "CC0",
+        response: { total_results: 1, results: [{
+          taxon: { name: "Bird", preferred_common_name: "Bird" },
+          photos: [{ id: 1, url: "https://inaturalist-open-data.s3.amazonaws.com/photos/1/square.jpg",
+            license_code: "cc0", attribution: "Creator", original_dimensions: { width: 800, height: 600 } }],
+        }] },
+      },
+      openverse: {
+        api: "https://api.openverse.org/v1/images/?*",
+        image: /^https:\/\/(api\.openverse\.org\/v1\/images\/[^/]+\/thumb\/|live\.staticflickr\.com\/)/,
+        title: "Photograph", license: "CC0",
+        response: { result_count: 1, page_count: 1, results: [{
+          id, title: "Photograph", creator: "Photographer", url: "https://live.staticflickr.com/1/photo.jpg",
+          foreign_landing_url: "https://www.flickr.com/photos/example/1",
+          license: "cc0", license_version: "1.0", license_url: "https://creativecommons.org/publicdomain/zero/1.0/",
+          width: 800, height: 600, filesize: bytes.length, mature: false,
+        }] },
+      },
+    };
+    const fixture = routes[provider];
+    await page.route(fixture.image, (route) => route.fulfill({ contentType: "image/jpeg", body: bytes }));
+    await page.route(fixture.api, (route) => {
+      requests.push(new URL(route.request().url()));
+      return route.fulfill({ json: fixture.response });
+    });
+    await page.goto("./");
+    await selectField(page, "sidebar-image-source", provider);
+    const online = page.getByRole("region", { name: "Online", exact: true });
+    await online.getByRole("searchbox", { name: "Search images", exact: true }).fill("Bird");
+    await expect(online).toHaveAttribute("aria-busy", "false");
+    await online.getByRole("button", { name: `Image options: ${fixture.title}`, exact: true }).click();
+    await online.getByRole("button", { name: `Import ${fixture.title}`, exact: true }).click();
+    await selectField(page, "sidebar-image-source", "imported");
+    await expect(page.locator(".asset-name")).toHaveJSProperty("readOnly", false);
+    await chooseImage(page, fixture.title);
+    await expect(page.locator(".grid-cell").first().locator("img")).toBeVisible();
+    await reloadWorkspace(page);
+    const saved = await localDatabase(page);
+    expect(saved.document.assets[0].provenance).toMatchObject({ provider, license: fixture.license });
+    expect(saved.images).toEqual([]);
+    expect(requests.length).toBeGreaterThan(0);
+    for (const url of requests) {
+      for (const key of ["api_key", "apiKey", "key", "access_token", "token", "secret"])
+        expect(url.searchParams.has(key)).toBe(false);
+      if (provider === "openverse") expect(url.searchParams.get("license")).toBe("cc0,pdm");
+      if (provider === "inaturalist") expect(url.searchParams.get("photo_license")).toBe("cc0");
+    }
+  });
+}
+
+test("Commons excludes images requiring credit and keeps public-domain titles editable", async ({ page }) => {
+  await mockCommons(page);
+  const searched = page.waitForResponse((response) =>
+    response.url().startsWith("https://commons.wikimedia.org/w/api.php") &&
+    new URL(response.url()).searchParams.get("gsrsearch")?.startsWith("credited"),
+  );
+  await page.goto("./?source=commons&q=credited&topic=all");
+  await searched;
+  const online = page.getByRole("region", { name: "Online", exact: true });
+  await expect(online).toHaveAttribute("aria-busy", "false");
+  await expect(online.locator(".asset-name")).toHaveCount(0);
+  await online.getByRole("searchbox", { name: "Search images", exact: true }).fill("moon");
+  await online.getByRole("button", { name: "Image options: Moon", exact: true }).click();
+  await online.getByRole("button", { name: "Import Moon", exact: true }).click();
+  await selectField(page, "sidebar-image-source", "imported");
+  await chooseImage(page, "Moon");
+  const caption = page.locator(".cell-heading").first();
+  await caption.fill("My editable heading");
+  await reloadWorkspace(page);
+  await expect(caption).toHaveValue("My editable heading");
+  await expect(page.locator("[data-image-credits]")).toHaveCount(0);
+});
+
+test("legacy credited images are removed persistently without losing local images or settings", async ({ page }) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles({
+    name: "Keep.svg", mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>'),
+  });
+  await expect(page.locator(".asset-name")).toHaveValue("Keep");
+  const original = await savedWorkspace(page);
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open("grids-client-v1");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction("documents", "readwrite");
+      const documents = transaction.objectStore("documents");
+      const get = documents.get("guest");
+      get.onsuccess = () => {
+        const document = get.result;
+        const id = crypto.randomUUID();
+        document.assets.push({
+          id, title: "Legacy credit", category: "Imported",
+          provenance: {
+            provider: "openverse", entityId: crypto.randomUUID(),
+            title: "Legacy credit", creator: "Photographer",
+            sourcePage: "https://www.flickr.com/photos/example/123",
+            originalUrl: "https://live.staticflickr.com/1/photo.jpg",
+            license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+          },
+        });
+        document.grid.cells[0] = { ...document.grid.cells[0], assetId: id, title: "Legacy credit" };
+        document.grid.cells[1] = {
+          ...document.grid.cells[1], assetId: document.assets[0].id, title: "Keep caption",
+          crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
+        };
+        document.grid.gap = 42;
+        documents.put(document);
+      };
+      transaction.onerror = () => { db.close(); reject(transaction.error); };
+      transaction.oncomplete = () => { db.close(); resolve(); };
+    };
+  }));
+  await page.reload();
+  await expect(page.getByText("Images requiring attribution were removed. Other images and settings were kept.", { exact: true })).toBeVisible();
+  await expect(page.locator(".grid-cell").nth(1).locator("img")).toBeVisible();
+  const migrated = await savedWorkspace(page);
+  expect(migrated.assets).toEqual(original.assets);
+  expect(migrated.grid.cells[0]).toMatchObject({ assetId: null, title: "" });
+  expect(migrated.grid.cells[1]).toMatchObject({ assetId: original.assets[0].id, title: "Keep caption", crop: { x: 0, y: 0, width: 0.5, height: 0.5 } });
+  expect(migrated.grid.gap).toBe(42);
+  expect((await localDatabase(page)).images).toHaveLength(1);
+  await reloadWorkspace(page);
+  expect((await savedWorkspace(page)).assets).toEqual(original.assets);
+  await expect(page.locator("[data-image-credits]")).toHaveCount(0);
+});
+
 test("hovering images preserves caption focus and keyboard actions remain available", async ({
   page,
 }) => {
@@ -4902,6 +5092,52 @@ test("empty cells hide captions and dropped replacements use the incoming image 
     .dragTo(cell.locator(".cell-image-button"));
   await expect(caption).toBeVisible();
   await expect(caption).toHaveValue("First");
+});
+
+test("large-font overlays with one visible line have matching bands in preview and export", async ({ page }) => {
+  await page.goto("./");
+  await page.locator("#upload").setInputFiles(
+    ["Hi", "Long"].map((name) => ({
+      name: `${name}.svg`, mimeType: "image/svg+xml",
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#40b4aa"/></svg>'),
+    })),
+  );
+  for (const index of [0, 1])
+    await page.locator("[data-library-thumbnail]").nth(index).dragTo(page.locator(".cell-image-button").nth(index));
+  const captions = page.locator(".cell-heading");
+  const multiline = "Line One\nLine Two\nLine Three";
+  await captions.nth(1).fill(multiline);
+  await openSidebarPanel(page, "Settings");
+  await selectField(page, "image-shape", "portrait");
+  await selectField(page, "caption-position", "overlay-bottom");
+  await page.locator("#cell-font-size").fill("100");
+  await expect.poll(() => captions.evaluateAll((fields) => {
+    const [short, long] = fields;
+    return Math.abs(short.getBoundingClientRect().height - long.getBoundingClientRect().height) < 0.1 &&
+      [short, long].every((field) => field.parentElement.style.getPropertyValue("--library-caption-lines") === "1");
+  })).toBe(true);
+  await page.evaluate(() => {
+    const fillRect = CanvasRenderingContext2D.prototype.fillRect;
+    window.overlayBands = [];
+    CanvasRenderingContext2D.prototype.fillRect = function (x, y, width, height) {
+      if (this.globalAlpha > 0 && this.globalAlpha < 1)
+        window.overlayBands.push({ width, height });
+      return fillRect.call(this, x, y, width, height);
+    };
+  });
+  for (const resolution of [150, 300]) {
+    await page.evaluate(() => { window.overlayBands = []; });
+    await page.locator("#export-grid-header").click();
+    await selectField(page, "resolution", String(resolution));
+    const download = await downloadBoard(page);
+    const bytes = await readFile(await download.path());
+    expect(bytes.readUInt32BE(16)).toBeGreaterThan(resolution);
+    const bands = await page.evaluate(() => window.overlayBands);
+    expect(bands).toHaveLength(2);
+    expect(bands[0].width).toBe(resolution);
+    expect(bands[0].height).toBe(bands[1].height);
+  }
+  await expect(captions.nth(1)).toHaveValue(multiline);
 });
 
 test("captions share external bands and fit individual overlays across canvas, library and export", async ({
@@ -5014,7 +5250,9 @@ test("captions share external bands and fit individual overlays across canvas, l
           .toBe(true);
         const short = await captions.first().boundingBox();
         const long = await captions.nth(1).boundingBox();
-        expect(short.height).toBeLessThan(long.height);
+        if (shape === "landscape")
+          expect(Math.abs(short.height - long.height)).toBeLessThan(0.1);
+        else expect(short.height).toBeLessThan(long.height);
         const card = await page.locator(".grid-cell").nth(1).boundingBox();
         expect(card.height - long.height).toBeGreaterThanOrEqual(
           card.width * 0.5 - 1,

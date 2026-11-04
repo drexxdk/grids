@@ -22,23 +22,41 @@ export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
 export const providerHosts = {
-  commons: { source: "commons.wikimedia.org", image: "upload.wikimedia.org" },
-  met: { source: "www.metmuseum.org", image: "images.metmuseum.org" },
+  commons: { source: ["commons.wikimedia.org"], image: ["upload.wikimedia.org"] },
+  met: { source: ["www.metmuseum.org"], image: ["images.metmuseum.org"] },
+  smk: { source: ["open.smk.dk"], image: ["iip.smk.dk"] },
+  inaturalist: {
+    source: ["www.inaturalist.org"],
+    image: ["inaturalist-open-data.s3.amazonaws.com"],
+  },
+  openverse: {
+    source: ["www.flickr.com", "flickr.com", "commons.wikimedia.org"],
+    image: ["live.staticflickr.com", "upload.wikimedia.org"],
+  },
 } as const;
+export const imageLicenseSchema = z.enum(["CC0", "Public domain"]);
+export function isProviderUrl(provider: keyof typeof providerHosts, kind: "source" | "image", value: string) {
+  try {
+    const url = new URL(value);
+    const hosts: readonly string[] = providerHosts[provider][kind];
+    return url.protocol === "https:" && hosts.includes(url.hostname) &&
+      !url.username && !url.password && !url.port && !url.hash;
+  } catch {
+    return false;
+  }
+}
 export const provenanceSchema = z
   .strictObject({
-    provider: z.enum(["commons", "met"]),
-    entityId: z.string().regex(/^\d+$/),
-    sourcePage: z.url({
-      protocol: /^https$/,
-      hostname: /^(commons\.wikimedia\.org|www\.metmuseum\.org)$/,
-    }),
-    originalUrl: z.url({
-      protocol: /^https$/,
-      hostname: /^(upload\.wikimedia\.org|images\.metmuseum\.org)$/,
-    }),
+    provider: z.enum(["commons", "met", "smk", "inaturalist", "openverse"]),
+    entityId: z.string().min(1).max(100).regex(/^[A-Za-z0-9._ -]+$/),
+    sourcePage: z.url({ protocol: /^https$/ }).max(1000),
+    originalUrl: z.url({ protocol: /^https$/ }).max(2000),
     creator: z.string().max(1000),
-    license: z.enum(["CC0", "Public domain"]),
+    title: z.string().trim().min(1).max(1000).optional(),
+    // Legacy CC BY references remain readable so they can be removed without losing other content.
+    license: imageLicenseSchema.or(z.enum([
+      "CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0",
+    ])),
     licenseUrl: z.url({
       protocol: /^https$/,
       hostname: /^(creativecommons\.org|commons\.wikimedia\.org)$/,
@@ -46,16 +64,18 @@ export const provenanceSchema = z
   })
   .refine((value) => {
     try {
-      const source = new URL(value.sourcePage);
-      const original = new URL(value.originalUrl);
       const license = new URL(value.licenseUrl);
-      const hosts = providerHosts[value.provider];
+      const attributed = value.license.startsWith("CC BY ");
       return (
-        source.hostname === hosts.source &&
-        original.hostname === hosts.image &&
-        [source, original, license].every(
-          (url) => !url.username && !url.password && !url.port,
-        )
+        isProviderUrl(value.provider, "source", value.sourcePage) &&
+        isProviderUrl(value.provider, "image", value.originalUrl) &&
+        (!["commons", "met", "inaturalist"].includes(value.provider) || /^\d+$/.test(value.entityId)) &&
+        (value.provider !== "openverse" || z.uuid().safeParse(value.entityId).success) &&
+        !license.username && !license.password && !license.port && !license.hash &&
+        (!attributed || Boolean(value.title && value.creator.trim()) &&
+          license.hostname === "creativecommons.org" &&
+          license.pathname.replace(/\/$/, "") === `/licenses/by/${value.license.slice(6)}` &&
+          !license.search)
       );
     } catch {
       return false;
@@ -70,6 +90,24 @@ export interface Asset {
   provenance?: z.infer<typeof provenanceSchema>;
   trashedAt?: number;
   libraryHidden?: boolean;
+}
+export function removeCreditRequiredImages(workspace: Workspace): Workspace {
+  const removed = new Set(workspace.assets
+    .filter((asset) => asset.provenance && !imageLicenseSchema.safeParse(asset.provenance.license).success)
+    .map((asset) => asset.id));
+  if (!removed.size) return workspace;
+  const cleanCell = (cell: Cell): Cell => cell.assetId && removed.has(cell.assetId)
+    ? { ...cell, assetId: null, title: "", crop: undefined }
+    : cell;
+  return {
+    ...workspace,
+    assets: workspace.assets.filter((asset) => !removed.has(asset.id)),
+    grid: {
+      ...workspace.grid,
+      cells: workspace.grid.cells.map(cleanCell),
+      overflow: workspace.grid.overflow.map((entry) => ({ ...entry, cell: cleanCell(entry.cell) })),
+    },
+  };
 }
 export interface Cell {
   id: string;
@@ -174,6 +212,15 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
         : 1;
   const imageHeight = Math.round(width / aspectRatio);
   const placement = style.captionPlacement ?? "below";
+  const maximumOverlayHeight = Math.max(0, imageHeight - Math.ceil(width * 0.5));
+  if (placement === "overlay" && width > 0 && captionRows > 0) {
+    const lineHeight = width * ((style.cellFontSize ?? 12) / 100) * 1.05;
+    const visibleRows = Math.max(
+      1,
+      Math.floor((maximumOverlayHeight - captionPadding(width).vertical * 2) / lineHeight),
+    );
+    captionRows = Math.min(captionRows, visibleRows);
+  }
   const requestedCaptionHeight =
     style.titlesVisible === false || captionRows === 0
       ? 0
@@ -188,7 +235,7 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
     placement === "overlay"
       ? Math.min(
           requestedCaptionHeight,
-          Math.max(0, imageHeight - Math.ceil(width * 0.5)),
+          maximumOverlayHeight,
         )
       : requestedCaptionHeight;
   const overlayHeight = imageHeight;
@@ -818,10 +865,7 @@ export function documentReducer(
         exportSettings: { ...workspace.exportSettings, ...command.patch },
       };
     case "cell/patch":
-      return updateCell(command.cellId, (cell) => ({
-        ...cell,
-        ...command.patch,
-      }));
+      return updateCell(command.cellId, (cell) => ({ ...cell, ...command.patch }));
     case "cell/crop": {
       const target = grid.cells.find((cell) => cell.id === command.cellId);
       if (!target || target.assetId !== command.assetId) return workspace;

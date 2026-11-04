@@ -153,14 +153,17 @@
       "sculpture": "Sculpture",
       "portraits": "Portraits",
       "prints": "Prints",
-      "ceramics": "Ceramics"
+      "ceramics": "Ceramics",
+      "animals": "Animals",
+      "birds": "Birds",
+      "plants": "Plants"
     },
     "search": {
       "provider": "Provider",
       "query": "Search images",
       "submit": "Search",
       "privacy": "Searches and image requests are sent to {value1}. Local uploads stay in this browser.",
-      "rights": "Public domain and CC0",
+      "rights": "Public-domain and CC0 images only.",
       "loading": "Searching...",
       "empty": "No eligible images found. Try another search.",
       "quota": "{value1} is rate limiting requests. Try again shortly.",
@@ -251,6 +254,7 @@
     "apply": "Apply crop"
   },
   "save": {
+    "removedAttributed": "Images requiring attribution were removed. Other images and settings were kept.",
     "conflict": "Another tab saved a newer grid. This tab is not saving.",
     "reload": "Reload saved grid",
     "reloadPrompt": "Reloading replaces this tab's grid and unsaved images with the saved version.",
