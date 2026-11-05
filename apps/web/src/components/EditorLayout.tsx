@@ -61,6 +61,39 @@ export function EditorLayout({
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
   const panelOrder = [2, 0, 1];
   const panelsId = useId();
+  const panelScroll = useRef(
+    new Map<number, Map<HTMLElement, [number, number]>>(),
+  );
+  const presetsVisited = useRef(false);
+  if (selectedPanel === 2) presetsVisited.current = true;
+  const rememberPanelScroll = () => {
+    const aside = document.getElementById(panelsId);
+    const panel = document.getElementById(`${panelsId}-panel-${selectedPanel}`);
+    if (!aside || !panel) return;
+    const positions = new Map<HTMLElement, [number, number]>();
+    const scrollers = [
+      aside,
+      aside.querySelector<HTMLElement>("[data-sidebar-panels]"),
+      ...panel.querySelectorAll<HTMLElement>("*"),
+    ];
+    for (const element of scrollers)
+      if (element && (element.scrollTop > 0 || element.scrollLeft > 0))
+        positions.set(element, [element.scrollTop, element.scrollLeft]);
+    panelScroll.current.set(selectedPanel, positions);
+  };
+  useLayoutEffect(() => {
+    const aside = document.getElementById(panelsId);
+    if (!aside) return;
+    aside.scrollTop = 0;
+    const panels = aside.querySelector<HTMLElement>("[data-sidebar-panels]");
+    if (panels) panels.scrollTop = 0;
+    for (const [element, [top, left]] of panelScroll.current.get(
+      selectedPanel,
+    ) ?? []) {
+      element.scrollTop = top;
+      element.scrollLeft = left;
+    }
+  }, [panelsId, selectedPanel]);
   const headerElement = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(76);
   const headerActions = useRef<HTMLDivElement>(null);
@@ -285,7 +318,6 @@ export function EditorLayout({
               <aside
                 id={panelsId}
                 data-editor-sidebar
-                data-editor-settings={compact ? true : undefined}
                 aria-label={t("editor.tools")}
                 className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-39.25 max-h-[45dvh] flex-col overflow-y-hidden border-t" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
               >
@@ -311,9 +343,10 @@ export function EditorLayout({
                         square={compact}
                         label={t("editor.panels")}
                         selectedIndex={panelOrder.indexOf(selectedPanel)}
-                        onChange={(index) =>
-                          setSelectedPanel(panelOrder[index]!)
-                        }
+                        onChange={(index) => {
+                          rememberPanelScroll();
+                          setSelectedPanel(panelOrder[index]!);
+                        }}
                         tabs={[
                           { label: t("presets.title"), icon: LayoutGrid },
                           { label: t("editor.images"), icon: Images },
@@ -345,11 +378,12 @@ export function EditorLayout({
                   >
                     {settings(null)}
                   </div>
-                  {selectedPanel === 2 && (
+                  {presetsVisited.current && (
                     <div
                       role="tabpanel"
                       id={`${panelsId}-panel-0`}
                       aria-labelledby={`${panelsId}-tab-0`}
+                      hidden={selectedPanel !== 2}
                       className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                     >
                       {presets()}

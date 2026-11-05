@@ -970,7 +970,7 @@ export function GridCell({
               }}
             >
               <span
-                className="line-clamp-3 whitespace-pre-wrap wrap-anywhere"
+                className="-mb-[0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em]"
                 style={{ WebkitLineClamp: "var(--library-caption-lines,3)" }}
               >
                 {cell.title || t("editor.headingPlaceholder")}

@@ -1441,15 +1441,17 @@ export default function App() {
                 {librarySource === "imported" &&
                   toolsExpanded &&
                   activeAssets.length > 0 && (
-                    <Button
-                      className="mt-2 min-h-11 w-full max-[901px]:col-start-1 max-[901px]:row-start-2 max-[901px]:mt-0"
-                      onClick={() =>
-                        deleteImages(activeAssets.map((asset) => asset.id))
-                      }
-                    >
-                      <Trash2 aria-hidden="true" />
-                      {t("library.clearAll")}
-                    </Button>
+                    <div className="border-0 border-t border-solid border-(--line) mt-6 pt-6 max-[901px]:contents">
+                      <Button
+                        className="min-h-11 w-full max-[901px]:col-start-1 max-[901px]:row-start-2"
+                        onClick={() =>
+                          deleteImages(activeAssets.map((asset) => asset.id))
+                        }
+                      >
+                        <Trash2 aria-hidden="true" />
+                        {t("library.clearAll")}
+                      </Button>
+                    </div>
                   )}
               </div>
             </aside>
@@ -1476,7 +1478,7 @@ export default function App() {
               )}
               <div
                 data-workspace-scroll
-                className="relative min-h-0 flex-1 overflow-auto overscroll-contain scrollbar-gutter-stable"
+                className="relative min-h-0 flex-1 overflow-auto overscroll-x-contain scrollbar-gutter-stable"
               >
                 <div
                   inert={presetPreview !== null}

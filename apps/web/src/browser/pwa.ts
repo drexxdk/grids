@@ -14,7 +14,7 @@ export function registerAppUpdates() {
       return;
     if (
       document.querySelector(
-        '[role="dialog"], [role="listbox"], [data-editor-settings], [data-drag-floating], [aria-busy="true"]',
+        '[role="dialog"], [role="listbox"], [data-drag-floating], [aria-busy="true"]',
       )
     )
       return;
