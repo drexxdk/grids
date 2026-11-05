@@ -60,6 +60,18 @@ export function GridResizer({
     const measureExtra = () => {
       if (!canvasArea) return { width: 0, height: 0 };
       const style = getComputedStyle(canvasArea);
+      // Height as if the horizontal scrollbar is shown, so toggling it cannot change the extent.
+      const nativeBar =
+        parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--native-scrollbar-width",
+          ),
+        ) || 0;
+      const stableClientHeight = workspace
+        ? canvasArea.clientHeight +
+          (workspace.offsetHeight - workspace.clientHeight) -
+          nativeBar
+        : canvasArea.clientHeight;
       return {
         width: Math.max(
           0,
@@ -71,7 +83,7 @@ export function GridResizer({
         height: Math.max(
           0,
           area.offsetHeight -
-            (canvasArea.clientHeight -
+            (stableClientHeight -
               parseFloat(style.paddingTop) -
               parseFloat(style.paddingBottom)),
         ),
@@ -151,7 +163,7 @@ export function GridResizer({
       data-controls-placement={bottomControls ? "canvas" : "header"}
       className={
         bottomControls
-          ? `grid min-h-0 min-w-0 ${leadingSpace ? "grid-cols-[44px_minmax(0,1fr)_44px]" : "grid-cols-[minmax(0,1fr)_44px]"} grid-rows-[minmax(0,1fr)_44px] gap-2 [&_button:focus-visible]:-outline-offset-3!`
+          ? `grid min-h-0 min-w-0 ${leadingSpace ? "grid-cols-[44px_minmax(0,1fr)_44px] gap-2" : "grid-cols-[minmax(0,1fr)_44px] gap-2 pr-3 pb-3"} grid-rows-[minmax(0,1fr)_44px] [&_button:focus-visible]:-outline-offset-3!`
           : "flex min-h-0 min-w-0 items-center justify-center"
       }
     >

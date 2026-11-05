@@ -543,9 +543,7 @@ export default function App() {
     const fit = () => {
       const padding = getComputedStyle(container);
       const workspaceWidth =
-        container.clientWidth -
-        parseFloat(padding.paddingLeft) -
-        parseFloat(padding.paddingRight);
+        container.clientWidth - parseFloat(padding.paddingLeft) * 2;
       const toolbar = frame.previousElementSibling;
       const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
       const toolbarHeight = toolbar
@@ -556,15 +554,28 @@ export default function App() {
       const workspaceHeight = Math.max(
         1,
         container.clientHeight -
-          parseFloat(padding.paddingTop) -
-          parseFloat(padding.paddingBottom) -
+          parseFloat(padding.paddingTop) * 2 -
           toolbarHeight -
           1,
       );
       // When space is tight the controls are not reserved; the workspace scrolls to them.
-      const tight = workspaceWidth < 560 || workspaceHeight < 400;
-      const availableWidth = workspaceWidth - (tight ? 0 : 104);
-      const availableHeight = workspaceHeight - (tight ? 0 : 52);
+      // Judge height as if the horizontal scrollbar is shown, so it appearing cannot flip tightness.
+      const scroller = container.parentElement;
+      const nativeBar =
+        parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--native-scrollbar-width",
+          ),
+        ) || 0;
+      const stableHeight = scroller
+        ? workspaceHeight +
+          (scroller.offsetHeight - scroller.clientHeight) -
+          nativeBar
+        : workspaceHeight;
+      const tight = workspaceWidth < 560 || stableHeight < 400;
+      // Tight: the canvas drops its right/bottom padding, so the board runs flush to that edge.
+      const availableWidth = workspaceWidth + (tight ? 12 : -104);
+      const availableHeight = stableHeight + (tight ? 12 : -52);
       const { gap: gapRatio, padding: paddingRatio } = gridSpacing(board, 1);
       const headingGapRatio = board.headingVisible ? gapRatio : 0;
       const widthRatio =
@@ -618,8 +629,8 @@ export default function App() {
         ),
       );
       const next = {
-        width: viewportWidth + (tight ? 52 : 104),
-        frameHeight: height + cellWidth * headingAreaRatio + 52,
+        width: viewportWidth + (tight ? 64 : 104),
+        frameHeight: height + cellWidth * headingAreaRatio + (tight ? 64 : 52),
         tight,
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
@@ -1470,7 +1481,7 @@ export default function App() {
               >
                 <div
                   inert={presetPreview !== null}
-                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3!"
+                  className={`canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! ${previewSize?.tight ? "pr-0! pb-0!" : ""}`}
                 >
                   <GridResizer
                     ref={setPreviewFrame}
