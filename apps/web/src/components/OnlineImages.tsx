@@ -24,6 +24,7 @@ import {
   Flower2,
 } from "lucide-react";
 import { t } from "../i18n";
+import { cellGeometry } from "../model";
 import {
   type ImageProvider,
   ProviderError,
@@ -148,12 +149,15 @@ function OnlineImage({
       : selectedSrc;
   return (
     <div
-      className="relative w-full"
+      className="relative w-full max-[901px]:h-full max-[901px]:w-auto"
+      style={{
+        aspectRatio: `600 / ${cellGeometry(props.gridStyle, 600, props.captionRows).height}`,
+      }}
       data-online-image-loading={!ready || undefined}
     >
       <LibraryImage
         {...props}
-        className={ready ? "w-full" : "invisible w-full"}
+        className={ready ? "size-full" : "invisible size-full"}
         elementRef={element}
         asset={{ ...asset, src }}
         onImageLoad={(loaded) => {
@@ -194,7 +198,7 @@ export function OnlineImages({
   provider,
   onImport,
   selectionOnly = false,
-  gridClassName = "grid grid-cols-2 gap-2.5 max-[901px]:grid-flow-col max-[901px]:auto-cols-16 max-[901px]:grid-cols-none",
+  gridClassName = "grid grid-cols-2 gap-2.5 max-[901px]:grid-flow-col max-[901px]:h-full max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none",
   searchActions,
   dragSource,
   compactRow = false,
@@ -318,7 +322,7 @@ export function OnlineImages({
       className={`@container min-w-0 ${compactRow ? "max-[901px]:contents" : ""}`}
     >
       <div
-        className={`mb-2 grid items-end gap-3 ${searchActions ? "grid-cols-1 @min-[520px]:grid-cols-[minmax(0,1fr)_15rem]" : "grid-cols-1"} ${compactRow ? "max-[901px]:col-start-1 max-[901px]:row-start-2 max-[901px]:mb-0 max-[901px]:items-start" : ""}`}
+        className={`mb-2 grid items-end gap-3 ${searchActions ? "grid-cols-1 @min-[520px]:grid-cols-[minmax(0,1fr)_15rem]" : "grid-cols-1"} ${compactRow ? "max-[901px]:col-start-1 max-[901px]:row-start-2 max-[901px]:mb-0 max-[901px]:items-start max-[901px]:pb-2" : ""}`}
       >
         <div className="relative min-w-0">
           <Search
@@ -345,7 +349,7 @@ export function OnlineImages({
       <div
         className={
           compactRow
-            ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:min-w-0 max-[901px]:items-start max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:pr-4"
+            ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:h-28 max-[901px]:min-w-0 max-[901px]:items-stretch max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:pt-2 max-[901px]:pr-4 max-[901px]:pb-2"
             : "contents"
         }
       >
@@ -353,7 +357,7 @@ export function OnlineImages({
           <div
             role="group"
             aria-label={t("library.browse.title")}
-            className={`mb-3 flex flex-wrap gap-1 ${compactRow ? "max-[901px]:mb-0 max-[901px]:w-15 max-[901px]:shrink-0" : ""}`}
+            className={`mb-3 flex flex-wrap gap-1 ${compactRow ? "max-[901px]:mb-0 max-[901px]:w-15 max-[901px]:shrink-0 max-[901px]:self-start" : ""}`}
           >
             {[{ id: null }, ...provider.browse].map((topic) => {
               const Icon = topic.id === null ? Grid2X2 : topicIcons[topic.id];
@@ -393,7 +397,7 @@ export function OnlineImages({
           </div>
         )}
         <div
-          className={`relative ${compactRow ? "max-[901px]:shrink-0" : ""}`}
+          className={`relative ${compactRow ? "max-[901px]:h-full max-[901px]:shrink-0" : ""}`}
           data-online-card-area
         >
           <div className={gridClassName}>
@@ -452,7 +456,9 @@ export function OnlineImages({
                   captionRows={cardProps.captionRows}
                   loading={busy}
                   className={
-                    compactRow && !busy && !message ? "max-[901px]:hidden" : ""
+                    compactRow && !busy && !message
+                      ? "max-[901px]:hidden"
+                      : "max-[901px]:h-full max-[901px]:w-auto"
                   }
                 />
               ),

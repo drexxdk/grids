@@ -52,7 +52,7 @@ const cardToolButtonStyles = cva(
       },
       size: {
         proportional: "size-[min(25cqw,var(--cell-tool-space))]!",
-        fixed: "size-11! max-[901px]:size-8!",
+        fixed: "size-11! max-[901px]:size-6!",
       },
       dragHandle: {
         true: "touch-none",
@@ -274,6 +274,7 @@ export function GridCell({
   const [cropTarget, setCropTarget] = useState<string | null>(null);
   const [imageHovered, setImageHovered] = useState(false);
   const [hoverTools, setHoverTools] = useState(false);
+  const touchOpenedAt = useRef(0);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
     if (!imageHovered) return;
@@ -645,6 +646,7 @@ export function GridCell({
                       return;
                     touchStart.current = null;
                     touchTapped.current = true;
+                    touchOpenedAt.current = Date.now();
                     event.currentTarget.click();
                   }}
                   onMouseDownCapture={(event) => event.stopPropagation()}
@@ -817,6 +819,13 @@ export function GridCell({
                   role="group"
                   aria-label={t("cell.actions.tools")}
                   className="pointer-events-none absolute inset-0 z-10"
+                  onClickCapture={(event) => {
+                    // The browser's click after the opening tap would land on a tool button.
+                    if (Date.now() - touchOpenedAt.current < 500) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }
+                  }}
                   style={
                     {
                       "--card-tool-inset": "4.5cqw",

@@ -1342,9 +1342,9 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:grid max-[901px]:h-28 max-[901px]:grid-cols-[10rem_minmax(0,1fr)] max-[901px]:grid-rows-[auto_auto] max-[901px]:content-center max-[901px]:gap-x-2 max-[901px]:gap-y-2 max-[901px]:py-2 max-[901px]:pr-0 max-[901px]:pl-3"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:grid max-[901px]:h-28 max-[901px]:grid-cols-[10rem_minmax(0,1fr)] max-[901px]:grid-rows-[auto_auto] max-[901px]:content-center max-[901px]:gap-x-2 max-[901px]:gap-y-2 max-[901px]:pt-0 max-[901px]:pb-0 max-[901px]:pr-0 max-[901px]:pl-3"
               >
-                <div className="mb-4 flex items-center justify-between gap-2 max-[901px]:col-start-1 max-[901px]:row-start-1 max-[901px]:mb-0 max-[901px]:[&_.field-label]:sr-only!">
+                <div className="mb-4 flex items-center justify-between gap-2 max-[901px]:col-start-1 max-[901px]:row-start-1 max-[901px]:mb-0 max-[901px]:pt-2 max-[901px]:[&_.field-label]:sr-only!">
                   <div className="min-w-0 flex-1">
                     <ImageSourceSelect
                       id="sidebar-image-source"
@@ -1371,7 +1371,7 @@ export default function App() {
                 )}
                 <div
                   id="asset-library"
-                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:p-1 max-[901px]:pr-3 ${librarySource !== "imported" ? "hidden!" : ""}`}
+                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:h-28 max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:p-1 max-[901px]:pr-3 ${librarySource !== "imported" ? "hidden!" : ""}`}
                   hidden={librarySource !== "imported"}
                 >
                   <UploadTile
@@ -1379,7 +1379,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="self-start w-full max-[901px]:h-full max-[901px]:w-auto max-[901px]:aspect-3/4 max-[901px]:self-auto"
+                    className="self-start w-full max-[901px]:h-full max-[901px]:w-auto max-[901px]:self-auto"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);
@@ -1676,7 +1676,7 @@ export default function App() {
               )}
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
+                className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
                 <div className="flex flex-col gap-6 max-[901px]:py-2 max-[901px]:pr-3 max-[901px]:pl-3">
                   <fieldset
@@ -2049,7 +2049,7 @@ export default function App() {
                       </>
                     )}
                   </fieldset>
-                  <div className="shrink-0 border-0 border-t border-solid border-(--line) py-6">
+                  <div className="shrink-0 border-0 border-t border-solid border-(--line) pt-6">
                     <Button
                       ref={resetButton}
                       className="min-h-11 w-full"

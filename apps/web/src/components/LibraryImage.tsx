@@ -22,6 +22,7 @@ export function LibraryImagePlaceholder({
       data-loading={loading}
       aria-hidden="true"
       className={`min-w-0 w-full ${className}`}
+      style={{ aspectRatio: `600 / ${geometry.height}` }}
     >
       <div
         className={`image-card @container flex w-full items-center justify-center border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
@@ -60,7 +61,7 @@ export function LibraryImage({
   elementRef,
   onImageLoad,
   onImageError,
-  className = "max-[901px]:h-full max-[901px]:w-auto max-[901px]:aspect-3/4 max-[901px]:shrink-0",
+  className = "max-[901px]:h-full max-[901px]:w-auto max-[901px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;
@@ -91,6 +92,9 @@ export function LibraryImage({
       ref={elementRef}
       data-library-image
       className={`relative min-w-0 ${className}`}
+      style={{
+        aspectRatio: `600 / ${cellGeometry(gridStyle, 600, captionRows).height}`,
+      }}
       onLoadCapture={(event) => {
         if (event.target instanceof HTMLImageElement)
           onImageLoad?.(event.target);
