@@ -287,7 +287,7 @@ export function EditorLayout({
                 data-editor-sidebar
                 data-editor-settings={compact ? true : undefined}
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable flex h-full flex-col border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable scroll-pt-24 h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable flex h-full flex-col border-l"}`}
               >
                 <div
                   data-sidebar-sticky
