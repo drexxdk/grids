@@ -12,6 +12,7 @@ export function CardFrame({ dashed = true }: { dashed?: boolean }) {
         <rect
           fill="none"
           stroke="var(--frame-color)"
+          strokeOpacity="var(--card-frame-opacity, 1)"
           strokeWidth="var(--card-frame-stroke)"
           strokeDasharray={dashed ? "var(--card-frame-dash) var(--card-frame-dash-gap)" : "none"}
           style={{

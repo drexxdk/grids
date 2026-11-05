@@ -333,6 +333,33 @@ test("theme thumbnail failures are visible without blocking the theme gallery", 
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
 });
 
+test("theme hover outlines remain separated beside a selected theme", async ({ page }, testInfo) => {
+  await presetDraft(page);
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  const selected = page.getByRole("button", { name: "Preview Midnight squares", exact: true });
+  const neighbor = page.getByRole("button", { name: "Preview Soft pastel", exact: true });
+  await selected.click();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await neighbor.hover();
+  await expect(selected.locator("..")).toHaveAttribute("data-selected", "");
+  await expect(neighbor.locator("..")).not.toHaveAttribute("data-selected", "");
+  const frame = (tile) => tile.locator("..").locator("[data-cell-image-frame] rect");
+  await expect(frame(selected)).not.toHaveCSS("stroke", "rgba(0, 0, 0, 0)");
+  await expect(frame(neighbor)).not.toHaveCSS("stroke", "rgba(0, 0, 0, 0)");
+  await expect(frame(selected)).toHaveCSS("stroke-opacity", "1");
+  await expect(frame(neighbor)).toHaveCSS("stroke-opacity", "0.6");
+  const [left, right] = await page.locator("[data-theme-tile]").evaluateAll((items) =>
+    items.slice(0, 2).map((item) => {
+      const { x, y, width, height } = item.querySelector("[data-cell-image-frame] rect").getBoundingClientRect();
+      return { x, y, width, height };
+    }));
+  expect(right.x - left.x - left.width - 1).toBeGreaterThanOrEqual(3.9);
+  await page.screenshot({
+    path: testInfo.outputPath("theme-neighbor-outlines.png"),
+    clip: { x: left.x - 4, y: left.y - 4, width: right.x + right.width - left.x + 8, height: Math.max(left.height, right.height) + 8 },
+  });
+});
+
 test("preset gallery tiles preview only on activation and applying preserves content", async ({ page }) => {
   const { before, samples } = await presetDraft(page);
   expect(samples()).toBe(0);
@@ -357,6 +384,9 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
   await tile.click();
   await expect(page.locator("[data-preset-preview]")).toContainText("Warm gallery");
+  await expect(tile.locator("..")).toHaveAttribute("data-selected", "");
+  await expect(tile).toHaveAttribute("title", "Preview: Warm gallery");
+  await expect(page.locator("[data-theme-tile][data-selected]")).toHaveCount(1);
   await expect(page.locator("#board-grid .image-card")).toHaveCount(before.document.grid.rows * before.document.grid.columns);
   await expect(page.locator("#export-grid-header")).toBeDisabled();
   await expect(page.locator(".canvas-area")).toHaveAttribute("inert", "");
@@ -364,6 +394,7 @@ test("preset gallery tiles preview only on activation and applying preserves con
   expect(await browserDraft(page)).toEqual(before);
   await page.mouse.move(50, 100);
   await expect(page.locator("[data-preset-preview]")).toBeVisible();
+  await expect(tile.locator("..")).toHaveAttribute("data-selected", "");
   expect(await browserDraft(page)).toEqual(before);
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
@@ -389,9 +420,14 @@ test("preset gallery tiles preview only on activation and applying preserves con
   const otherTile = page.getByRole("button", { name: "Preview Midnight squares", exact: true });
   await otherTile.click();
   await expect(page.locator("[data-preset-preview]")).toContainText("Midnight squares");
+  await expect(otherTile.locator("..")).toHaveAttribute("data-selected", "");
+  await expect(tile.locator("..")).not.toHaveAttribute("data-selected", "");
+  await expect(page.locator("[data-theme-tile][data-selected]")).toHaveCount(1);
   await expect(tile).toHaveAttribute("data-applied", "");
   await expect(otherTile).not.toHaveAttribute("data-applied", "");
   await page.getByRole("button", { name: "Back to my grid", exact: true }).click();
+  await expect(tile.locator("..")).toHaveAttribute("data-selected", "");
+  await expect(otherTile.locator("..")).not.toHaveAttribute("data-selected", "");
   await page.reload();
   await expect(page.locator("#board-grid .image-card")).toHaveCount(before.document.grid.cells.length);
   await expect(page.locator("#board-grid img").first()).toBeVisible();
@@ -465,8 +501,8 @@ touchTest("preset gallery fits two thumbnail columns without visible titles or p
     expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
     expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
     expect(boxes[0].x).toBeLessThan(boxes[1].x);
-    expect(boxes[0].outlineRight).toBeLessThanOrEqual(boxes[1].outlineLeft + 0.1);
-    expect(boxes[2].outlineRight).toBeLessThanOrEqual(boxes[3].outlineLeft + 0.1);
+    expect(boxes[1].outlineLeft - boxes[0].outlineRight).toBeGreaterThanOrEqual(3.9);
+    expect(boxes[3].outlineLeft - boxes[2].outlineRight).toBeGreaterThanOrEqual(3.9);
     expect(Math.abs(boxes[0].x - boxes[2].x)).toBeLessThan(1);
     expect(Math.abs(boxes[1].x - boxes[3].x)).toBeLessThan(1);
     expect(boxes[2].y).toBeGreaterThan(boxes[0].y);

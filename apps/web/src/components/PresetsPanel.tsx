@@ -39,17 +39,18 @@ export function PresetsPanel({ previewId, currentSettings, appliedPresetId, cust
     <section aria-label={t("presets.starters")} className="flex min-w-0 flex-col gap-5">
       {starterGroups.map((group) => <section key={group.label} aria-label={t(group.label)} className="flex min-w-0 flex-col gap-2">
       <h3 className="field-label font-normal">{t(group.label)}</h3>
-      <ul className="m-0 grid list-none grid-cols-2 items-start gap-2 p-0">
+      <ul className="m-0 grid list-none grid-cols-2 items-start gap-3 p-0">
         {group.starters.map((starter) => {
           const original = { ...starter, name: t(`presets.names.${starter.nameKey}`) };
           const choice = { ...original, settings: customizations[starter.id] ?? starter.settings };
           const applied = appliedPresetId === choice.id || (appliedPresetId === null && samePresetSettings(choice.settings, currentSettings));
+          const selected = previewId ? previewId === choice.id : applied;
           const modified = !samePresetSettings(starter.settings, applied ? currentSettings : choice.settings);
-          return <li key={choice.id} data-applied={applied ? "" : undefined} data-theme-tile
-            className="image-card @container relative flex min-w-0 flex-col rounded-lg border border-solid border-(--line) bg-(--bg) [--card-frame-color:transparent] data-applied:bg-(--selected) data-applied:[--card-frame-color:var(--accent)] has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]">
+          return <li key={choice.id} data-applied={applied ? "" : undefined} data-selected={selected ? "" : undefined} data-theme-tile
+            className="image-card @container relative flex min-w-0 flex-col rounded-lg border border-solid border-(--line) bg-(--bg) [--card-frame-color:transparent] [--card-frame-opacity:0.6] data-selected:bg-(--selected) data-selected:[--card-frame-color:var(--accent)] data-selected:[--card-frame-opacity:1] has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]">
             <button type="button" disabled={disabled}
               aria-label={t("presets.previewNamed", { name: choice.name })}
-              title={applied ? t("presets.appliedNamed", { name: choice.name }) : choice.name}
+              title={previewId === choice.id ? t("presets.previewing", { name: choice.name }) : applied ? t("presets.appliedNamed", { name: choice.name }) : choice.name}
               aria-pressed={previewId === choice.id}
               data-applied={applied ? "" : undefined}
               data-customized={modified ? "" : undefined}

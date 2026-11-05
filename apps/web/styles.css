@@ -534,7 +534,7 @@ h1 {
 .image-card[data-upload-tile]:focus-visible,
 .image-card:not([data-drag-source]):has([data-card-image] button:focus-visible),
 .image-card[data-theme-tile]:has(button:enabled:hover, button:focus-visible),
-.image-card[data-theme-tile][data-applied],
+.image-card[data-theme-tile][data-selected],
 .grid-cell.drag-over {
   z-index: 2;
 }
