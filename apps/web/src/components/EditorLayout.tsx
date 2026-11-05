@@ -1,10 +1,10 @@
 import {
   Images,
   LayoutGrid,
+  PanelRightClose,
   PanelRightOpen,
   PanelsTopLeft,
   Settings2,
-  X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, useReducedMotion } from "motion/react";
@@ -267,7 +267,7 @@ export function EditorLayout({
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
             {sidebarOpen ? (
-              <X aria-hidden="true" className="size-5!" />
+              <PanelRightClose aria-hidden="true" className="size-5!" />
             ) : (
               <PanelRightOpen aria-hidden="true" className="size-5!" />
             )}
