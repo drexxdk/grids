@@ -5,8 +5,6 @@ import { cva } from "class-variance-authority";
 import {
   Check,
   Crop,
-  Download,
-  ExternalLink,
   ImagePlus,
   LoaderCircle,
   Move,
@@ -54,7 +52,7 @@ const cardToolButtonStyles = cva(
       },
       size: {
         proportional: "size-[min(25cqw,var(--cell-tool-space))]!",
-        fixed: "size-11!",
+        fixed: "size-11! max-[901px]:size-8!",
       },
       dragHandle: {
         true: "touch-none",
@@ -137,7 +135,6 @@ export function GridCell({
     onDelete: () => void;
     disabled: boolean;
     onSelect?: () => void;
-    onImport?: () => void;
     source?: CardDragSource;
   };
   captionRows?: number;
@@ -164,13 +161,12 @@ export function GridCell({
   );
   const primaryActionLabel = selectsLibraryImage
     ? t("cell.actions.useImage", { value1: asset?.title })
-    : library?.onImport
-      ? t("library.search.import", { value1: asset?.title })
-      : library
-        ? t("cell.actions.deleteImage", { value1: asset?.title })
-        : t("cell.actions.clear");
+    : library
+      ? t("cell.actions.deleteImage", { value1: asset?.title })
+      : t("cell.actions.clear");
   const trigger = useRef<HTMLButtonElement>(null);
   const [failedImage, setFailedImage] = useState<string | null>(null);
+  const [loadedImage, setLoadedImage] = useState<string | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
   const [captionScroll, setCaptionScroll] = useState<{
@@ -723,6 +719,7 @@ export function GridCell({
                     alt={cell.title || asset.title}
                     onLoad={(event) => {
                       setFailedImage(null);
+                      setLoadedImage(asset.src);
                       setImageSize({
                         width: event.currentTarget.naturalWidth,
                         height: event.currentTarget.naturalHeight,
@@ -742,6 +739,20 @@ export function GridCell({
                     }
                     draggable={false}
                   />
+                  {!previewOnly &&
+                    loadedImage !== asset.src &&
+                    failedImage !== asset.src && (
+                      <span
+                        role="status"
+                        aria-label={t("common.actions.loading")}
+                        className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--card-background)"
+                      >
+                        <LoaderCircle
+                          aria-hidden="true"
+                          className="size-[18cqw]! animate-spin motion-reduce:animate-none"
+                        />
+                      </span>
+                    )}
                   {failedImage === asset.src && (
                     <span
                       role="status"
@@ -831,6 +842,7 @@ export function GridCell({
                       title={t("cell.actions.dragImage")}
                       className={cardToolButtonStyles({
                         position: "topLeft",
+                        size: library ? "fixed" : "proportional",
                         dragHandle: true,
                       })}
                     >
@@ -879,46 +891,33 @@ export function GridCell({
                       </Button>
                     </div>
                   )}
-                  {library && asset.provenance && (
-                    <a
-                      href={asset.provenance.sourcePage}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={t("library.search.source")}
-                      title={`${t("library.search.source")}: ${[asset.provenance.creator, asset.provenance.license].filter(Boolean).join(" - ")}`}
-                      className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) flex size-11 items-center justify-center rounded-[2cqw] border border-solid border-white/30 bg-black/60 text-white backdrop-blur-sm hover:border-(--accent) hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-(--accent) [&_svg]:size-[40%]!"
-                    >
-                      <ExternalLink aria-hidden="true" />
-                    </a>
-                  )}
-                  {(asset || cell.title) && (
-                    <Button
-                      variant="icon"
-                      className={cardToolButtonStyles({
-                        position: "topRight",
-                        size: library ? "fixed" : "proportional",
-                      })}
-                      aria-label={primaryActionLabel}
-                      disabled={library?.disabled}
-                      title={primaryActionLabel}
-                      onClick={() => {
-                        setHoverTools(false);
-                        close();
-                        if (selectsLibraryImage) library?.onSelect?.();
-                        else if (library?.onImport) library.onImport();
-                        else if (library) library.onDelete();
-                        else onClear();
-                      }}
-                    >
-                      {selectsLibraryImage ? (
-                        <Check aria-hidden="true" />
-                      ) : library?.onImport ? (
-                        <Download aria-hidden="true" />
-                      ) : (
-                        <Trash2 aria-hidden="true" />
-                      )}
-                    </Button>
-                  )}
+                  {(asset || cell.title) &&
+                    (selectsLibraryImage ||
+                      library?.source?.kind !== "provider") && (
+                      <Button
+                        variant="icon"
+                        className={cardToolButtonStyles({
+                          position: "topRight",
+                          size: library ? "fixed" : "proportional",
+                        })}
+                        aria-label={primaryActionLabel}
+                        disabled={library?.disabled}
+                        title={primaryActionLabel}
+                        onClick={() => {
+                          setHoverTools(false);
+                          close();
+                          if (selectsLibraryImage) library?.onSelect?.();
+                          else if (library) library.onDelete();
+                          else onClear();
+                        }}
+                      >
+                        {selectsLibraryImage ? (
+                          <Check aria-hidden="true" />
+                        ) : (
+                          <Trash2 aria-hidden="true" />
+                        )}
+                      </Button>
+                    )}
                 </PopoverPanel>
               )}
             </div>

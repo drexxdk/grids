@@ -201,7 +201,7 @@ export function OnlineImages({
   ...cardProps
 }: {
   provider: ImageProvider;
-  onImport: (image: ProviderImage, signal: AbortSignal) => Promise<void>;
+  onImport?: (image: ProviderImage, signal: AbortSignal) => Promise<void>;
   selectionOnly?: boolean;
   gridClassName?: string;
   searchActions?: ReactNode;
@@ -228,7 +228,7 @@ export function OnlineImages({
     setImporting(image.id);
     setError("");
     try {
-      await onImport(image, controller.signal);
+      await onImport?.(image, controller.signal);
     } catch {
       if (!controller.signal.aborted) setError(t("library.search.failed"));
     } finally {
@@ -419,6 +419,7 @@ export function OnlineImages({
                 }}
                 className="w-full"
                 disabled={importing !== null}
+                importing={importing === image.id}
                 onTitle={(title) =>
                   setImages((current) =>
                     current.map((item) =>
@@ -427,11 +428,8 @@ export function OnlineImages({
                   )
                 }
                 onDelete={() => {}}
-                onImport={() => {
-                  void importImage(image);
-                }}
                 onSelect={
-                  selectionOnly
+                  selectionOnly && onImport
                     ? () => {
                         void importImage(image);
                       }

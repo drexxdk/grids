@@ -1367,9 +1367,6 @@ export default function App() {
                       setCardDrag({ source, visual, targetId: null })
                     }
                     onTouchDrag={touchDrag}
-                    onImport={(image, signal) =>
-                      importProviderImage(image, signal)
-                    }
                   />
                 )}
                 <div

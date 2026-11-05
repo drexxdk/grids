@@ -218,9 +218,7 @@
       "invalid": "{value1} returned an unexpected response.",
       "offline": "You are offline. Your saved images are still available.",
       "failed": "Could not import this image. Try another result.",
-      "import": "Import {value1}",
       "importing": "Importing...",
-      "source": "Source and rights",
       "previous": "Previous results",
       "next": "Next results"
     },

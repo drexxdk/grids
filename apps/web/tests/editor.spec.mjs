@@ -1063,7 +1063,7 @@ for (const [mode, sourceTest] of [
       });
       await expect(source).toHaveCount(0);
       await showImageActions(online, mode === "mobile");
-      await expect(source).toBeVisible();
+      await expect(source).toHaveCount(0);
 
       await page.screenshot({
         path: testInfo.outputPath(`source-${mode}-inside-card.png`),
@@ -1177,7 +1177,7 @@ for (const [mode, providerTest] of [
       await showImageActions(online, mode === "mobile");
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveAttribute("title", "Source and rights: Fixture curator - CC0");
+      ).toHaveCount(0);
       const importImage = async () => {
         if (mode === "mobile") {
           await showImageActions(online, true);
@@ -1210,10 +1210,7 @@ for (const [mode, providerTest] of [
           page
             .locator("#asset-library")
             .getByRole("link", { name: "Source and rights" }),
-        ).toHaveAttribute(
-          "href",
-          "https://www.metmuseum.org/art/collection/search/1",
-        );
+        ).toHaveCount(0);
       } else {
         await importImage();
         await expect(
@@ -1427,10 +1424,7 @@ for (const [mode, providerTest] of [
       await showImageActions(online, mode === "mobile");
       await expect(
         online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveAttribute(
-        "title",
-        "Source and rights: Fixture creator - Public domain",
-      );
+      ).toHaveCount(0);
       await expect(online.locator("[data-library-image] img")).toHaveJSProperty(
         "naturalWidth",
         1200,
@@ -1476,10 +1470,7 @@ for (const [mode, providerTest] of [
           page
             .locator("#asset-library")
             .getByRole("link", { name: "Source and rights" }),
-        ).toHaveAttribute(
-          "href",
-          "https://commons.wikimedia.org/wiki/File:Earth.jpg",
-        );
+        ).toHaveCount(0);
         await chooseImage(page, "Earth");
       } else
         await expect(
@@ -7638,9 +7629,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(2);
-  await page
-    .getByRole("button", { name: "Clear images", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Clear images", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(
@@ -7739,9 +7728,7 @@ test("touch library taps reveal delete and upload remains the first tile", async
   await page.getByRole("button", { name: "Delete first", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Clear images", exact: true })
-    .tap();
+  await page.getByRole("button", { name: "Clear images", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
     .poll(async () => (await localDatabase(page)).document?.assets.length)
@@ -7970,9 +7957,7 @@ test("unused-image deletion protects removed cells and revokes only unreferenced
     .nth(2)
     .locator("img")
     .getAttribute("src");
-  await page
-    .getByRole("button", { name: "Clear images", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Clear images", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
@@ -8035,9 +8020,7 @@ test("failed unused-image deletion preserves stored metadata and blobs until the
   await page.evaluate(() => {
     window.failPurgeSave = true;
   });
-  await page
-    .getByRole("button", { name: "Clear images", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Clear images", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Save failed");
   const failed = await localDatabase(page);
   expect(failed.document).toEqual(original);

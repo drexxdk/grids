@@ -55,7 +55,7 @@ export function LibraryImage({
   moving,
   dragAffected,
   onSelect,
-  onImport,
+  importing,
   source,
   elementRef,
   onImageLoad,
@@ -79,7 +79,7 @@ export function LibraryImage({
   moving?: boolean;
   dragAffected?: boolean;
   onSelect?: () => void;
-  onImport?: () => void;
+  importing?: boolean;
   source?: CardDragSource;
   elementRef?: Ref<HTMLDivElement>;
   onImageLoad?: (image: HTMLImageElement) => void;
@@ -125,7 +125,8 @@ export function LibraryImage({
         onChoose={() => {}}
         onUpload={() => {}}
         onDrop={(event) => event.preventDefault()}
-        library={{ onDelete, disabled, onSelect, onImport, source }}
+        library={{ onDelete, disabled, onSelect, source }}
+        importing={importing}
         onMoveStart={onMoveStart}
         onTouchDrag={onTouchDrag}
         moving={moving}
