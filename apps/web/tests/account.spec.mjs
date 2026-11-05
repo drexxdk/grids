@@ -197,11 +197,51 @@ test("theme cards render all original canvases with photos instead of generic ic
   expect(await browserDraft(page)).toEqual(before);
 });
 
+test("theme gallery groups original headings and sorts shapes and captions without moving customized themes", async ({ page }) => {
+  await presetDraft(page);
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  const gallery = page.getByRole("region", { name: "Starting points", exact: true });
+  await expect(gallery.getByRole("heading")).toHaveText(["With heading", "Without heading"]);
+  const groups = [
+    ["With heading", [
+      "Midnight squares", "Soft pastel", "Deep ocean", "Dusty rose",
+      "Instant prints", "Scrapbook", "Object catalogue",
+      "Panorama gallery", "Spotlight gallery", "Wide collection", "Postcards",
+      "Warm gallery", "Botanical collection", "Portrait gallery", "Terracotta", "Balanced frames",
+      "Editorial", "Museum collection", "Visual story", "Pop collection",
+    ]],
+    ["Without heading", ["Contact sheet", "Seamless collage", "Minimal white", "Filmstrip"]],
+  ];
+  const checkGroups = async () => {
+    for (const [name, themes] of groups) {
+      const section = gallery.getByRole("region", { name, exact: true });
+      await expect(section.getByRole("listitem")).toHaveCount(themes.length);
+      expect(await section.getByRole("button", { name: /^Preview / }).evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("aria-label")))).toEqual(themes.map((theme) => `Preview ${theme}`));
+    }
+  };
+  await checkGroups();
+  await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await page.getByRole("group", { name: "Warm gallery settings", exact: true })
+    .getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Show heading", { exact: true }).click();
+  await page.getByRole("radio", { name: "Square", exact: true }).click();
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Preview Warm gallery", exact: true })).toHaveAttribute("data-customized", "");
+  await checkGroups();
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "Themes", exact: true })).toHaveAttribute("aria-selected", "true");
+  await checkGroups();
+});
+
 test("theme thumbnails stay original after customization and follow the current grid dimensions", async ({ page }) => {
   const { before } = await presetDraft(page);
   await page.getByRole("tab", { name: "Themes", exact: true }).click();
   const original = await themeThumbnail(page, "Warm gallery");
   expect(original.background).toEqual([245, 241, 232]);
+  const tile = page.getByRole("button", { name: "Preview Warm gallery", exact: true });
+  await expect(tile.locator("[data-theme-thumbnail]")).toHaveCSS("background-color", "rgb(245, 241, 232)");
   await page.getByRole("button", { name: "Preview Warm gallery", exact: true }).click();
   const bounds = await page.locator("[data-preview-content]").boundingBox();
   expect(Math.abs(original.width / original.height - bounds.width / bounds.height)).toBeLessThan(0.03);
@@ -212,6 +252,12 @@ test("theme thumbnails stay original after customization and follow the current 
   await page.locator("#background-value").press("Enter");
   await page.getByRole("tab", { name: "Themes", exact: true }).click();
   expect(await themeThumbnail(page, "Warm gallery")).toEqual(original);
+  await expect(tile).toHaveText("");
+  await expect(tile.locator("[data-theme-thumbnail]")).toHaveCSS("background-color", "rgb(245, 241, 232)");
+  const buttonBounds = await tile.boundingBox();
+  const thumbnailBounds = await tile.locator("[data-theme-thumbnail]").boundingBox();
+  for (const dimension of ["x", "y", "width", "height"])
+    expect(Math.abs(buttonBounds[dimension] - thumbnailBounds[dimension])).toBeLessThan(1);
   await page.getByRole("button", { name: "Remove row", exact: true }).click();
   const resized = await themeThumbnail(page, "Warm gallery");
   expect(resized.width).toBe(original.width);
@@ -227,12 +273,57 @@ test("theme thumbnails stay original after customization and follow the current 
   expect(JSON.stringify(after)).not.toContain("preset-preview");
 });
 
+test("theme thumbnail buttons use natural proportions with at most three rows and columns", async ({ page }) => {
+  const { before } = await presetDraft(page);
+  await page.getByRole("tab", { name: "Themes", exact: true }).click();
+  const current = { rows: 3, columns: 3 };
+  const tile = page.getByRole("button", { name: "Preview Contact sheet", exact: true });
+  for (const [rows, columns] of [[1, 3], [3, 1], [1, 1], [5, 6], [2, 5]]) {
+    for (const [dimension, target, label] of [["rows", rows, "row"], ["columns", columns, "column"]]) {
+      while (current[dimension] !== target) {
+        const add = current[dimension] < target;
+        await page.getByRole("button", { name: `${add ? "Add" : "Remove"} ${label}`, exact: true }).click();
+        current[dimension] += add ? 1 : -1;
+      }
+    }
+    await expect.poll(async () => {
+      const { grid } = (await browserDraft(page)).document;
+      return [grid.rows, grid.columns];
+    }).toEqual([rows, columns]);
+    const thumbnail = await themeThumbnail(page, "Contact sheet");
+    const previewRows = Math.min(3, rows);
+    const previewColumns = Math.min(3, columns);
+    const size = Math.floor(512 / Math.max(previewRows, previewColumns));
+    const gap = Math.round(8 * size / 600);
+    const padding = Math.round(16 * size / 600);
+    expect([thumbnail.width, thumbnail.height]).toEqual([
+      previewColumns * size + (previewColumns - 1) * gap + padding * 2,
+      previewRows * size + (previewRows - 1) * gap + padding * 2,
+    ]);
+    const bounds = await tile.boundingBox();
+    expect(Math.abs(bounds.height - Math.max(44, bounds.width * thumbnail.height / thumbnail.width))).toBeLessThan(1);
+    if (rows === 5 && columns === 6) {
+      await tile.click();
+      await expect(page.locator("#board-grid .image-card")).toHaveCount(30);
+      await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+      await expect.poll(async () => {
+        const { grid } = (await browserDraft(page)).document;
+        return [grid.rows, grid.columns];
+      }).toEqual([5, 6]);
+    }
+  }
+  const after = await browserDraft(page);
+  expect(after.document.assets).toEqual(before.document.assets);
+  expect(after.images).toEqual(before.images);
+});
+
 test("theme thumbnail failures are visible without blocking the theme gallery", async ({ page }) => {
   await mockAccount(page);
   await page.route(/https:\/\/(?:iiif\.wellcomecollection\.org|iiif\.micr\.io)\//,
     (route) => route.fulfill({ status: 503, body: "Image service unavailable", headers: { "Access-Control-Allow-Origin": "*" } }));
   await page.goto("./?panel=themes");
   const tile = page.getByRole("button", { name: "Preview Warm gallery", exact: true });
+  await tile.scrollIntoViewIfNeeded();
   await expect(tile.locator("[data-theme-thumbnail]")).toHaveAttribute("data-thumbnail-state", "error");
   await expect(tile).toContainText("Preview unavailable");
   await expect(tile).toBeEnabled();
@@ -249,13 +340,19 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await expect(page.getByRole("region", { name: "Starting points", exact: true }).getByRole("listitem")).toHaveCount(24);
   const tile = page.getByRole("button", { name: "Preview Warm gallery", exact: true });
+  await tile.scrollIntoViewIfNeeded();
   await expect(tile.locator("[data-theme-thumbnail]")).toHaveAttribute("data-thumbnail-state", "ready");
   expect(samples()).toBeGreaterThan(0);
   await expect(tile).not.toContainText("Warm gallery");
   await expect(tile).toHaveAttribute("title", "Warm gallery");
   await expect(page.getByRole("region", { name: "Starting points", exact: true })).not.toContainText(/\d+\s*×\s*\d+/);
   await expect(page.getByRole("region", { name: "Themes", exact: true }).getByRole("button", { name: /^Apply / })).toHaveCount(0);
+  const frame = tile.locator("..").locator("[data-cell-image-frame] rect");
+  await page.mouse.move(0, 0);
+  const stroke = await frame.evaluate((element) => getComputedStyle(element).stroke);
   await tile.hover();
+  await expect(frame).not.toHaveCSS("stroke", stroke);
+  await expect(frame).toHaveCSS("stroke-dasharray", "none");
   await tile.focus();
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
   await tile.click();
@@ -283,7 +380,7 @@ test("preset gallery tiles preview only on activation and applying preserves con
   expect(after.document.grid.columns).toBe(before.document.grid.columns);
   expect(after.document.grid.cells).toEqual(before.document.grid.cells);
   expect(JSON.stringify(after)).not.toContain("preset-preview");
-  await expect(tile).toContainText("Applied");
+  await expect(tile).toHaveText("");
   await expect(tile).toBeEnabled();
   await expect(tile).toHaveAttribute("data-applied", "");
   await expect(tile.locator("[data-theme-thumbnail] img")).toHaveCount(1);
@@ -316,7 +413,7 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await page.getByRole("tab", { name: "Themes", exact: true }).click();
   await expect(tile).toHaveAttribute("data-applied", "");
   await expect(tile).toHaveAttribute("data-customized", "");
-  await expect(tile).toContainText("Modified");
+  await expect(tile).toHaveText("");
   const controls = page.getByRole("group", { name: "Warm gallery settings", exact: true });
   await expect(controls.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect(controls.getByRole("button", { name: "Reset", exact: true })).toBeVisible();
@@ -360,15 +457,52 @@ touchTest("preset gallery fits two thumbnail columns without visible titles or p
     const boxes = await starters.getByRole("listitem").evaluateAll((items) =>
       items.slice(0, 4).map((item) => {
         const { x, y, width, height } = item.getBoundingClientRect();
-        return { x, y, width, height };
+        const rect = item.querySelector("[data-cell-image-frame] rect");
+        const frame = rect.getBoundingClientRect();
+        const halfStroke = parseFloat(getComputedStyle(rect).strokeWidth) / 2;
+        return { x, y, width, height, outlineLeft: frame.left - halfStroke, outlineRight: frame.right + halfStroke };
       }));
     expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
     expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
     expect(boxes[0].x).toBeLessThan(boxes[1].x);
+    expect(boxes[0].outlineRight).toBeLessThanOrEqual(boxes[1].outlineLeft + 0.1);
+    expect(boxes[2].outlineRight).toBeLessThanOrEqual(boxes[3].outlineLeft + 0.1);
     expect(Math.abs(boxes[0].x - boxes[2].x)).toBeLessThan(1);
     expect(Math.abs(boxes[1].x - boxes[3].x)).toBeLessThan(1);
     expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
     expect(boxes.every((box) => box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1)).toBe(true);
+    for (const button of await starters.getByRole("button", { name: /^Preview / }).all()) {
+      const bounds = await button.boundingBox();
+      const thumbnail = await button.locator("[data-theme-thumbnail]").boundingBox();
+      for (const dimension of ["x", "y", "width", "height"])
+        expect(Math.abs(bounds[dimension] - thumbnail[dimension])).toBeLessThan(1);
+      await expect(button).toHaveCSS("padding", "0px");
+      await expect(button).toHaveCSS("overflow", "hidden");
+      const radius = await button.evaluate((element) => {
+        const inner = getComputedStyle(element);
+        const outer = getComputedStyle(element.closest("li"));
+        return {
+          inner: parseFloat(inner.borderTopLeftRadius),
+          outer: parseFloat(outer.borderTopLeftRadius),
+          inset: parseFloat(outer.paddingLeft) + parseFloat(outer.borderLeftWidth),
+        };
+      });
+      expect(radius.inner).toBeGreaterThan(0);
+      expect(Math.abs(radius.inner + radius.inset - radius.outer)).toBeLessThan(0.1);
+      const inset = await button.evaluate((element) => {
+        const card = element.closest("li");
+        const outer = card.getBoundingClientRect();
+        const inner = element.getBoundingClientRect();
+        const style = getComputedStyle(card);
+        return [
+          inner.left - outer.left - parseFloat(style.borderLeftWidth),
+          outer.right - inner.right - parseFloat(style.borderRightWidth),
+          inner.top - outer.top - parseFloat(style.borderTopWidth),
+        ];
+      });
+      for (const padding of inset) expect(Math.abs(padding)).toBeLessThan(1);
+      await expect(button.locator("span").filter({ hasText: /^(Applied|Modified|Applied \/ Modified)$/ })).toHaveCount(0);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await expect(page.locator("[data-preset-preview]")).toHaveCount(0);
@@ -453,27 +587,37 @@ touchTest("preset settings and reset remain reachable on mobile", async ({ page 
   await page.getByRole("tab", { name: "Themes", exact: true }).tap();
   for (const width of [320, 390, 780]) {
     await page.setViewportSize({ width, height: 844 });
-    const card = await controls.locator("..").boundingBox();
-    const settings = await controls.getByRole("button", { name: "Settings", exact: true }).boundingBox();
-    const reset = await controls.getByRole("button", { name: "Reset", exact: true }).boundingBox();
+    const { card, buttons } = await controls.evaluate((group) => {
+      const bounds = (element) => {
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x, y, width, height };
+      };
+      return {
+        card: bounds(group.parentElement),
+        buttons: [...group.querySelectorAll("button")].map((button) => ({
+          bounds: bounds(button), icon: bounds(button.querySelector("svg")),
+        })),
+      };
+    });
+    const [settings, reset] = buttons.map((button) => button.bounds);
     expect(Math.abs(settings.y - reset.y)).toBeLessThan(1);
     expect(settings.x + settings.width).toBeLessThanOrEqual(reset.x + 1);
     await expect(page.getByRole("button", { name: "Preview Warm gallery", exact: true }).locator("button")).toHaveCount(0);
-    for (const button of await controls.getByRole("button").all()) {
-      const bounds = await button.boundingBox();
+    for (const { bounds, icon } of buttons) {
       expect(bounds.width).toBeGreaterThanOrEqual(44);
       expect(bounds.height).toBeGreaterThanOrEqual(44);
       expect(bounds.x).toBeGreaterThanOrEqual(card.x);
       expect(bounds.y).toBeGreaterThanOrEqual(card.y);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(card.x + card.width);
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(card.y + card.height);
-      expect(await button.textContent()).toBe("");
-      await expect(button).toHaveAttribute("title", await button.getAttribute("aria-label"));
-      const icon = await button.locator("svg").boundingBox();
       expect(icon.x).toBeGreaterThanOrEqual(bounds.x);
       expect(icon.y).toBeGreaterThanOrEqual(bounds.y);
       expect(icon.x + icon.width).toBeLessThanOrEqual(bounds.x + bounds.width);
       expect(icon.y + icon.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+    }
+    for (const button of await controls.getByRole("button").all()) {
+      expect(await button.textContent()).toBe("");
+      await expect(button).toHaveAttribute("title", await button.getAttribute("aria-label"));
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
@@ -528,6 +672,105 @@ test("preset customization storage failures are reported explicitly", async ({ p
   await page.locator("#background-value").press("Enter");
   await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Browser preferences could not be saved" })).toBeVisible();
   await expect.poll(async () => (await browserDraft(page)).document.grid.background).toBe("#334455");
+});
+
+test("image and theme cards share external outlines without masking or resizing their contents", async ({ page }) => {
+  const { before } = await presetDraft(page);
+  const upload = page.locator("[data-upload-tile]").first();
+  const cell = page.locator("#board-grid [data-drop-placeholder]").first();
+  const filled = page.locator("#board-grid .image-card").first();
+  const library = page.locator("#asset-library .asset").first();
+  const checkOutline = async (card, drop = false) => {
+    const geometry = await card.evaluate((element) => {
+      const card = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const rect = element.querySelector("[data-cell-image-frame] rect");
+      const frame = rect.getBoundingClientRect();
+      const frameStyle = getComputedStyle(rect);
+      const stroke = parseFloat(frameStyle.strokeWidth);
+      const content = element.querySelector("[data-card-content]");
+      const viewport = element.closest("[data-canvas-viewport]");
+      const clip = viewport?.getBoundingClientRect();
+      const radius = style.borderTopLeftRadius.endsWith("%")
+        ? parseFloat(style.borderTopLeftRadius) * card.width / 100
+        : parseFloat(style.borderTopLeftRadius);
+      return {
+        width: card.width - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth),
+        gaps: [
+          card.left - frame.left - stroke / 2,
+          frame.right - card.right - stroke / 2,
+          card.top - frame.top - stroke / 2,
+          frame.bottom - card.bottom - stroke / 2,
+        ],
+        stroke, radius, frameRadius: parseFloat(frameStyle.rx),
+        mask: getComputedStyle(content).maskImage,
+        visible: !clip || (
+          frame.left - stroke / 2 >= clip.left - 0.1 &&
+          frame.right + stroke / 2 <= clip.right + 0.1 &&
+          frame.top - stroke / 2 >= clip.top - 0.1 &&
+          frame.bottom + stroke / 2 <= clip.bottom + 0.1
+        ),
+      };
+    });
+    expect(geometry.mask).toBe("none");
+    expect(geometry.visible).toBe(true);
+    expect(Math.abs(geometry.stroke - Math.max(1, geometry.width * (drop ? 0.01 : 0.005)))).toBeLessThan(0.1);
+    const gap = geometry.width * 0.02;
+    for (const distance of geometry.gaps) {
+      expect(distance).toBeGreaterThan(0);
+      expect(Math.abs(distance - gap)).toBeLessThan(0.1);
+    }
+    expect(Math.abs(geometry.frameRadius - geometry.radius - gap - geometry.stroke / 2)).toBeLessThan(0.6);
+  };
+  const transfer = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["test"], "test.png", { type: "image/png" }));
+    return transfer;
+  });
+  for (const rounding of ["50", "0"]) {
+    await page.getByRole("tab", { name: "Settings", exact: true }).click();
+    await page.locator("#corner-rounding").fill(rounding);
+    await page.getByRole("tab", { name: "Images", exact: true }).click();
+    for (const [card, dashed] of [[upload, true], [cell, true], [filled, false], [library, false]]) {
+      const content = card.locator(":scope > [data-card-content]");
+      const before = await content.boundingBox();
+      await card.hover();
+      await expect(card).toHaveAttribute("data-image-hovered", "");
+      await checkOutline(card);
+      const after = await content.boundingBox();
+      expect(after.width).toBeCloseTo(before.width, 1);
+      expect(after.height).toBeCloseTo(before.height, 1);
+      const frame = card.locator("[data-cell-image-frame] rect");
+      if (dashed) await expect(frame).not.toHaveCSS("stroke-dasharray", "none");
+      else await expect(frame).toHaveCSS("stroke-dasharray", "none");
+    }
+    await page.mouse.move(0, 0);
+    await upload.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(upload).toBeFocused();
+    await checkOutline(upload);
+    await cell.dispatchEvent("dragover", { dataTransfer: transfer });
+    await expect(cell).toHaveClass(/drag-over/);
+    await checkOutline(cell, true);
+    await cell.dispatchEvent("dragleave", { dataTransfer: transfer });
+    await page.getByRole("tab", { name: "Themes", exact: true }).click();
+    const theme = page.getByRole("button", { name: "Preview Midnight squares", exact: true });
+    await themeThumbnail(page, "Midnight squares");
+    await theme.hover();
+    await checkOutline(theme.locator(".."));
+    await expect(theme.locator("..").locator("[data-cell-image-frame] rect")).toHaveCSS("stroke-dasharray", "none");
+  }
+  await page.getByRole("button", { name: "Preview Midnight squares", exact: true }).click();
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  await page.mouse.move(0, 0);
+  const applied = page.getByRole("button", { name: "Preview Midnight squares", exact: true });
+  await expect(applied).toHaveAttribute("data-applied", "");
+  await checkOutline(applied.locator(".."));
+  const after = await browserDraft(page);
+  expect(after.document.assets).toEqual(before.document.assets);
+  expect(after.images).toEqual(before.images);
+  await transfer.dispose();
 });
 
 test("preset drop zones stay visible on every starter background and cell size", async ({ page }) => {

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff, LoaderCircle } from "lucide-react";
-import { createExport } from "../export";
+import { createExport, dimensions, sharedCaptionRows } from "../export";
 import { presetPreviewWorkspace, type starterPresets } from "../presets";
 import { t } from "../i18n";
 
-type Thumbnail = { key: string; url: string; error?: never } | { key: string; error: string; url?: never };
+type Thumbnail = { key: string; url: string; width: number; height: number; error?: never } | { key: string; error: string; url?: never };
 
 export function ThemeThumbnail({ theme, name, rows, columns }: {
   theme: (typeof starterPresets)[number];
@@ -15,8 +15,16 @@ export function ThemeThumbnail({ theme, name, rows, columns }: {
   const element = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   const [thumbnail, setThumbnail] = useState<Thumbnail | null>(null);
-  const key = `${theme.id}:${name}:${rows}:${columns}`;
+  const previewRows = Math.min(3, rows);
+  const previewColumns = Math.min(3, columns);
+  const preview = useMemo(() => presetPreviewWorkspace({ ...theme, name }, {
+    rows: previewRows, columns: previewColumns,
+  }), [theme, name, previewRows, previewColumns]);
+  const size = Math.floor(512 / Math.max(previewRows, previewColumns));
+  const estimated = useMemo(() => dimensions(preview.grid, size, sharedCaptionRows(preview.grid, preview.assets)), [preview, size]);
+  const key = `${theme.id}:${name}:${previewRows}:${previewColumns}`;
   const current = thumbnail?.key === key ? thumbnail : null;
+  const geometry = current?.url ? current : estimated;
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -30,13 +38,12 @@ export function ThemeThumbnail({ theme, name, rows, columns }: {
     if (!visible) return;
     let cancelled = false;
     let url = "";
-    const preview = presetPreviewWorkspace({ ...theme, name }, { rows, columns });
-    const size = Math.max(16, Math.floor(512 / Math.max(rows, columns)));
     void createExport(preview.grid, preview.assets, size, "image/png", 0.95, 2_000_000)
       .then((blob) => {
         if (cancelled) return;
         url = URL.createObjectURL(blob);
-        setThumbnail({ key, url });
+        const { width, height } = dimensions(preview.grid, size, sharedCaptionRows(preview.grid, preview.assets));
+        setThumbnail({ key, url, width, height });
       })
       .catch((reason: unknown) => {
         if (!cancelled) setThumbnail({ key, error: reason instanceof Error ? reason.message : t("presets.thumbnailError") });
@@ -45,15 +52,16 @@ export function ThemeThumbnail({ theme, name, rows, columns }: {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [visible, theme, name, rows, columns, key]);
-  return <span ref={element} data-theme-thumbnail
+  }, [visible, preview, size, key]);
+  return <span ref={element} data-theme-thumbnail data-card-content
     data-thumbnail-state={current?.url ? "ready" : current?.error ? "error" : "loading"}
     aria-label={t("presets.thumbnailNamed", { name })} role="img"
-    className="flex aspect-square w-full shrink-0 items-center justify-center overflow-hidden">
-    {current?.url ? <img src={current.url} alt="" draggable={false} className="block h-full w-full object-contain"
+    style={{ aspectRatio: `${geometry.width} / ${geometry.height}`, backgroundColor: theme.settings.style.background }}
+    className="relative flex min-h-11 w-full items-center justify-center overflow-hidden">
+    {current?.url ? <img src={current.url} alt="" draggable={false} className="absolute inset-0 block h-full w-full object-contain"
       onError={() => setThumbnail({ key, error: t("presets.thumbnailError") })} /> :
-      current?.error ? <span title={current.error} className="flex flex-col items-center gap-1 text-xs text-(--muted)">
+      current?.error ? <span title={current.error} className="flex flex-col items-center gap-1 text-xs">
         <ImageOff aria-hidden="true" className="size-5!" />{t("presets.thumbnailError")}
-      </span> : <LoaderCircle aria-hidden="true" className="size-5! text-(--muted) motion-safe:animate-spin" />}
+      </span> : <LoaderCircle aria-hidden="true" className="size-5! motion-safe:animate-spin" />}
   </span>;
 }

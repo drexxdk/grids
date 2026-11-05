@@ -452,7 +452,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 ${!dropPlaceholder ? "not-data-drag-source:data-image-hovered:border-(--accent)! not-data-drag-source:has-[[data-card-image]_button:focus-visible]:border-(--accent)!" : "[--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--card-frame-hover-color)]"} ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--card-frame-hover-color)] ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -790,7 +790,7 @@ export function GridCell({
                   style={
                     {
                       "--card-tool-inset":
-                        "calc(4.5cqw + var(--card-paint-inset, 0px))",
+                        "4.5cqw",
                       "--card-tool-top-inset":
                         overlay && alignment === "top"
                           ? "4.5cqw"
@@ -1029,7 +1029,7 @@ export function GridCell({
                 />
               </div>
             )}
-          {dropPlaceholder && <CardFrame />}
+          <CardFrame dashed={dropPlaceholder} />
           {importing && (
             <span
               role="status"

@@ -129,7 +129,12 @@ export function GridResizer({
           ref={viewportRef}
           data-canvas-viewport
           className="min-w-0 overflow-hidden"
-          style={{ height: viewportHeight }}
+          style={{
+            height: viewportHeight,
+            boxSizing: "content-box",
+            padding: "calc(var(--preview-cell-width, 200px) * 0.03 + 2px)",
+            margin: "calc(-1 * (var(--preview-cell-width, 200px) * 0.03 + 2px))",
+          }}
         >
           {children}
         </div>
