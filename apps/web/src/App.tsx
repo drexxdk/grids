@@ -332,7 +332,7 @@ export default function App() {
   useEffect(() => {
     if (
       selectedPanel !== 2 ||
-      (!sidebarOpen && !window.matchMedia("(max-width: 900px)").matches)
+      (!sidebarOpen && !window.matchMedia("(width < 901px)").matches)
     )
       setPresetPreview(null);
   }, [selectedPanel, sidebarOpen]);
@@ -1197,6 +1197,42 @@ export default function App() {
         <EditorLayout
           previewing={presetPreview !== null}
           previewId={presetPreview?.key}
+          previewBar={
+            presetPreview && (
+              <div
+                role="status"
+                data-preset-preview
+                className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
+              >
+                <div className="min-w-0 text-sm">
+                  <strong>
+                    {t("presets.previewing", {
+                      name: presetPreview.choice.name,
+                    })}
+                  </strong>
+                  <p className="m-0 text-xs text-(--muted)">
+                    {t("presets.samples")}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="button secondary h-11! shrink-0 px-3! py-0!"
+                    onClick={() => applyPreset(presetPreview.choice)}
+                  >
+                    {t("presets.apply")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary h-11! shrink-0 px-3! py-0!"
+                    onClick={() => setPresetPreview(null)}
+                  >
+                    {t("presets.close")}
+                  </button>
+                </div>
+              </div>
+            )
+          }
           canvasControls={
             compactCanvasControls ? (
               <>
@@ -1267,7 +1303,7 @@ export default function App() {
         >
           {(drawerToggle, toolsExpanded) => (
             <aside
-              className={`asset-panel min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
+              className={`asset-panel max-[901px]:p-0! min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
               aria-label={t("library.dropZone")}
               aria-busy={importProgress !== null}
               onDragOver={(event) => {
@@ -1304,9 +1340,9 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:grid max-[901px]:h-[calc(112.75px+var(--native-scrollbar-width,0px))] max-[901px]:grid-cols-[12rem_minmax(0,1fr)] max-[901px]:grid-rows-[auto_1fr] max-[901px]:gap-x-3 max-[901px]:gap-y-2 max-[901px]:pt-3 max-[901px]:pr-0 max-[901px]:pb-0 max-[901px]:pl-4"
               >
-                <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="mb-4 flex items-center justify-between gap-2 max-[901px]:col-start-1 max-[901px]:row-start-1 max-[901px]:mb-0 max-[901px]:[&_.field-label]:sr-only!">
                   <div className="min-w-0 flex-1">
                     <ImageSourceSelect
                       id="sidebar-image-source"
@@ -1319,6 +1355,7 @@ export default function App() {
                 {libraryProvider && (
                   <OnlineImages
                     key={libraryProvider.id}
+                    compactRow
                     provider={libraryProvider}
                     gridStyle={board}
                     captionRows={captionRows}
@@ -1335,7 +1372,7 @@ export default function App() {
                 )}
                 <div
                   id="asset-library"
-                  className={`asset-library ${librarySource !== "imported" ? "hidden!" : ""}`}
+                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:grid-flow-col max-[901px]:auto-cols-16 max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:pr-4 ${librarySource !== "imported" ? "hidden!" : ""}`}
                   hidden={librarySource !== "imported"}
                 >
                   <UploadTile
@@ -1343,7 +1380,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="self-start w-full max-[901px]:w-20.5"
+                    className="self-start w-full max-[901px]:w-16"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);
@@ -1403,7 +1440,7 @@ export default function App() {
                   toolsExpanded &&
                   activeAssets.length > 0 && (
                     <Button
-                      className="mt-2 min-h-11 w-full"
+                      className="mt-2 min-h-11 w-full max-[901px]:col-start-1 max-[901px]:row-start-2 max-[901px]:mt-0"
                       onClick={() =>
                         deleteImages(activeAssets.map((asset) => asset.id))
                       }
@@ -1433,32 +1470,6 @@ export default function App() {
                     <RefreshCw aria-hidden="true" />
                     {t("save.reload")}
                   </Button>
-                </div>
-              )}
-              {presetPreview && (
-                <div
-                  role="status"
-                  data-preset-preview
-                  className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) bg-(--panel) p-3"
-                >
-                  <div className="min-w-0 text-sm">
-                    <strong>
-                      {t("presets.previewing", {
-                        name: presetPreview.choice.name,
-                      })}
-                    </strong>
-                    <p className="m-0 text-xs text-(--muted)">
-                      {t("presets.samples")}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => applyPreset(presetPreview.choice)}>
-                      {t("presets.apply")}
-                    </Button>
-                    <Button onClick={() => setPresetPreview(null)}>
-                      {t("presets.close")}
-                    </Button>
-                  </div>
                 </div>
               )}
               <div
@@ -2065,15 +2076,6 @@ export default function App() {
                 onPreview={(choice) => {
                   setHeadingEditing(false);
                   setPresetPreview({ choice, key: crypto.randomUUID() });
-                }}
-                onSettings={(choice) => {
-                  setAppliedPreset({
-                    id: choice.id,
-                    settings: editorSettingsSchema.parse(choice.settings),
-                  });
-                  setPresetPreview(null);
-                  setSelectedPanel(1);
-                  setSidebarOpen(true);
                 }}
                 onReset={(choice) => applyPreset(choice)}
               />

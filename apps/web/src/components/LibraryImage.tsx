@@ -8,10 +8,12 @@ export function LibraryImagePlaceholder({
   gridStyle,
   captionRows,
   loading = false,
+  className = "",
 }: {
   gridStyle: GridStyle;
   captionRows: number;
   loading?: boolean;
+  className?: string;
 }) {
   const geometry = cellGeometry(gridStyle, 600, captionRows);
   return (
@@ -19,7 +21,7 @@ export function LibraryImagePlaceholder({
       data-image-placeholder
       data-loading={loading}
       aria-hidden="true"
-      className="min-w-0 w-full"
+      className={`min-w-0 w-full ${className}`}
     >
       <div
         className={`image-card @container flex w-full items-center justify-center border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
@@ -58,7 +60,7 @@ export function LibraryImage({
   elementRef,
   onImageLoad,
   onImageError,
-  className = "max-[901px]:w-20.5 max-[901px]:shrink-0",
+  className = "max-[901px]:w-16 max-[901px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;

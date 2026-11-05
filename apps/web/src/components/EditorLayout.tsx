@@ -21,7 +21,7 @@ import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
 import { useEditorState } from "../browser/navigation";
 
-const compactQuery = "(max-width: 900px)";
+const compactQuery = "(width < 901px)";
 function subscribeToViewport(onChange: () => void) {
   const media = window.matchMedia(compactQuery);
   media.addEventListener("change", onChange);
@@ -35,12 +35,14 @@ export function EditorLayout({
   status,
   previewId,
   previewing = false,
+  previewBar,
 }: {
   actions: ReactNode;
   canvasControls: ReactNode;
   status?: ReactNode;
   previewId?: string;
   previewing?: boolean;
+  previewBar?: ReactNode;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
     (actions: ReactNode) => ReactNode,
@@ -55,15 +57,10 @@ export function EditorLayout({
     () => window.matchMedia(compactQuery).matches,
     () => false,
   );
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => {
-    if (compact && previewId) setSettingsOpen(false);
-  }, [compact, previewId]);
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
-  const panelOrder = compact ? [2, 1] : [2, 0, 1];
+  const panelOrder = [2, 0, 1];
   const panelsId = useId();
-  const settingsButton = useRef<HTMLButtonElement>(null);
   const headerElement = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(76);
   const headerActions = useRef<HTMLDivElement>(null);
@@ -157,7 +154,8 @@ export function EditorLayout({
       const controlsLeft = controlsRight - controlsWidth;
       const brandLimit =
         nextLayout === "wrapped"
-          ? actionBounds.right - otherActionsWidth -
+          ? actionBounds.right -
+            otherActionsWidth -
             (nextCompactExport ? iconWidth : fullExportWidth)
           : controlsLeft;
       setBrandInHeader(
@@ -175,24 +173,6 @@ export function EditorLayout({
       document.fonts.removeEventListener("loadingdone", measure);
     };
   }, [compact, sidebarOpen, headerLayout, compactExport, controlsInHeader]);
-  useEffect(() => {
-    if (!compact) {
-      setSettingsOpen(false);
-    }
-  }, [compact]);
-  useEffect(() => {
-    if (!compact || !settingsOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !event.defaultPrevented &&
-        !document.querySelector('[role="dialog"], [role="listbox"]')
-      )
-        setSettingsOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [compact, settingsOpen]);
   const [library, workspace, settings, presets] = children;
   const brand = (
     <a className="brand shrink-0" href="./">
@@ -203,7 +183,10 @@ export function EditorLayout({
     </a>
   );
   const canvasActions = (
-    <div className="relative flex w-full min-w-0 flex-col gap-2">
+    <div
+      inert={previewing}
+      className="relative flex w-full min-w-0 flex-col gap-2"
+    >
       <div
         ref={headerBrand}
         data-header-brand
@@ -228,33 +211,26 @@ export function EditorLayout({
         className="absolute top-0 right-[calc(12px+var(--native-scrollbar-width,0px))] flex items-center gap-2"
       >
         {actions}
-        <Button
-          ref={settingsButton}
-          variant="icon"
-          title={t(
-            (compact ? settingsOpen : sidebarOpen)
-              ? "editor.closeSidebar"
-              : "editor.showSidebar",
-          )}
-          aria-label={t(
-            (compact ? settingsOpen : sidebarOpen)
-              ? "editor.closeSidebar"
-              : "editor.showSidebar",
-          )}
-          aria-expanded={compact ? settingsOpen : sidebarOpen}
-          aria-controls={panelsId}
-          onClick={() => {
-            if (compact) {
-              setSettingsOpen(!settingsOpen);
-            } else setSidebarOpen(!sidebarOpen);
-          }}
-        >
-          {(compact ? settingsOpen : sidebarOpen) ? (
-            <X aria-hidden="true" className="size-5!" />
-          ) : (
-            <PanelRightOpen aria-hidden="true" className="size-5!" />
-          )}
-        </Button>
+        {!compact && (
+          <Button
+            variant="icon"
+            title={t(
+              sidebarOpen ? "editor.closeSidebar" : "editor.showSidebar",
+            )}
+            aria-label={t(
+              sidebarOpen ? "editor.closeSidebar" : "editor.showSidebar",
+            )}
+            aria-expanded={sidebarOpen}
+            aria-controls={panelsId}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? (
+              <X aria-hidden="true" className="size-5!" />
+            ) : (
+              <PanelRightOpen aria-hidden="true" className="size-5!" />
+            )}
+          </Button>
+        )}
       </div>
       {status}
     </div>
@@ -266,64 +242,52 @@ export function EditorLayout({
       data-header-layout={headerLayout}
       data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={compactExport ? true : undefined}
-      className="group/header col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3!"
+      className="group/header relative col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3!"
     >
       {canvasActions}
+      {previewBar && (
+        <div className="absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--native-scrollbar-width,0px))] pl-3">
+          {previewBar}
+        </div>
+      )}
     </header>
   );
   return (
     <>
       {canvasHeader}
       {workspace(null)}
-      <AnimatePresence>
-        {compact && settingsOpen && (
-          <MotionDiv
-            key="sidebar-backdrop"
-            aria-hidden="true"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            motionTransition={{ duration: reduced ? 0 : 0.18 }}
-            onClick={() => setSettingsOpen(false)}
-            className="absolute bottom-0 left-0 z-30 w-[calc(100%+var(--native-scrollbar-width,0px))] bg-black/60"
-            style={{ top: headerHeight }}
-          />
-        )}
-      </AnimatePresence>
       <div
         data-sidebar-track
         data-sidebar-open={!compact && sidebarOpen ? "" : undefined}
         className={
           compact
-            ? "pointer-events-none absolute -right-(--native-scrollbar-width,0px) bottom-0 z-40 w-87.5 max-w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
+            ? "relative shrink-0 w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
             : "relative h-full min-h-0 min-w-0 w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
         }
-        style={compact ? { top: headerHeight } : undefined}
       >
-        <AnimatePresence
-          initial={false}
-          onExitComplete={() => {
-            if (compact) settingsButton.current?.focus({ preventScroll: true });
-          }}
-        >
-          {(compact ? settingsOpen : sidebarOpen) && (
+        <AnimatePresence initial={false}>
+          {(compact || sidebarOpen) && (
             <MotionDiv
               key="sidebar"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
+              initial={compact ? { height: 0 } : { x: "100%" }}
+              animate={compact ? { height: "auto" } : { x: 0 }}
+              exit={compact ? { height: 0 } : { x: "100%" }}
               motionTransition={{
                 duration: reduced ? 0 : 0.18,
                 ease: "easeInOut",
               }}
-              className={`pointer-events-auto absolute inset-y-0 right-0 ${compact ? "w-full max-w-87.5" : "w-87.5"}`}
+              className={
+                compact
+                  ? "overflow-hidden"
+                  : "pointer-events-auto absolute inset-y-0 right-0 w-87.5"
+              }
             >
               <aside
                 id={panelsId}
                 data-editor-sidebar
                 data-editor-settings={compact ? true : undefined}
                 aria-label={t("editor.tools")}
-                className="h-full min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-l border-solid border-(--line) bg-(--panel) scrollbar-gutter-stable"
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable h-full border-l"}`}
               >
                 <div
                   data-sidebar-sticky
@@ -337,58 +301,60 @@ export function EditorLayout({
                       {brand}
                     </div>
                   )}
-                  {(
+                  {
                     <div
                       data-panel-controls
-                      className="flex shrink-0 flex-col gap-2 p-4"
+                      className={`flex shrink-0 flex-col gap-2 ${compact ? "" : "p-4"}`}
                     >
                       <ImageTabs
                         id={panelsId}
+                        square={compact}
                         label={t("editor.panels")}
-                        selectedIndex={panelOrder.indexOf(compact && selectedPanel === 0 ? 1 : selectedPanel)}
-                        onChange={(index) => setSelectedPanel(panelOrder[index]!)}
-                        tabs={compact ? [
-                          { label: t("presets.title"), icon: LayoutGrid },
-                          { label: t("editor.settings"), icon: Settings2 },
-                        ] : [
+                        selectedIndex={panelOrder.indexOf(selectedPanel)}
+                        onChange={(index) =>
+                          setSelectedPanel(panelOrder[index]!)
+                        }
+                        tabs={[
                           { label: t("presets.title"), icon: LayoutGrid },
                           { label: t("editor.images"), icon: Images },
                           { label: t("editor.settings"), icon: Settings2 },
                         ]}
                       />
                     </div>
-                  )}
+                  }
                 </div>
                 <div
                   data-sidebar-panels
-                  className="relative isolate z-0 min-h-0 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:block! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+                  className="relative isolate z-0 min-h-0 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
                 >
-                  {!compact && (
-                    <div
-                      role="tabpanel"
-                      id={`${panelsId}-panel-1`}
-                      aria-labelledby={`${panelsId}-tab-1`}
-                      hidden={selectedPanel !== 0}
-                      className="min-h-0"
-                    >
-                      {library(null, true)}
-                    </div>
-                  )}
                   <div
                     role="tabpanel"
-                    id={`${panelsId}-panel-${compact ? 1 : 2}`}
-                    aria-labelledby={`${panelsId}-tab-${compact ? 1 : 2}`}
-                    hidden={compact ? selectedPanel === 2 : selectedPanel !== 1}
+                    id={`${panelsId}-panel-1`}
+                    aria-labelledby={`${panelsId}-tab-1`}
+                    hidden={selectedPanel !== 0}
+                    className="min-h-0"
+                  >
+                    {library(null, true)}
+                  </div>
+                  <div
+                    role="tabpanel"
+                    id={`${panelsId}-panel-2`}
+                    aria-labelledby={`${panelsId}-tab-2`}
+                    hidden={selectedPanel !== 1}
                     className="min-h-0"
                   >
                     {settings(null)}
                   </div>
-                  {selectedPanel === 2 && <div
-                    role="tabpanel"
-                    id={`${panelsId}-panel-0`}
-                    aria-labelledby={`${panelsId}-tab-0`}
-                    className="min-h-0"
-                  >{presets()}</div>}
+                  {selectedPanel === 2 && (
+                    <div
+                      role="tabpanel"
+                      id={`${panelsId}-panel-0`}
+                      aria-labelledby={`${panelsId}-tab-0`}
+                      className="min-h-0"
+                    >
+                      {presets()}
+                    </div>
+                  )}
                 </div>
               </aside>
             </MotionDiv>

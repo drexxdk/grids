@@ -165,7 +165,11 @@ function OnlineImage({
             });
         }}
         onImageError={(loaded) => {
-          if (image.provider === "met" && loaded.src === image.thumbnail && !needsOriginal) {
+          if (
+            image.provider === "met" &&
+            loaded.src === image.thumbnail &&
+            !needsOriginal
+          ) {
             setThumbnailSize({ width: 0, height: 0 });
             return;
           }
@@ -190,9 +194,10 @@ export function OnlineImages({
   provider,
   onImport,
   selectionOnly = false,
-  gridClassName = "grid grid-cols-2 gap-2.5",
+  gridClassName = "grid grid-cols-2 gap-2.5 max-[901px]:grid-flow-col max-[901px]:auto-cols-16 max-[901px]:grid-cols-none",
   searchActions,
   dragSource,
+  compactRow = false,
   ...cardProps
 }: {
   provider: ImageProvider;
@@ -201,6 +206,7 @@ export function OnlineImages({
   gridClassName?: string;
   searchActions?: ReactNode;
   dragSource?: CardDragSource;
+  compactRow?: boolean;
 } & Pick<
   ComponentProps<typeof LibraryImage>,
   "gridStyle" | "captionRows" | "moving" | "onMoveStart" | "onTouchDrag"
@@ -309,10 +315,10 @@ export function OnlineImages({
     <section
       aria-label={t("library.source.online")}
       aria-busy={busy}
-      className="@container min-w-0"
+      className={`@container min-w-0 ${compactRow ? "max-[901px]:contents" : ""}`}
     >
       <div
-        className={`mb-2 grid items-end gap-3 ${searchActions ? "grid-cols-1 @min-[520px]:grid-cols-[minmax(0,1fr)_15rem]" : "grid-cols-1"}`}
+        className={`mb-2 grid items-end gap-3 ${searchActions ? "grid-cols-1 @min-[520px]:grid-cols-[minmax(0,1fr)_15rem]" : "grid-cols-1"} ${compactRow ? "max-[901px]:col-start-1 max-[901px]:row-start-2 max-[901px]:mb-0 max-[901px]:items-start" : ""}`}
       >
         <div className="relative min-w-0">
           <Search
@@ -337,156 +343,178 @@ export function OnlineImages({
         {searchActions}
       </div>
       <div
-        role="group"
-        aria-label={t("library.browse.title")}
-        className="mb-3 flex flex-wrap gap-1"
+        className={
+          compactRow
+            ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:min-w-0 max-[901px]:items-start max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:pr-4"
+            : "contents"
+        }
       >
-        {[{ id: null }, ...provider.browse].map((topic) => {
-          const Icon = topic.id === null ? Grid2X2 : topicIcons[topic.id];
-          return (
-            <Button
-              key={topic.id ?? "all"}
-              title={t(`library.browse.${topic.id ?? "all"}`)}
-              aria-pressed={selectedTopic === topic.id}
-              disabled={selectedTopic === topic.id && !error}
-              className="size-8! p-0! aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!"
-              onClick={() => {
-                setFiltering(false);
-                setBrowsing({
-                  query,
-                  selectedTopic: topic.id,
-                  history: [],
-                  request: { query: query.trim(), topic: topic.id, offset: 0 },
-                });
-              }}
-            >
-              <Icon aria-hidden="true" />
-              <span className="sr-only">
-                {t(`library.browse.${topic.id ?? "all"}`)}
-              </span>
-            </Button>
-          );
-        })}
-      </div>
-      {busy && (
-        <div role="status" className="sr-only" aria-live="polite">
-          {t("library.search.loading")}
-        </div>
-      )}
-      <div className="relative" data-online-card-area>
-        <div className={gridClassName}>
-          {visibleImages.map((image) => (
-            <OnlineImage
-              key={image.id}
-              image={image}
-              {...cardProps}
-              asset={{
-                id: `provider:${image.provider}:${image.id}`,
-                category: "",
-                title: image.title,
-                src: image.thumbnail,
-                provenance: {
-                  provider: image.provider,
-                  entityId: image.id,
-                  sourcePage: image.sourcePage,
-                  originalUrl: image.original.url,
-                  creator: image.creator,
-                  license: image.license,
-                  licenseUrl: image.licenseUrl,
-                },
-              }}
-              className="w-full"
-              disabled={importing !== null}
-              onTitle={(title) =>
-                setImages((current) =>
-                  current.map((item) =>
-                    item.id === image.id ? { ...item, title } : item,
-                  ),
-                )
-              }
-              onDelete={() => {}}
-              onImport={() => {
-                void importImage(image);
-              }}
-              onSelect={
-                selectionOnly
-                  ? () => {
-                      void importImage(image);
-                    }
-                  : undefined
-              }
-              source={{ kind: "provider", image }}
-              dragAffected={
-                dragSource?.kind === "provider" &&
-                dragSource.image.provider === image.provider &&
-                dragSource.image.id === image.id
-              }
-            />
-          ))}
-          {Array.from(
-            { length: Math.max(0, pageSize - visibleImages.length) },
-            (_, index) => (
-              <LibraryImagePlaceholder
-                key={`placeholder:${index}`}
-                gridStyle={cardProps.gridStyle}
-                captionRows={cardProps.captionRows}
-                loading={busy}
+        {provider.browse.length > 0 && (
+          <div
+            role="group"
+            aria-label={t("library.browse.title")}
+            className={`mb-3 flex flex-wrap gap-1 ${compactRow ? "max-[901px]:mb-0 max-[901px]:w-15 max-[901px]:shrink-0" : ""}`}
+          >
+            {[{ id: null }, ...provider.browse].map((topic) => {
+              const Icon = topic.id === null ? Grid2X2 : topicIcons[topic.id];
+              return (
+                <Button
+                  key={topic.id ?? "all"}
+                  title={t(`library.browse.${topic.id ?? "all"}`)}
+                  aria-pressed={selectedTopic === topic.id}
+                  disabled={selectedTopic === topic.id && !error}
+                  className={`size-8! p-0! ${compactRow ? "max-[901px]:size-7!" : ""} aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!`}
+                  onClick={() => {
+                    setFiltering(false);
+                    setBrowsing({
+                      query,
+                      selectedTopic: topic.id,
+                      history: [],
+                      request: {
+                        query: query.trim(),
+                        topic: topic.id,
+                        offset: 0,
+                      },
+                    });
+                  }}
+                >
+                  <Icon aria-hidden="true" />
+                  <span className="sr-only">
+                    {t(`library.browse.${topic.id ?? "all"}`)}
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+        )}
+        {busy && (
+          <div role="status" className="sr-only" aria-live="polite">
+            {t("library.search.loading")}
+          </div>
+        )}
+        <div
+          className={`relative ${compactRow ? "max-[901px]:shrink-0" : ""}`}
+          data-online-card-area
+        >
+          <div className={gridClassName}>
+            {visibleImages.map((image) => (
+              <OnlineImage
+                key={image.id}
+                image={image}
+                {...cardProps}
+                asset={{
+                  id: `provider:${image.provider}:${image.id}`,
+                  category: "",
+                  title: image.title,
+                  src: image.thumbnail,
+                  provenance: {
+                    provider: image.provider,
+                    entityId: image.id,
+                    sourcePage: image.sourcePage,
+                    originalUrl: image.original.url,
+                    creator: image.creator,
+                    license: image.license,
+                    licenseUrl: image.licenseUrl,
+                  },
+                }}
+                className="w-full"
+                disabled={importing !== null}
+                onTitle={(title) =>
+                  setImages((current) =>
+                    current.map((item) =>
+                      item.id === image.id ? { ...item, title } : item,
+                    ),
+                  )
+                }
+                onDelete={() => {}}
+                onImport={() => {
+                  void importImage(image);
+                }}
+                onSelect={
+                  selectionOnly
+                    ? () => {
+                        void importImage(image);
+                      }
+                    : undefined
+                }
+                source={{ kind: "provider", image }}
+                dragAffected={
+                  dragSource?.kind === "provider" &&
+                  dragSource.image.provider === image.provider &&
+                  dragSource.image.id === image.id
+                }
               />
-            ),
+            ))}
+            {Array.from(
+              { length: Math.max(0, pageSize - visibleImages.length) },
+              (_, index) => (
+                <LibraryImagePlaceholder
+                  key={`placeholder:${index}`}
+                  gridStyle={cardProps.gridStyle}
+                  captionRows={cardProps.captionRows}
+                  loading={busy}
+                  className={
+                    compactRow && !busy && !message ? "max-[901px]:hidden" : ""
+                  }
+                />
+              ),
+            )}
+          </div>
+          {message && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+              <p
+                role={error ? "alert" : "status"}
+                className="max-w-full rounded-md bg-(--panel)/95 px-3 py-2 text-center text-sm wrap-break-word"
+              >
+                {message}
+              </p>
+            </div>
           )}
         </div>
-        {message && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-            <p
-              role={error ? "alert" : "status"}
-              className="max-w-full rounded-md bg-(--panel)/95 px-3 py-2 text-center text-sm wrap-break-word"
+        {request && (
+          <div
+            className={`mt-3 flex justify-between gap-2 ${compactRow ? "max-[901px]:mt-0 max-[901px]:shrink-0 max-[901px]:flex-col max-[901px]:self-center" : ""}`}
+          >
+            <Button
+              aria-label={t("library.search.previous")}
+              title={t("library.search.previous")}
+              disabled={busy || !history.length}
+              onClick={() => {
+                setBrowsing((previous) => ({
+                  ...previous,
+                  request: {
+                    topic: request.topic,
+                    query: request.query,
+                    offset: history[history.length - 1]!,
+                  },
+                  history: history.slice(0, -1),
+                }));
+              }}
             >
-              {message}
-            </p>
+              <ArrowLeft aria-hidden="true" />
+            </Button>
+            <Button
+              aria-label={t("library.search.next")}
+              title={t("library.search.next")}
+              disabled={!canGoNext}
+              onClick={() => {
+                if (!canGoNext) return;
+                setBrowsing((previous) => ({
+                  ...previous,
+                  history: [...history, request.offset],
+                  request: {
+                    query: request.query,
+                    topic: request.topic,
+                    offset: next,
+                  },
+                }));
+              }}
+            >
+              <ArrowRight aria-hidden="true" />
+            </Button>
           </div>
         )}
       </div>
-      {request && (
-        <div className="mt-3 flex justify-between gap-2">
-          <Button
-            aria-label={t("library.search.previous")}
-            title={t("library.search.previous")}
-            disabled={busy || !history.length}
-            onClick={() => {
-              setBrowsing((previous) => ({
-                ...previous,
-                request: {
-                  topic: request.topic,
-                  query: request.query,
-                  offset: history[history.length - 1]!,
-                },
-                history: history.slice(0, -1),
-              }));
-            }}
-          >
-            <ArrowLeft aria-hidden="true" />
-          </Button>
-          <Button
-            aria-label={t("library.search.next")}
-            title={t("library.search.next")}
-            disabled={!canGoNext}
-            onClick={() => {
-              if (!canGoNext) return;
-              setBrowsing((previous) => ({
-                ...previous,
-                history: [...history, request.offset],
-                request: {
-                  query: request.query,
-                  topic: request.topic,
-                  offset: next,
-                },
-              }));
-            }}
-          >
-            <ArrowRight aria-hidden="true" />
-          </Button>
-        </div>
-      )}
     </section>
   );
 }

@@ -6,7 +6,6 @@ import {
   Check,
   Crop,
   Download,
-  ExternalLink,
   ImagePlus,
   LoaderCircle,
   Move,
@@ -350,6 +349,15 @@ export function GridCell({
   )
     .toString(16)
     .padStart(2, "0")}`;
+  const centerCaptionText = (field: HTMLTextAreaElement) => {
+    const padding = parseFloat(getComputedStyle(field).paddingBottom) || 0;
+    const height = field.style.height;
+    field.style.paddingTop = `${padding}px`;
+    field.style.height = "0px";
+    const content = field.scrollHeight - padding * 2;
+    field.style.height = height;
+    field.style.paddingTop = `${Math.max(padding, (field.clientHeight - content) / 2)}px`;
+  };
   const captionStyle = {
     top:
       overlay && alignment === "bottom"
@@ -401,6 +409,7 @@ export function GridCell({
       );
       field.style.fontSize = `${fontSize}px`;
       field.style.padding = `${padding.vertical}px ${padding.horizontal}px`;
+      if (document.activeElement === field) centerCaptionText(field);
       field.parentElement?.style.setProperty(
         "--library-caption-font-size",
         `${fontSize}px`,
@@ -459,8 +468,14 @@ export function GridCell({
           "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
           borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
           "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
-          "--card-placeholder-color": isLightCanvasColor(gridStyle.cellBackgroundColor ?? "#111315") ? "#202325" : "#eef1f3",
-          "--card-frame-hover-color": darkDropFrame ? "#202325" : "var(--accent)",
+          "--card-placeholder-color": isLightCanvasColor(
+            gridStyle.cellBackgroundColor ?? "#111315",
+          )
+            ? "#202325"
+            : "#eef1f3",
+          "--card-frame-hover-color": darkDropFrame
+            ? "#202325"
+            : "var(--accent)",
           "--card-drop-color": darkDropFrame ? "#202325" : "var(--mint)",
           backgroundColor: "var(--card-background)",
           borderColor: "var(--line)",
@@ -727,7 +742,10 @@ export function GridCell({
                     draggable={false}
                   />
                   {failedImage === asset.src && (
-                    <span role="status" className="absolute inset-0 grid place-items-center bg-(--panel) p-2 text-sm text-(--text)">
+                    <span
+                      role="status"
+                      className="absolute inset-0 grid place-items-center bg-(--panel) p-2 text-sm text-(--text)"
+                    >
                       {t("account.imageUnavailable")}
                     </span>
                   )}
@@ -789,8 +807,7 @@ export function GridCell({
                   className="pointer-events-none absolute inset-0 z-10"
                   style={
                     {
-                      "--card-tool-inset":
-                        "4.5cqw",
+                      "--card-tool-inset": "4.5cqw",
                       "--card-tool-top-inset":
                         overlay && alignment === "top"
                           ? "4.5cqw"
@@ -861,18 +878,6 @@ export function GridCell({
                       </Button>
                     </div>
                   )}
-                  {library && asset.provenance && (
-                    <a
-                      href={asset.provenance.sourcePage}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={t("library.search.source")}
-                      title={`${t("library.search.source")}: ${[asset.provenance.creator, asset.provenance.license].filter(Boolean).join(" - ")}`}
-                      className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) flex size-11 items-center justify-center rounded-[2cqw] border border-solid border-white/30 bg-black/60 text-white backdrop-blur-sm hover:border-(--accent) hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-(--accent) [&_svg]:size-[40%]!"
-                    >
-                      <ExternalLink aria-hidden="true" />
-                    </a>
-                  )}
                   {(asset || cell.title) && (
                     <Button
                       variant="icon"
@@ -925,6 +930,7 @@ export function GridCell({
                 }
               }}
               onFocus={(event) => {
+                centerCaptionText(event.currentTarget);
                 setCaptionScroll({
                   top: event.currentTarget.scrollTop,
                   height: event.currentTarget.clientHeight,

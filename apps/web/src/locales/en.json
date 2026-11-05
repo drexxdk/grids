@@ -1,7 +1,7 @@
 {
   "presets": {
     "title": "Themes",
-    "help": "Cards show each original theme with up to 3 rows and 3 columns. Preview and apply using your full grid size, without changing your images or captions. Use Settings in the applied card to customize it. Changes stay in this browser.",
+    "help": "Cards show each original theme with up to 3 rows and 3 columns. Preview and apply using your full grid size, without changing your images or captions. Customize the applied theme in Settings, and reset it from its card. Changes stay in this browser.",
     "starters": "Starting points",
     "withHeading": "With heading",
     "withoutHeading": "Without heading",

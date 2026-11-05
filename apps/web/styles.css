@@ -914,9 +914,6 @@ output {
   .library-footer {
     display: none;
   }
-  .workspace {
-    order: 1;
-  }
   .settings-panel {
     order: 3;
     display: grid;
