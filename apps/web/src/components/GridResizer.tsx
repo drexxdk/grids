@@ -173,17 +173,17 @@ export function GridResizer({
         style={{
           width: previewWidth,
           maxWidth: "100%",
-          paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
+          paddingTop: 0,
         }}
         className={`relative isolate flex min-w-0 flex-col @container ${bottomControls ? `${leadingSpace ? "col-start-2" : "col-start-1"} row-start-1` : ""}`}
       >
         <span
           aria-hidden="true"
           data-image-canvas-background
-          className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
+          className="pointer-events-none absolute top-(--frame-shift-y,0px) bottom-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
         />
         {heading && (
-          <div className="relative z-10 translate-y-(--frame-shift-y,0px) overflow-hidden bg-(--board-bg) px-(--canvas-inset,0px) pb-(--heading-gap,0px)">
+          <div className="relative z-10 translate-y-(--frame-shift-y,0px) overflow-hidden bg-(--board-bg) px-(--canvas-inset,0px) pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">
             {heading}
           </div>
         )}
