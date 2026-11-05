@@ -268,7 +268,7 @@ export function EditorLayout({
         <AnimatePresence initial={false}>
           {(compact || sidebarOpen) && (
             <MotionDiv
-              key="sidebar"
+              key={compact ? "sidebar-compact" : "sidebar"}
               initial={compact ? { height: 0 } : { x: "100%" }}
               animate={compact ? { height: "auto" } : { x: 0 }}
               exit={compact ? { height: 0 } : { x: "100%" }}
@@ -287,7 +287,7 @@ export function EditorLayout({
                 data-editor-sidebar
                 data-editor-settings={compact ? true : undefined}
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable h-full border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable flex h-full flex-col border-l"}`}
               >
                 <div
                   data-sidebar-sticky
@@ -325,7 +325,7 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className="relative isolate z-0 min-h-0 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+                  className="relative isolate z-0 min-h-0 flex-1 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
                 >
                   <div
                     role="tabpanel"

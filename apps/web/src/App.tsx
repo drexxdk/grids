@@ -31,6 +31,8 @@ import {
   PanelBottom,
   PanelTopDashed,
   PanelBottomDashed,
+  Check,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Button,
@@ -1207,7 +1209,7 @@ export default function App() {
                 <div className="min-w-0 text-sm">
                   <strong>
                     {t("presets.previewing", {
-                      name: presetPreview.choice.name,
+                      value1: presetPreview.choice.name,
                     })}
                   </strong>
                   <p className="m-0 text-xs text-(--muted)">
@@ -1215,20 +1217,21 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="button secondary h-11! shrink-0 px-3! py-0!"
+                  <Button
+                    variant="success"
+                    className="h-11 shrink-0 py-0"
                     onClick={() => applyPreset(presetPreview.choice)}
                   >
+                    <Check aria-hidden="true" className="size-4" />
                     {t("presets.apply")}
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary h-11! shrink-0 px-3! py-0!"
+                  </Button>
+                  <Button
+                    className="h-11 shrink-0 py-0"
                     onClick={() => setPresetPreview(null)}
                   >
+                    <ArrowLeft aria-hidden="true" className="size-4" />
                     {t("presets.close")}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )
@@ -1268,14 +1271,13 @@ export default function App() {
           }
           actions={
             <>
-              <button
+              <Button
                 id="export-grid-header"
                 ref={exportButton}
-                type="button"
                 aria-haspopup="dialog"
                 title={t("export.title")}
                 aria-label={t("export.title")}
-                className="button secondary h-11! shrink-0 gap-2! px-3! py-0! group-data-compact-export/header:size-11! group-data-compact-export/header:gap-0! group-data-compact-export/header:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
+                className="h-11 shrink-0 py-0 group-data-compact-export/header:size-11 group-data-compact-export/header:gap-0 group-data-compact-export/header:p-0 [&_svg]:size-5 [&_svg]:shrink-0"
                 disabled={exporting || presetPreview !== null}
                 onClick={() => setExportOpen(true)}
               >
@@ -1283,7 +1285,7 @@ export default function App() {
                 <span className="whitespace-nowrap group-data-compact-export/header:sr-only">
                   {t("export.title")}
                 </span>
-              </button>
+              </Button>
               <AccountHeader
                 session={account.session}
                 loading={account.loading}

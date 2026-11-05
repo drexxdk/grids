@@ -110,7 +110,7 @@ export function MotionDiv({
 }
 
 const buttonStyles = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -118,6 +118,8 @@ const buttonStyles = cva(
           "border-(--line) bg-(--bg) text-(--text) enabled:hover:border-(--accent)",
         primary:
           "border-(--accent) bg-(--accent) text-[#19200d] enabled:hover:brightness-110",
+        success:
+          "border-emerald-400 bg-emerald-600 text-white enabled:hover:bg-emerald-500 focus-visible:outline-emerald-400",
         danger:
           "border-red-400/40 bg-red-500/10 text-red-300 enabled:hover:border-red-400 enabled:hover:bg-red-500/20 focus-visible:outline-red-400",
         icon: "size-11 shrink-0 border-(--line) bg-(--bg) p-0 enabled:hover:border-(--accent)!",
@@ -590,7 +592,8 @@ type MenuAction = {
 function ActionItems({ actions }: { actions: MenuAction[] }) {
   const present = useIsPresent();
   const reduced = useReducedMotion();
-  const itemClass = "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left no-underline data-focus:bg-(--selected) data-disabled:opacity-50";
+  const itemClass =
+    "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left text-[11px] no-underline data-focus:bg-(--selected) data-disabled:opacity-50";
   return (
     <MenuItems
       static
@@ -607,11 +610,7 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
     >
       {actions.map(({ label, icon: Icon, onSelect, disabled }) => (
         <MenuItem key={label} disabled={disabled}>
-          <button
-            type="button"
-            onClick={onSelect}
-            className={itemClass}
-          >
+          <button type="button" onClick={onSelect} className={itemClass}>
             <Icon aria-hidden="true" />
             {label}
           </button>

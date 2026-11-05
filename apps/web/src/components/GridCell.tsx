@@ -6,6 +6,7 @@ import {
   Check,
   Crop,
   Download,
+  ExternalLink,
   ImagePlus,
   LoaderCircle,
   Move,
@@ -877,6 +878,18 @@ export function GridCell({
                         <Crop aria-hidden="true" />
                       </Button>
                     </div>
+                  )}
+                  {library && asset.provenance && (
+                    <a
+                      href={asset.provenance.sourcePage}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t("library.search.source")}
+                      title={`${t("library.search.source")}: ${[asset.provenance.creator, asset.provenance.license].filter(Boolean).join(" - ")}`}
+                      className="pointer-events-auto absolute left-(--card-tool-inset) bottom-(--card-tool-bottom-inset) flex size-11 items-center justify-center rounded-[2cqw] border border-solid border-white/30 bg-black/60 text-white backdrop-blur-sm hover:border-(--accent) hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-(--accent) [&_svg]:size-[40%]!"
+                    >
+                      <ExternalLink aria-hidden="true" />
+                    </a>
                   )}
                   {(asset || cell.title) && (
                     <Button

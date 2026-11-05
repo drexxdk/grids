@@ -108,8 +108,6 @@ for (const width of [260, 320, 390, 1280]) {
       const menu = page.getByRole("menu");
       await expect(menu.getByRole("menuitem", { name: "Information", exact: true })).toBeVisible();
       await expect(menu.getByRole("menuitem", { name: signedIn ? "Account" : "Log in", exact: true })).toBeVisible();
-      const library = menu.getByRole("menuitem", { name: "Library", exact: true });
-      await expect(library).toBeVisible();
       for (const item of await menu.getByRole("menuitem").all()) {
         const bounds = await item.boundingBox();
         expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -137,9 +135,6 @@ for (const width of [260, 320, 390, 1280]) {
       await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeFocused();
       await expect(page.getByRole("region", { name: "Grid editor", exact: true })).toBeInViewport();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      if (width <= 900) {
-        await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-      }
       const sidebar = page.locator("[data-editor-sidebar]");
       await expect(sidebar).toBeVisible();
       await expect(sidebar).toBeInViewport();

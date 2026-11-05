@@ -92,7 +92,7 @@ export function ThemeThumbnail({
       data-thumbnail-state={
         current?.url ? "ready" : current?.error ? "error" : "loading"
       }
-      aria-label={t("presets.thumbnailNamed", { name })}
+      aria-label={t("presets.thumbnailNamed", { value1: name })}
       role="img"
       style={{ backgroundColor: theme.settings.style.background }}
       className="relative flex aspect-8/5 min-h-11 w-full items-center justify-center overflow-hidden"

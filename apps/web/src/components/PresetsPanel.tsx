@@ -109,13 +109,13 @@ export function PresetsPanel({
                       type="button"
                       disabled={disabled}
                       aria-label={t("presets.previewNamed", {
-                        name: choice.name,
+                        value1: choice.name,
                       })}
                       title={
                         previewId === choice.id
-                          ? t("presets.previewing", { name: choice.name })
+                          ? t("presets.previewing", { value1: choice.name })
                           : applied
-                            ? t("presets.appliedNamed", { name: choice.name })
+                            ? t("presets.appliedNamed", { value1: choice.name })
                             : choice.name
                       }
                       aria-pressed={previewId === choice.id}
