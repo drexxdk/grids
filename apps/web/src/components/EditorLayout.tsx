@@ -104,7 +104,7 @@ export function EditorLayout({
   const expandedExportSpacing = useRef(0);
   const [compactExport, setCompactExport] = useState(false);
   const [headerLayout, setHeaderLayout] = useState<
-    "full" | "icon" | "shifted" | "wrapped"
+    "full" | "icon" | "shifted" | "scroll"
   >("full");
   useLayoutEffect(() => {
     const controls = resizeControls.current;
@@ -153,53 +153,62 @@ export function EditorLayout({
           0,
         ) +
         gap * Math.max(0, children.length - 1);
-      const controlsRight =
-        controls.getBoundingClientRect().left +
-        controls.clientWidth / 2 +
-        controlsWidth / 2;
-      const actionBounds = actions.getBoundingClientRect();
+      // Width-based so the result does not depend on the current layout mode.
+      const inset =
+        parseFloat(
+          getComputedStyle(actions).getPropertyValue("--fixed-scrollbar-inset"),
+        ) || 0;
+      // Scroll layout already shrinks the header by the inset.
+      const headerWidth =
+        (headerElement.current?.clientWidth ?? 0) +
+        (headerLayout === "scroll" ? inset : 0);
+      const gutter = compact
+        ? 0
+        : parseFloat(
+            getComputedStyle(controls).getPropertyValue(
+              "--native-scrollbar-width",
+            ),
+          ) || 0;
+      const zoneWidth =
+        headerWidth - (!compact && sidebarOpen ? 350 : 0) - gutter;
+      const controlsRight = zoneWidth / 2 + controlsWidth / 2;
+      const actionsRight = headerWidth - 12 - inset;
       const otherActionsWidth =
-        actionBounds.width - exportButton.getBoundingClientRect().width;
+        actions.getBoundingClientRect().width -
+        exportButton.getBoundingClientRect().width;
       const fits = (exportWidth: number) =>
-        actionBounds.right - otherActionsWidth - exportWidth >=
-        controlsRight + gap;
+        actionsRight - otherActionsWidth - exportWidth >= controlsRight + gap;
       const leftControlsRight =
-        controls.getBoundingClientRect().left +
-        parseFloat(getComputedStyle(controls).paddingLeft) +
-        controlsWidth;
+        parseFloat(getComputedStyle(controls).paddingLeft) + controlsWidth;
       const iconWidth = exportButton.getBoundingClientRect().height;
       const nextLayout = fits(fullExportWidth)
         ? "full"
         : fits(iconWidth)
           ? "icon"
-          : actionBounds.right - otherActionsWidth - iconWidth >=
+          : actionsRight - otherActionsWidth - iconWidth >=
               leftControlsRight + gap
             ? "shifted"
-            : "wrapped";
+            : "scroll";
       setHeaderLayout(nextLayout);
-      const nextCompactExport =
-        nextLayout === "icon" ||
-        nextLayout === "shifted" ||
-        (nextLayout === "wrapped" &&
-          actionBounds.right - otherActionsWidth - fullExportWidth <
-            leftControlsRight - controlsWidth);
-      setCompactExport(nextCompactExport);
-      const controlsLeft = controlsRight - controlsWidth;
-      const brandLimit =
-        nextLayout === "wrapped"
-          ? actionBounds.right -
-            otherActionsWidth -
-            (nextCompactExport ? iconWidth : fullExportWidth)
-          : controlsLeft;
+      setCompactExport(nextLayout !== "full");
+      const brandLimit = controlsRight - controlsWidth;
       setBrandInHeader(
         nextLayout !== "shifted" &&
-          branding.getBoundingClientRect().right + gap <= brandLimit,
+          nextLayout !== "scroll" &&
+          12 + branding.getBoundingClientRect().width + gap <= brandLimit,
       );
     };
     measure();
     const observer = new ResizeObserver(measure);
-    for (const element of [wrapper, controls, actions, label, branding])
-      observer.observe(element);
+    for (const element of [
+      headerElement.current,
+      wrapper,
+      controls,
+      actions,
+      label,
+      branding,
+    ])
+      if (element) observer.observe(element);
     document.fonts.addEventListener("loadingdone", measure);
     return () => {
       observer.disconnect();
@@ -218,7 +227,7 @@ export function EditorLayout({
   const canvasActions = (
     <div
       inert={previewing}
-      className="relative flex w-full min-w-0 flex-col gap-2"
+      className={`relative flex gap-2 ${headerLayout === "scroll" ? "w-max min-w-full shrink-0 flex-row items-center pr-[calc(12px+var(--fixed-scrollbar-inset,0px))]" : "w-full min-w-0 flex-col"}`}
     >
       <div
         ref={headerBrand}
@@ -233,7 +242,7 @@ export function EditorLayout({
         ref={resizeControls}
         inert={previewing}
         data-canvas-controls
-        className={`flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden px-3 ${compact ? "" : "scrollbar-gutter-stable"} ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
+        className={`flex min-h-11 min-w-0 items-center gap-2 overflow-hidden pl-3 ${headerLayout === "scroll" ? "w-auto shrink-0 flex-nowrap justify-start" : `pr-3 ${compact ? "" : "scrollbar-gutter-stable"} flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
       >
         {canvasControls}
       </div>
@@ -241,7 +250,7 @@ export function EditorLayout({
         ref={headerActions}
         role="group"
         aria-label={t("editor.panels")}
-        className="absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))] flex items-center gap-2"
+        className={`flex items-center gap-2 ${headerLayout === "scroll" ? "relative ml-auto shrink-0" : "absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))]"}`}
       >
         {actions}
         {!compact && (
@@ -275,11 +284,11 @@ export function EditorLayout({
       data-header-layout={headerLayout}
       data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={compactExport ? true : undefined}
-      className="group/header relative col-span-full flex min-h-19 w-[calc(100%+var(--native-scrollbar-width,0px))] shrink-0 items-center border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3!"
+      className={`group/header relative col-span-full flex min-h-19 shrink-0 items-center overflow-x-auto overflow-y-hidden border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3! ${headerLayout === "scroll" ? "w-[calc(100%+var(--native-scrollbar-width,0px)-var(--fixed-scrollbar-inset,0px))]" : "w-[calc(100%+var(--native-scrollbar-width,0px))]"}`}
     >
       {canvasActions}
       {previewBar && (
-        <div className="absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--fixed-scrollbar-inset,0px))] pl-3">
+        <div className="@container absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--fixed-scrollbar-inset,0px))] pl-3">
           {previewBar}
         </div>
       )}

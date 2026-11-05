@@ -32,7 +32,7 @@ import {
   PanelTopDashed,
   PanelBottomDashed,
   Check,
-  ArrowLeft,
+  X,
 } from "lucide-react";
 import {
   Button,
@@ -1204,33 +1204,36 @@ export default function App() {
               <div
                 role="status"
                 data-preset-preview
-                className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
+                className="flex w-full min-w-0 items-center justify-between gap-3"
               >
-                <div className="min-w-0 text-sm">
-                  <strong>
+                <div className="hidden min-w-0 text-sm @min-[30rem]:block">
+                  <strong className="block truncate">
                     {t("presets.previewing", {
                       value1: presetPreview.choice.name,
                     })}
                   </strong>
-                  <p className="m-0 text-xs text-(--muted)">
+                  <p className="m-0 truncate text-xs text-(--muted)">
                     {t("presets.samples")}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="ml-auto flex shrink-0 gap-2">
                   <Button
                     variant="success"
                     className="h-11 shrink-0 py-0"
                     onClick={() => applyPreset(presetPreview.choice)}
                   >
                     <Check aria-hidden="true" className="size-4" />
-                    {t("presets.apply")}
+                    <span className="@max-[13rem]:sr-only">
+                      {t("presets.apply")}
+                    </span>
                   </Button>
                   <Button
-                    className="h-11 shrink-0 py-0"
+                    className="size-11 shrink-0 p-0"
+                    title={t("presets.close")}
+                    aria-label={t("presets.close")}
                     onClick={() => setPresetPreview(null)}
                   >
-                    <ArrowLeft aria-hidden="true" className="size-4" />
-                    {t("presets.close")}
+                    <X aria-hidden="true" className="size-4" />
                   </Button>
                 </div>
               </div>
