@@ -58,7 +58,7 @@ export function LibraryImage({
   elementRef,
   onImageLoad,
   onImageError,
-  className = "max-[900px]:w-20.5 max-[900px]:shrink-0",
+  className = "max-[901px]:w-20.5 max-[901px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;

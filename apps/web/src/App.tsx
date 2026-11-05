@@ -44,7 +44,10 @@ import { Modal } from "./components/ui/Modal";
 import { AccountDialog } from "./components/AccountDialog";
 import { AccountHeader } from "./components/AccountHeader";
 import { LoginDialog } from "./components/LoginDialog";
-import { InformationDialog, readInformationPage } from "./components/InformationDialog";
+import {
+  InformationDialog,
+  readInformationPage,
+} from "./components/InformationDialog";
 import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
@@ -54,7 +57,13 @@ import {
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
 import { PresetsPanel } from "./components/PresetsPanel";
-import { presetPreviewWorkspace, presetSettingsForLayout, samePresetSettings, starterPresets, type PresetChoice } from "./presets";
+import {
+  presetPreviewWorkspace,
+  presetSettingsForLayout,
+  samePresetSettings,
+  starterPresets,
+  type PresetChoice,
+} from "./presets";
 import { isLightCanvasColor } from "./canvasTheme";
 import {
   LibraryImage,
@@ -174,7 +183,11 @@ function BoardHeading({
             board.headingFontWeight,
           ),
           textShadow: board.publisher === "none" ? "none" : undefined,
-          "--heading-feedback-color": isLightCanvasColor(board.headingBackgroundColor ?? board.background) ? "#202325" : "var(--accent)",
+          "--heading-feedback-color": isLightCanvasColor(
+            board.headingBackgroundColor ?? board.background,
+          )
+            ? "#202325"
+            : "var(--accent)",
           height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).height})`,
           "--heading-padding": `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).padding})`,
           ...(!board.heading.trim()
@@ -254,40 +267,73 @@ export default function App() {
   const [conflict, setConflict] = useState(false);
   const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [presetPreview, setPresetPreview] = useState<{ choice: PresetChoice; key: string } | null>(null);
+  const [presetPreview, setPresetPreview] = useState<{
+    choice: PresetChoice;
+    key: string;
+  } | null>(null);
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [appliedPreset, setAppliedPreset] = useEditorState("appliedPreset");
-  const [presetCustomizations, setPresetCustomizations] = useEditorState("presetCustomizations");
+  const [presetCustomizations, setPresetCustomizations] = useEditorState(
+    "presetCustomizations",
+  );
   const currentSettings = getEditorSettings(workspace);
   const currentSettingsSignature = JSON.stringify(currentSettings);
   useEffect(() => {
-    const starter = starterPresets.find((choice) => choice.id === appliedPreset?.id);
+    const starter = starterPresets.find(
+      (choice) => choice.id === appliedPreset?.id,
+    );
     if (!loaded || conflict || !starter) return;
     const customized = !samePresetSettings(starter.settings, currentSettings);
     const saved = presetCustomizations[starter.id];
-    if (customized && saved && samePresetSettings(saved, currentSettings)) return;
+    if (customized && saved && samePresetSettings(saved, currentSettings))
+      return;
     if (!customized && !saved) return;
     setPresetCustomizations((previous) => {
       const next = { ...previous };
-      if (customized) next[starter.id] = editorSettingsSchema.parse(presetSettingsForLayout(currentSettings, starter.settings.layout));
+      if (customized)
+        next[starter.id] = editorSettingsSchema.parse(
+          presetSettingsForLayout(currentSettings, starter.settings.layout),
+        );
       else delete next[starter.id];
       return next;
     });
-  }, [loaded, conflict, appliedPreset?.id, currentSettingsSignature, presetCustomizations]);
+  }, [
+    loaded,
+    conflict,
+    appliedPreset?.id,
+    currentSettingsSignature,
+    presetCustomizations,
+  ]);
   const previewWorkspace = useMemo(
-    () => presetPreview ? presetPreviewWorkspace(presetPreview.choice, workspace.grid) : null,
+    () =>
+      presetPreview
+        ? presetPreviewWorkspace(presetPreview.choice, workspace.grid)
+        : null,
     [presetPreview?.choice, workspace.grid.rows, workspace.grid.columns],
   );
   const displayAssets = previewWorkspace?.assets ?? workspace.assets;
   function applyPreset(choice: PresetChoice) {
-    dispatchDocument({ type: "workspace/restore", workspace: applyEditorSettings(workspace, presetSettingsForLayout(choice.settings, workspace.grid)) });
-    setAppliedPreset({ id: choice.id, settings: editorSettingsSchema.parse(choice.settings), updatedAt: choice.updatedAt });
+    dispatchDocument({
+      type: "workspace/restore",
+      workspace: applyEditorSettings(
+        workspace,
+        presetSettingsForLayout(choice.settings, workspace.grid),
+      ),
+    });
+    setAppliedPreset({
+      id: choice.id,
+      settings: editorSettingsSchema.parse(choice.settings),
+      updatedAt: choice.updatedAt,
+    });
     setPresetPreview(null);
     setHeadingEditing(false);
   }
   useEffect(() => {
-    if (selectedPanel !== 2 || (!sidebarOpen && !window.matchMedia("(max-width: 900px)").matches))
+    if (
+      selectedPanel !== 2 ||
+      (!sidebarOpen && !window.matchMedia("(max-width: 900px)").matches)
+    )
       setPresetPreview(null);
   }, [selectedPanel, sidebarOpen]);
   useEffect(() => {
@@ -306,18 +352,25 @@ export default function App() {
   const account = useAccountSession();
   type AccountView = "login" | "account" | "information";
   const readAccountView = (): AccountView | null => {
-    if (readInformationPage(new URL(location.href)) !== null) return "information";
+    if (readInformationPage(new URL(location.href)) !== null)
+      return "information";
     const view: unknown = history.state?.gridsAccountView;
     return view === "login" || view === "account" ? view : null;
   };
-  const [accountView, setAccountView] = useState<AccountView | null>(readAccountView);
+  const [accountView, setAccountView] = useState<AccountView | null>(
+    readAccountView,
+  );
   useEffect(() => {
     if (accountView) setPresetPreview(null);
   }, [accountView]);
   useEffect(() => {
     const url = new URL(location.href);
     if (accountView !== "information") url.searchParams.delete("info");
-    history.replaceState({ ...history.state, gridsAccountView: accountView }, "", url);
+    history.replaceState(
+      { ...history.state, gridsAccountView: accountView },
+      "",
+      url,
+    );
   }, [accountView]);
   useEffect(() => {
     const restore = () => setAccountView(readAccountView());
@@ -352,7 +405,9 @@ export default function App() {
       setAccountView(null);
       toast.success(t("account.signedOut"));
     } catch (reason) {
-      toast.error(reason instanceof Error ? reason.message : t("account.offline"));
+      toast.error(
+        reason instanceof Error ? reason.message : t("account.offline"),
+      );
     } finally {
       signOutInFlight.current = false;
       setSigningOut(false);
@@ -361,7 +416,8 @@ export default function App() {
   useEffect(() => {
     const url = new URL(location.href);
     const auth = url.searchParams.get("auth");
-    if (!auth || !["failed", "linked", "merge", "link-conflict"].includes(auth)) return;
+    if (!auth || !["failed", "linked", "merge", "link-conflict"].includes(auth))
+      return;
     if (auth === "failed") toast.error(t("account.failedLogin"));
     if (auth === "linked") toast.success(t("account.providerLinked"));
     if (auth === "link-conflict") toast.error(t("account.providerConflict"));
@@ -371,7 +427,8 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (account.loading || !account.session) return;
-    if (!account.session.user && accountView === "account") setAccountView(null);
+    if (!account.session.user && accountView === "account")
+      setAccountView(null);
     if (account.session.user && accountView === "login") {
       queuedAccountView.current = "account";
       setAccountView(null);
@@ -457,7 +514,9 @@ export default function App() {
     const cleaned = removeCreditRequiredImages(workspace);
     if (cleaned === workspace) return;
     dispatchDocument({ type: "workspace/restore", workspace: cleaned });
-    toast.info(t("save.removedAttributed"), { id: "unsupported-image-licenses" });
+    toast.info(t("save.removedAttributed"), {
+      id: "unsupported-image-licenses",
+    });
   }, [workspace]);
   const [captionRows, setCaptionRows] = useState(1);
   const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
@@ -617,8 +676,7 @@ export default function App() {
   useLayoutEffect(() => {
     let active = true;
     const update = () => {
-      if (active)
-        setCaptionRows(sharedCaptionRows(board, displayAssets, true));
+      if (active) setCaptionRows(sharedCaptionRows(board, displayAssets, true));
     };
     update();
     void document.fonts
@@ -1107,8 +1165,12 @@ export default function App() {
   );
   return (
     <>
-      <InformationDialog open={accountView === "information"} onClose={() => setAccountView(null)}
-        onExited={accountViewExited} returnFocus={accountButton} />
+      <InformationDialog
+        open={accountView === "information"}
+        onClose={() => setAccountView(null)}
+        onExited={accountViewExited}
+        returnFocus={accountButton}
+      />
       <AccountDialog
         open={accountView === "account"}
         onClose={() => setAccountView(null)}
@@ -1127,9 +1189,11 @@ export default function App() {
         session={account.session}
         loading={account.loading}
         error={account.error}
-        onRetry={() => { void account.refresh().catch(() => undefined); }}
+        onRetry={() => {
+          void account.refresh().catch(() => undefined);
+        }}
       />
-      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[900px]:flex! max-[900px]:flex-col!">
+      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
         <EditorLayout
           previewing={presetPreview !== null}
           previewId={presetPreview?.key}
@@ -1168,34 +1232,36 @@ export default function App() {
           }
           actions={
             <>
-            <button
-              id="export-grid-header"
-              ref={exportButton}
-              type="button"
-              aria-haspopup="dialog"
-              title={t("export.title")}
-              aria-label={t("export.title")}
-              className="button secondary h-11! shrink-0 gap-2! px-3! py-0! group-data-compact-export/header:size-11! group-data-compact-export/header:gap-0! group-data-compact-export/header:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
-              disabled={exporting || presetPreview !== null}
-              onClick={() => setExportOpen(true)}
-            >
-              <Download />
-              <span className="whitespace-nowrap group-data-compact-export/header:sr-only">
-                {t("export.title")}
-              </span>
-            </button>
-            <AccountHeader
-              session={account.session}
-              loading={account.loading}
-              error={account.error}
-              busy={signingOut}
-              disabled={conflict || importProgress !== null}
-              buttonRef={accountButton}
-              onLogin={() => openAccountView("login")}
-              onAccount={() => openAccountView("account")}
-              onInformation={() => openAccountView("information")}
-              onSignOut={() => { void signOutAccount(); }}
-            />
+              <button
+                id="export-grid-header"
+                ref={exportButton}
+                type="button"
+                aria-haspopup="dialog"
+                title={t("export.title")}
+                aria-label={t("export.title")}
+                className="button secondary h-11! shrink-0 gap-2! px-3! py-0! group-data-compact-export/header:size-11! group-data-compact-export/header:gap-0! group-data-compact-export/header:p-0! [&_svg]:size-5! [&_svg]:shrink-0"
+                disabled={exporting || presetPreview !== null}
+                onClick={() => setExportOpen(true)}
+              >
+                <Download />
+                <span className="whitespace-nowrap group-data-compact-export/header:sr-only">
+                  {t("export.title")}
+                </span>
+              </button>
+              <AccountHeader
+                session={account.session}
+                loading={account.loading}
+                error={account.error}
+                busy={signingOut}
+                disabled={conflict || importProgress !== null}
+                buttonRef={accountButton}
+                onLogin={() => openAccountView("login")}
+                onAccount={() => openAccountView("account")}
+                onInformation={() => openAccountView("information")}
+                onSignOut={() => {
+                  void signOutAccount();
+                }}
+              />
             </>
           }
         >
@@ -1227,7 +1293,7 @@ export default function App() {
             >
               <div
                 data-sidebar-header
-                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 max-[900px]:hidden"
+                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 max-[901px]:hidden"
               >
                 <a className="brand" href="./">
                   <span className="brand-mark">
@@ -1277,7 +1343,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="self-start w-full max-[900px]:w-20.5"
+                    className="self-start w-full max-[901px]:w-20.5"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);
@@ -1369,22 +1435,40 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              {presetPreview && <div role="status" data-preset-preview
-                className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) bg-(--panel) p-3">
-                <div className="min-w-0 text-sm">
-                  <strong>{t("presets.previewing", { name: presetPreview.choice.name })}</strong>
-                  <p className="m-0 text-xs text-(--muted)">{t("presets.samples")}</p>
+              {presetPreview && (
+                <div
+                  role="status"
+                  data-preset-preview
+                  className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) bg-(--panel) p-3"
+                >
+                  <div className="min-w-0 text-sm">
+                    <strong>
+                      {t("presets.previewing", {
+                        name: presetPreview.choice.name,
+                      })}
+                    </strong>
+                    <p className="m-0 text-xs text-(--muted)">
+                      {t("presets.samples")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => applyPreset(presetPreview.choice)}>
+                      {t("presets.apply")}
+                    </Button>
+                    <Button onClick={() => setPresetPreview(null)}>
+                      {t("presets.close")}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => applyPreset(presetPreview.choice)}>{t("presets.apply")}</Button>
-                  <Button onClick={() => setPresetPreview(null)}>{t("presets.close")}</Button>
-                </div>
-              </div>}
+              )}
               <div
                 data-workspace-scroll
                 className="relative min-h-0 flex-1 overflow-auto overscroll-contain scrollbar-gutter-stable"
               >
-                <div inert={presetPreview !== null} className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!">
+                <div
+                  inert={presetPreview !== null}
+                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!"
+                >
                   <GridResizer
                     ref={setPreviewFrame}
                     bottomControls={
@@ -1968,24 +2052,33 @@ export default function App() {
               </div>
             </aside>
           )}
-          {() => accountView ? null : <PresetsPanel
-            currentSettings={currentSettings}
-            appliedPresetId={appliedPreset?.id ?? null}
-            customizations={presetCustomizations}
-            previewId={presetPreview?.choice.id}
-            disabled={!loaded || conflict || importProgress !== null || exporting}
-            onPreview={(choice) => {
-              setHeadingEditing(false);
-              setPresetPreview({ choice, key: crypto.randomUUID() });
-            }}
-            onSettings={(choice) => {
-              setAppliedPreset({ id: choice.id, settings: editorSettingsSchema.parse(choice.settings) });
-              setPresetPreview(null);
-              setSelectedPanel(1);
-              setSidebarOpen(true);
-            }}
-            onReset={(choice) => applyPreset(choice)}
-          />}
+          {() =>
+            accountView ? null : (
+              <PresetsPanel
+                currentSettings={currentSettings}
+                appliedPresetId={appliedPreset?.id ?? null}
+                customizations={presetCustomizations}
+                previewId={presetPreview?.choice.id}
+                disabled={
+                  !loaded || conflict || importProgress !== null || exporting
+                }
+                onPreview={(choice) => {
+                  setHeadingEditing(false);
+                  setPresetPreview({ choice, key: crypto.randomUUID() });
+                }}
+                onSettings={(choice) => {
+                  setAppliedPreset({
+                    id: choice.id,
+                    settings: editorSettingsSchema.parse(choice.settings),
+                  });
+                  setPresetPreview(null);
+                  setSelectedPanel(1);
+                  setSidebarOpen(true);
+                }}
+                onReset={(choice) => applyPreset(choice)}
+              />
+            )
+          }
         </EditorLayout>
       </main>
       {cardDrag?.visual &&

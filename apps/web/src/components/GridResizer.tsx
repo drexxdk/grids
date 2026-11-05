@@ -6,8 +6,14 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import { flushSync } from "react-dom";
 import { gridLimit } from "../model";
-import { Minus, Plus } from "lucide-react";
+import {
+  ArrowDownFromLine,
+  ArrowLeftToLine,
+  ArrowRightFromLine,
+  ArrowUpToLine,
+} from "lucide-react";
 import { Button, ButtonGroup } from "./ui/controls";
 
 export function GridResizer({
@@ -69,6 +75,8 @@ export function GridResizer({
         width: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
         height: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
       };
+      viewport.toggleAttribute("data-overflow-x", overflow.width > 0);
+      viewport.toggleAttribute("data-overflow-y", overflow.height > 0);
       if (
         overflow.width !== overflowRef.current.width ||
         overflow.height !== overflowRef.current.height
@@ -78,7 +86,8 @@ export function GridResizer({
       }
     };
     update();
-    const observer = new ResizeObserver(update);
+    // Flush before paint so the stale scroll extent never flashes scrollbars.
+    const observer = new ResizeObserver(() => flushSync(update));
     observer.observe(content);
     observer.observe(viewport);
     observer.observe(area);
@@ -128,12 +137,13 @@ export function GridResizer({
         <div
           ref={viewportRef}
           data-canvas-viewport
-          className="min-w-0 overflow-hidden"
+          className="min-w-0 overflow-hidden [clip-path:inset(var(--clip-y,-100vmax)_var(--clip-x,-100vmax))] data-overflow-x:[--clip-x:calc(var(--preview-cell-width,200px)*0.03+2px)] data-overflow-y:[--clip-y:calc(var(--preview-cell-width,200px)*0.03+2px)]"
           style={{
             height: viewportHeight,
             boxSizing: "content-box",
             padding: "calc(var(--preview-cell-width, 200px) * 0.03 + 2px)",
-            margin: "calc(-1 * (var(--preview-cell-width, 200px) * 0.03 + 2px))",
+            margin:
+              "calc(-1 * (var(--preview-cell-width, 200px) * 0.03 + 2px))",
           }}
         >
           {children}
@@ -205,7 +215,17 @@ export function GridResizeControls({
                     onResize(dimension, dimensions[dimension] + change)
                   }
                 >
-                  {change > 0 ? <Plus aria-hidden="true" className="size-6!" /> : <Minus aria-hidden="true" className="size-6!" />}
+                  {(() => {
+                    const Icon =
+                      dimension === "columns"
+                        ? change > 0
+                          ? ArrowRightFromLine
+                          : ArrowLeftToLine
+                        : change > 0
+                          ? ArrowDownFromLine
+                          : ArrowUpToLine;
+                    return <Icon aria-hidden="true" className="size-6!" />;
+                  })()}
                 </Button>
               );
             })}
