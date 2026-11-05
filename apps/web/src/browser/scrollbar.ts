@@ -22,6 +22,17 @@ export function publishScrollbarWidth() {
       "--native-scrollbar-width",
       `${Math.max(0, scrollProbe.offsetWidth - scrollProbe.clientWidth)}px`,
     );
+    const modalScroll = document.querySelector<HTMLElement>(
+      "#headlessui-portal-root [data-modal-scroll]",
+    );
+    const modalScrolls =
+      !!modalScroll && modalScroll.offsetWidth > modalScroll.clientWidth;
+    root.style.setProperty(
+      "--fixed-scrollbar-inset",
+      modalScrolls
+        ? `${modalScroll.offsetWidth - modalScroll.clientWidth}px`
+        : "0px",
+    );
     if (
       document.querySelector(
         '#headlessui-portal-root [role="dialog"][aria-modal="true"]',

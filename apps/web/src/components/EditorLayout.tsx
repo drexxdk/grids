@@ -200,7 +200,7 @@ export function EditorLayout({
         ref={resizeControls}
         inert={previewing}
         data-canvas-controls
-        className={`flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden scrollbar-gutter-stable px-3 ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
+        className={`flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-2 overflow-hidden px-3 ${compact ? "" : "scrollbar-gutter-stable"} ${headerLayout === "shifted" ? "justify-start!" : ""} ${headerLayout === "wrapped" ? "pt-13" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}
       >
         {canvasControls}
       </div>
@@ -208,7 +208,7 @@ export function EditorLayout({
         ref={headerActions}
         role="group"
         aria-label={t("editor.panels")}
-        className="absolute top-0 right-[calc(12px+var(--native-scrollbar-width,0px))] flex items-center gap-2"
+        className="absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))] flex items-center gap-2"
       >
         {actions}
         {!compact && (
@@ -246,7 +246,7 @@ export function EditorLayout({
     >
       {canvasActions}
       {previewBar && (
-        <div className="absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--native-scrollbar-width,0px))] pl-3">
+        <div className="absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--fixed-scrollbar-inset,0px))] pl-3">
           {previewBar}
         </div>
       )}
@@ -287,13 +287,13 @@ export function EditorLayout({
                 data-editor-sidebar
                 data-editor-settings={compact ? true : undefined}
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden overflow-y-auto border-0 border-solid border-(--line) bg-(--panel) ${compact ? "scrollbar-gutter-stable scroll-pt-24 h-[calc(157.75px+var(--native-scrollbar-width,0px))] max-h-[45dvh] border-t" : "scrollbar-gutter-stable flex h-full flex-col border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-39.25 max-h-[45dvh] flex-col overflow-y-hidden border-t" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
               >
                 <div
                   data-sidebar-sticky
-                  className="sticky top-0 z-20 bg-(--panel)"
+                  className="sticky top-0 z-20 shrink-0 bg-(--panel) max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                 >
-                  {!brandInHeader && (
+                  {!brandInHeader && !compact && (
                     <div
                       data-sidebar-brand
                       className="flex min-h-19 items-center border-0 border-b border-solid border-(--line) px-4 py-3"
@@ -325,14 +325,14 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className="relative isolate z-0 min-h-0 flex-1 **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+                  className="relative isolate z-0 min-h-0 flex-1 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
                 >
                   <div
                     role="tabpanel"
                     id={`${panelsId}-panel-1`}
                     aria-labelledby={`${panelsId}-tab-1`}
                     hidden={selectedPanel !== 0}
-                    className="min-h-0"
+                    className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                   >
                     {library(null, true)}
                   </div>
@@ -341,7 +341,7 @@ export function EditorLayout({
                     id={`${panelsId}-panel-2`}
                     aria-labelledby={`${panelsId}-tab-2`}
                     hidden={selectedPanel !== 1}
-                    className="min-h-0"
+                    className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                   >
                     {settings(null)}
                   </div>
@@ -350,7 +350,7 @@ export function EditorLayout({
                       role="tabpanel"
                       id={`${panelsId}-panel-0`}
                       aria-labelledby={`${panelsId}-tab-0`}
-                      className="min-h-0"
+                      className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                     >
                       {presets()}
                     </div>

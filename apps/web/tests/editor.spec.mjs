@@ -7639,7 +7639,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   });
   await expect(page.locator(".asset")).toHaveCount(2);
   await page
-    .getByRole("button", { name: "Clear all images", exact: true })
+    .getByRole("button", { name: "Clear images", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
@@ -7740,7 +7740,7 @@ test("touch library taps reveal delete and upload remains the first tile", async
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Clear all images", exact: true })
+    .getByRole("button", { name: "Clear images", exact: true })
     .tap();
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
@@ -7971,7 +7971,7 @@ test("unused-image deletion protects removed cells and revokes only unreferenced
     .locator("img")
     .getAttribute("src");
   await page
-    .getByRole("button", { name: "Clear all images", exact: true })
+    .getByRole("button", { name: "Clear images", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(0);
@@ -8036,7 +8036,7 @@ test("failed unused-image deletion preserves stored metadata and blobs until the
     window.failPurgeSave = true;
   });
   await page
-    .getByRole("button", { name: "Clear all images", exact: true })
+    .getByRole("button", { name: "Clear images", exact: true })
     .click();
   await expect(page.locator("#save-status")).toHaveText("Save failed");
   const failed = await localDatabase(page);
@@ -10269,7 +10269,7 @@ touchTest(
     ).toHaveAttribute("alt", "Picker 2");
     await openPicker();
     const remove = picker.getByRole("button", {
-      name: "Clear all images",
+      name: "Clear images",
       exact: true,
     });
     const target = await remove.boundingBox();

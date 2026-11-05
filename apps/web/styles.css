@@ -142,7 +142,6 @@ html:has(.app-layout) {
   padding-right: var(--native-scrollbar-width, 0px);
 }
 html:has(#headlessui-portal-root [role="dialog"][aria-modal="true"]) {
-  --fixed-scrollbar-inset: var(--scrollbar-width, 0px);
   overflow: hidden;
   scrollbar-gutter: auto;
   padding-right: var(--scrollbar-width, 0px) !important;
@@ -510,7 +509,9 @@ h1 {
   --card-radius: var(--board-item-radius);
   --card-frame-stroke: max(1px, 0.5cqw);
   --card-frame-gap: 2cqw;
-  --card-frame-inset: calc(-1px - var(--card-frame-gap) - var(--card-frame-stroke));
+  --card-frame-inset: calc(
+    -1px - var(--card-frame-gap) - var(--card-frame-stroke)
+  );
   --card-frame-dash: clamp(3px, 1.5cqw, 6px);
   --card-frame-dash-gap: clamp(4px, 2cqw, 8px);
   --card-drop-stroke: max(1px, 1cqw);
@@ -663,7 +664,9 @@ h1 {
   color: var(--muted);
   margin: 0;
 }
-input:not([type="range"]):not([type="color"]):not([type="file"]):not([type="checkbox"]),
+input:not([type="range"]):not([type="color"]):not([type="file"]):not(
+    [type="checkbox"]
+  ),
 select,
 textarea {
   display: block;

@@ -62,12 +62,9 @@ export function PresetsPanel({
       aria-label={t("presets.title")}
       className="flex min-w-0 flex-col gap-5 px-4 pb-6 max-[901px]:px-0 max-[901px]:pb-0"
     >
-      <p className="m-0 text-xs leading-relaxed text-(--muted) max-[901px]:hidden">
-        {t("presets.help")}
-      </p>
       <section
         aria-label={t("presets.starters")}
-        className="flex min-w-0 flex-col gap-5 max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:py-4 max-[901px]:px-4"
+        className="flex min-w-0 flex-col gap-5 max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:px-3 max-[901px]:py-2"
       >
         {starterGroups.map((group) => (
           <section

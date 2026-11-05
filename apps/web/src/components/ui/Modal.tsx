@@ -7,7 +7,13 @@ import {
 } from "@headlessui/react";
 import { LoaderCircle, X } from "lucide-react";
 import { AnimatePresence, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Button, MotionDiv } from "./controls";
 
 function InitialDialogFocus({
@@ -86,7 +92,13 @@ export function Modal({
           static
           open
           onClose={onClose}
-          initialFocus={contentReady ? (touch ? closeButton : (initialFocus ?? closeButton)) : pendingCloseButton}
+          initialFocus={
+            contentReady
+              ? touch
+                ? closeButton
+                : (initialFocus ?? closeButton)
+              : pendingCloseButton
+          }
           as={MotionDiv}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -102,31 +114,62 @@ export function Modal({
           />
           <div
             data-modal-scroll
-            className={`fixed inset-0 overflow-y-auto overscroll-contain scrollbar-gutter-stable ${fullscreen ? "" : "p-4"}`}
+            className={`fixed inset-0 overflow-y-auto overscroll-contain ${fullscreen ? "" : "p-4"}`}
           >
             <div className="flex min-h-full items-center justify-center">
-              {contentReady ? <DialogPanel
-                key="content"
-                data-modal-panel
-                as={MotionDiv}
-                initial={ready === undefined || reduced ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                motionTransition={{ duration: reduced ? 0 : 0.18 }}
-                className={
-                  fullscreen
-                    ? "flex h-dvh w-full flex-col bg-(--panel)"
-                    : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
-                }
-              >
-                <InitialDialogFocus target={touch ? closeButton : (initialFocus ?? closeButton)} enabled={touch || ready !== undefined} />
-                <div
-                  className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
+              {contentReady ? (
+                <DialogPanel
+                  key="content"
+                  data-modal-panel
+                  as={MotionDiv}
+                  initial={
+                    ready === undefined || reduced ? false : { opacity: 0 }
+                  }
+                  animate={{ opacity: 1 }}
+                  motionTransition={{ duration: reduced ? 0 : 0.18 }}
+                  className={
+                    fullscreen
+                      ? "flex h-dvh w-full flex-col bg-(--panel)"
+                      : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
+                  }
                 >
-                  <DialogTitle className="text-lg font-semibold">
-                    {title}
-                  </DialogTitle>
+                  <InitialDialogFocus
+                    target={touch ? closeButton : (initialFocus ?? closeButton)}
+                    enabled={touch || ready !== undefined}
+                  />
+                  <div
+                    className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
+                  >
+                    <DialogTitle className="text-lg font-semibold">
+                      {title}
+                    </DialogTitle>
+                    <Button
+                      ref={closeButton}
+                      variant="icon"
+                      onClick={onClose}
+                      aria-label={t("common.actions.closeDialog")}
+                      title={t("common.actions.closeDialog")}
+                    >
+                      <X aria-hidden="true" />
+                    </Button>
+                  </div>
+                  {children}
+                </DialogPanel>
+              ) : (
+                <DialogPanel key="loading" className="flex items-center gap-3">
+                  <DialogTitle className="sr-only">{title}</DialogTitle>
+                  <span
+                    role="status"
+                    className="flex items-center gap-2 text-sm text-(--text)"
+                  >
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="size-5 motion-safe:animate-spin"
+                    />
+                    {t("common.actions.loading")}
+                  </span>
                   <Button
-                    ref={closeButton}
+                    ref={pendingCloseButton}
                     variant="icon"
                     onClick={onClose}
                     aria-label={t("common.actions.closeDialog")}
@@ -134,19 +177,8 @@ export function Modal({
                   >
                     <X aria-hidden="true" />
                   </Button>
-                </div>
-                {children}
-              </DialogPanel> : <DialogPanel key="loading" className="flex items-center gap-3">
-                <DialogTitle className="sr-only">{title}</DialogTitle>
-                <span role="status" className="flex items-center gap-2 text-sm text-(--text)">
-                  <LoaderCircle aria-hidden="true" className="size-5 motion-safe:animate-spin" />
-                  {t("common.actions.loading")}
-                </span>
-                <Button ref={pendingCloseButton} variant="icon" onClick={onClose}
-                  aria-label={t("common.actions.closeDialog")} title={t("common.actions.closeDialog")}>
-                  <X aria-hidden="true" />
-                </Button>
-              </DialogPanel>}
+                </DialogPanel>
+              )}
             </div>
           </div>
         </Dialog>

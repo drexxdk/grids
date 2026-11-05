@@ -60,7 +60,7 @@ export function LibraryImage({
   elementRef,
   onImageLoad,
   onImageError,
-  className = "max-[901px]:w-16 max-[901px]:shrink-0",
+  className = "max-[901px]:h-full max-[901px]:w-auto max-[901px]:aspect-3/4 max-[901px]:shrink-0",
 }: {
   asset: Asset;
   onDelete: () => void;
