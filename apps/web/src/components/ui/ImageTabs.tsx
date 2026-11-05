@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { imageProviders } from "../../providers";
 import { SelectField } from "./controls";
@@ -52,12 +53,30 @@ export function ImageTabs({
     icon?: LucideIcon;
   }[];
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [iconsOnly, setIconsOnly] = useState(false);
+  const canCollapse = tabs.every((tab) => tab.icon);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || !canCollapse) return;
+    // Per-tab chrome beyond the label: padding 16 + border 2 + icon 20 + gap 8.
+    const update = () => {
+      const spans = list.querySelectorAll<HTMLElement>("[role=tab] > span");
+      const widest = Math.max(...[...spans].map((span) => span.scrollWidth));
+      setIconsOnly(widest + 46 > list.clientWidth / tabs.length);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [canCollapse, tabs]);
   return (
     <div
+      ref={listRef}
       role="tablist"
       aria-orientation="horizontal"
       aria-label={label}
-      className={`isolate grid w-full ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-0 ${square ? "rounded-none" : "rounded-md"} bg-(--bg) [&>button]:relative [&>button]:min-w-0 [&>button]:h-11! [&>button]:w-auto! [&>button]:flex-row! [&>button]:gap-2! [&>button]:rounded-none! [&>button]:border [&>button]:border-solid [&>button]:border-(--line) [&>button]:bg-(--bg)! [&>button]:px-2! [&>button]:py-2! [&>button+button]:-ml-px ${square ? "[&>button:first-child]:rounded-l-none! [&>button:last-child]:rounded-r-none!" : "[&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!"} [&>button[data-selected]]:bg-(--selected)! [&>button:enabled:hover]:z-10 [&>button:enabled:hover]:border-(--accent)! [&>button:focus-visible]:z-20 [&_svg]:size-5! [&_svg]:shrink-0 [&>button>span]:not-sr-only [&>button>span]:min-w-0 [&>button>span]:text-center [&>button>span]:text-xs [&>button>span]:leading-4 [&>button>span]:font-normal [&>button>span]:wrap-break-word`}
+      className={`isolate grid w-full ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-0 ${square ? "rounded-none" : "rounded-md"} bg-(--bg) [&>button]:relative [&>button]:min-w-0 [&>button]:h-11! [&>button]:w-auto! [&>button]:flex-row! [&>button]:gap-2! [&>button]:rounded-none! [&>button]:border [&>button]:border-solid [&>button]:border-(--line) [&>button]:bg-(--bg)! [&>button]:px-2! [&>button]:py-2! [&>button+button]:-ml-px ${square ? "[&>button:first-child]:rounded-l-none! [&>button:last-child]:rounded-r-none!" : "[&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!"} [&>button[data-selected]]:bg-(--selected)! [&>button:enabled:hover]:z-10 [&>button:enabled:hover]:border-(--accent)! [&>button:focus-visible]:z-20 [&_svg]:size-5! [&_svg]:shrink-0 ${iconsOnly ? "[&>button>span]:sr-only" : "[&>button>span]:not-sr-only"} [&>button>span]:min-w-0 [&>button>span]:text-center [&>button>span]:text-xs [&>button>span]:leading-4 [&>button>span]:font-normal [&>button>span]:whitespace-nowrap`}
     >
       {tabs.map((tab, index) => (
         <button

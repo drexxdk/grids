@@ -26,6 +26,7 @@ export function GridResizer({
   bottomControls,
   sideControls,
   cornerAction,
+  leadingSpace = true,
   children,
 }: {
   ref?: Ref<HTMLDivElement>;
@@ -37,6 +38,7 @@ export function GridResizer({
   bottomControls?: ReactNode;
   sideControls?: ReactNode;
   cornerAction?: ReactNode;
+  leadingSpace?: boolean;
   children: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -48,9 +50,32 @@ export function GridResizer({
     const area = content?.parentElement;
     if (!content || !viewport || !area) return;
     const workspace = viewport.closest<HTMLElement>("[data-workspace-scroll]");
+    const canvasArea = area.parentElement;
     const syncedViewport = {
       left: viewport.scrollLeft,
       top: viewport.scrollTop,
+    };
+    // Frame size beyond the sticky canvas area; reached by scrolling after the board.
+    let extra = { width: 0, height: 0 };
+    const measureExtra = () => {
+      if (!canvasArea) return { width: 0, height: 0 };
+      const style = getComputedStyle(canvasArea);
+      return {
+        width: Math.max(
+          0,
+          area.offsetWidth -
+            (canvasArea.clientWidth -
+              parseFloat(style.paddingLeft) -
+              parseFloat(style.paddingRight)),
+        ),
+        height: Math.max(
+          0,
+          area.offsetHeight -
+            (canvasArea.clientHeight -
+              parseFloat(style.paddingTop) -
+              parseFloat(style.paddingBottom)),
+        ),
+      };
     };
     const syncViewport = () => {
       if (!workspace) return;
@@ -58,6 +83,16 @@ export function GridResizer({
       viewport.scrollTop = workspace.scrollTop;
       syncedViewport.left = viewport.scrollLeft;
       syncedViewport.top = viewport.scrollTop;
+      const x = Math.min(
+        extra.width,
+        workspace.scrollLeft - viewport.scrollLeft,
+      );
+      const y = Math.min(
+        extra.height,
+        workspace.scrollTop - viewport.scrollTop,
+      );
+      area.style.translate = x > 0 || y > 0 ? `${-x}px ${-y}px` : "";
+      area.style.setProperty("--frame-shift-y", `${y > 0 ? y : 0}px`);
     };
     const syncWorkspace = () => {
       if (!workspace) return;
@@ -71,12 +106,17 @@ export function GridResizer({
       }
     };
     const update = () => {
-      const overflow = {
+      extra = measureExtra();
+      const viewportOverflow = {
         width: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
         height: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
       };
-      viewport.toggleAttribute("data-overflow-x", overflow.width > 0);
-      viewport.toggleAttribute("data-overflow-y", overflow.height > 0);
+      const overflow = {
+        width: viewportOverflow.width + extra.width,
+        height: viewportOverflow.height + extra.height,
+      };
+      viewport.toggleAttribute("data-overflow-x", viewportOverflow.width > 0);
+      viewport.toggleAttribute("data-overflow-y", viewportOverflow.height > 0);
       if (
         overflow.width !== overflowRef.current.width ||
         overflow.height !== overflowRef.current.height
@@ -91,6 +131,7 @@ export function GridResizer({
     observer.observe(content);
     observer.observe(viewport);
     observer.observe(area);
+    if (canvasArea) observer.observe(canvasArea);
     if (viewport.firstElementChild)
       observer.observe(viewport.firstElementChild);
     workspace?.addEventListener("scroll", syncViewport, { passive: true });
@@ -110,7 +151,7 @@ export function GridResizer({
       data-controls-placement={bottomControls ? "canvas" : "header"}
       className={
         bottomControls
-          ? "grid min-h-0 min-w-0 grid-cols-[44px_minmax(0,1fr)_44px] grid-rows-[minmax(0,1fr)_44px] gap-2 [&_button:focus-visible]:-outline-offset-3!"
+          ? `grid min-h-0 min-w-0 ${leadingSpace ? "grid-cols-[44px_minmax(0,1fr)_44px]" : "grid-cols-[minmax(0,1fr)_44px]"} grid-rows-[minmax(0,1fr)_44px] gap-2 [&_button:focus-visible]:-outline-offset-3!`
           : "flex min-h-0 min-w-0 items-center justify-center"
       }
     >
@@ -122,7 +163,7 @@ export function GridResizer({
           maxWidth: "100%",
           paddingTop: heading ? "var(--canvas-inset,0px)" : 0,
         }}
-        className={`relative isolate flex min-w-0 flex-col gap-(--heading-gap,0px) @container ${bottomControls ? "col-start-2 row-start-1" : ""}`}
+        className={`relative isolate flex min-w-0 flex-col @container ${bottomControls ? `${leadingSpace ? "col-start-2" : "col-start-1"} row-start-1` : ""}`}
       >
         <span
           aria-hidden="true"
@@ -130,7 +171,7 @@ export function GridResizer({
           className="pointer-events-none absolute inset-y-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
         />
         {heading && (
-          <div className="overflow-hidden px-(--canvas-inset,0px)">
+          <div className="relative z-10 translate-y-(--frame-shift-y,0px) overflow-hidden bg-(--board-bg) px-(--canvas-inset,0px) pb-(--heading-gap,0px)">
             {heading}
           </div>
         )}
@@ -151,13 +192,19 @@ export function GridResizer({
       </div>
       {bottomControls && (
         <>
-          <div className="col-start-3 row-start-1 flex items-center justify-center">
+          <div
+            className={`${leadingSpace ? "col-start-3" : "col-start-2"} row-start-1 flex items-center justify-center`}
+          >
             {sideControls}
           </div>
-          <div className="col-start-2 row-start-2 flex items-center justify-center">
+          <div
+            className={`${leadingSpace ? "col-start-2" : "col-start-1"} row-start-2 flex items-center justify-center`}
+          >
             {bottomControls}
           </div>
-          <div className="col-start-3 row-start-2 flex items-center justify-center">
+          <div
+            className={`${leadingSpace ? "col-start-3" : "col-start-2"} row-start-2 flex items-center justify-center`}
+          >
             {cornerAction}
           </div>
         </>

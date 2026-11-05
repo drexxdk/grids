@@ -534,7 +534,7 @@ export default function App() {
     gap: number;
     padding: number;
     headingGap: number;
-    compactControls: boolean;
+    tight: boolean;
   } | null>(null);
   useLayoutEffect(() => {
     const frame = previewFrame;
@@ -561,9 +561,10 @@ export default function App() {
           toolbarHeight -
           1,
       );
-      const compactControls = workspaceWidth < 560 || workspaceHeight < 400;
-      const availableWidth = workspaceWidth - (compactControls ? 0 : 104);
-      const availableHeight = workspaceHeight - (compactControls ? 0 : 52);
+      // When space is tight the controls are not reserved; the workspace scrolls to them.
+      const tight = workspaceWidth < 560 || workspaceHeight < 400;
+      const availableWidth = workspaceWidth - (tight ? 0 : 104);
+      const availableHeight = workspaceHeight - (tight ? 0 : 52);
       const { gap: gapRatio, padding: paddingRatio } = gridSpacing(board, 1);
       const headingGapRatio = board.headingVisible ? gapRatio : 0;
       const widthRatio =
@@ -617,10 +618,9 @@ export default function App() {
         ),
       );
       const next = {
-        width: viewportWidth + (compactControls ? 0 : 104),
-        frameHeight:
-          height + cellWidth * headingAreaRatio + (compactControls ? 0 : 52),
-        compactControls,
+        width: viewportWidth + (tight ? 52 : 104),
+        frameHeight: height + cellWidth * headingAreaRatio + 52,
+        tight,
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
         height,
@@ -632,7 +632,7 @@ export default function App() {
       };
       setPreviewSize((previous) =>
         previous &&
-        previous.compactControls === next.compactControls &&
+        previous.tight === next.tight &&
         Math.abs(previous.width - next.width) < 0.01 &&
         Math.abs(previous.frameHeight - next.frameHeight) < 0.01 &&
         Math.abs(previous.previewWidth - next.previewWidth) < 0.01 &&
@@ -1153,7 +1153,6 @@ export default function App() {
       onChange={setPickerSource}
     />
   );
-  const compactCanvasControls = previewSize?.compactControls ?? true;
   const resetGridControl = (
     <Button
       ref={resetGridButton}
@@ -1239,18 +1238,7 @@ export default function App() {
               </div>
             )
           }
-          canvasControls={
-            compactCanvasControls ? (
-              <>
-                <GridResizeControls
-                  rows={board.rows}
-                  columns={board.columns}
-                  onResize={resize}
-                />
-                {resetGridControl}
-              </>
-            ) : null
-          }
+          canvasControls={null}
           status={
             <span
               id="save-status"
@@ -1482,32 +1470,29 @@ export default function App() {
               >
                 <div
                   inert={presetPreview !== null}
-                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center p-3!"
+                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3!"
                 >
                   <GridResizer
                     ref={setPreviewFrame}
                     bottomControls={
-                      !compactCanvasControls && (
-                        <GridResizeControls
-                          dimension="rows"
-                          rows={board.rows}
-                          columns={board.columns}
-                          onResize={resize}
-                        />
-                      )
+                      <GridResizeControls
+                        dimension="rows"
+                        rows={board.rows}
+                        columns={board.columns}
+                        onResize={resize}
+                      />
                     }
                     sideControls={
-                      !compactCanvasControls && (
-                        <GridResizeControls
-                          dimension="columns"
-                          orientation="vertical"
-                          rows={board.rows}
-                          columns={board.columns}
-                          onResize={resize}
-                        />
-                      )
+                      <GridResizeControls
+                        dimension="columns"
+                        orientation="vertical"
+                        rows={board.rows}
+                        columns={board.columns}
+                        onResize={resize}
+                      />
                     }
-                    cornerAction={!compactCanvasControls && resetGridControl}
+                    cornerAction={resetGridControl}
+                    leadingSpace={!previewSize?.tight}
                     viewportHeight={previewSize?.height}
                     previewWidth={previewSize?.previewWidth}
                     onOverflowChange={setCanvasOverflow}
@@ -1530,7 +1515,6 @@ export default function App() {
                         "--grid-top-padding": board.headingVisible
                           ? "0px"
                           : `${previewSize?.padding ?? board.canvasPadding ?? 60}px`,
-                        maxWidth: "100%",
                         marginInline: "auto",
                         "--columns": board.columns,
                         "--board-bg": board.background,

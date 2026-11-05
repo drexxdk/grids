@@ -227,7 +227,7 @@ export function EditorLayout({
   const canvasActions = (
     <div
       inert={previewing}
-      className={`relative flex gap-2 ${headerLayout === "scroll" ? "w-max min-w-full shrink-0 flex-row items-center pr-[calc(12px+var(--fixed-scrollbar-inset,0px))]" : "w-full min-w-0 flex-col"}`}
+      className={`relative flex gap-2 ${headerLayout === "scroll" ? "w-full min-w-0 shrink-0 flex-row items-center pr-3" : "w-full min-w-0 flex-col"}`}
     >
       <div
         ref={headerBrand}
@@ -242,7 +242,7 @@ export function EditorLayout({
         ref={resizeControls}
         inert={previewing}
         data-canvas-controls
-        className={`flex min-h-11 min-w-0 items-center gap-2 overflow-hidden pl-3 ${headerLayout === "scroll" ? "w-auto shrink-0 flex-nowrap justify-start" : `pr-3 ${compact ? "" : "scrollbar-gutter-stable"} flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
+        className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-(--panel) py-3 pr-3" : `overflow-hidden pr-3 ${compact ? "" : "scrollbar-gutter-stable"} flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
       >
         {canvasControls}
       </div>
@@ -250,7 +250,7 @@ export function EditorLayout({
         ref={headerActions}
         role="group"
         aria-label={t("editor.panels")}
-        className={`flex items-center gap-2 ${headerLayout === "scroll" ? "relative ml-auto shrink-0" : "absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))]"}`}
+        className={`flex items-center gap-2 ${headerLayout === "scroll" ? "relative mt-3 mb-[calc(12px+var(--native-scrollbar-width,0px))] shrink-0" : "absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))]"}`}
       >
         {actions}
         {!compact && (
@@ -284,7 +284,7 @@ export function EditorLayout({
       data-header-layout={headerLayout}
       data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={compactExport ? true : undefined}
-      className={`group/header relative col-span-full flex min-h-19 shrink-0 items-center overflow-x-auto overflow-y-hidden border-0 border-b border-solid border-(--line) bg-(--bg) py-3 [&_button:focus-visible]:-outline-offset-3! ${headerLayout === "scroll" ? "w-[calc(100%+var(--native-scrollbar-width,0px)-var(--fixed-scrollbar-inset,0px))]" : "w-[calc(100%+var(--native-scrollbar-width,0px))]"}`}
+      className={`group/header relative col-span-full flex min-h-19 shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-(--line) bg-(--bg) [&_button:focus-visible]:-outline-offset-3! ${headerLayout === "scroll" ? "w-[calc(100%+var(--native-scrollbar-width,0px)-var(--fixed-scrollbar-inset,0px))]" : "w-[calc(100%+var(--native-scrollbar-width,0px))]"}`}
     >
       {canvasActions}
       {previewBar && (
