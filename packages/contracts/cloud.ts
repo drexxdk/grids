@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   editorSettingsSchema,
+  cropSchema,
   imageLicenseSchema,
   removeCreditRequiredImages,
   provenanceSchema,
@@ -42,6 +43,7 @@ const referenceAssetSchema = z.strictObject({
   category: z.string().max(100),
   provenance: provenanceSchema,
   libraryHidden: z.boolean().optional(),
+  crop: cropSchema.optional(),
 });
 
 export const savedGridSchema = z.strictObject({
@@ -104,6 +106,7 @@ export function toSavedGrid(workspace: Workspace): SavedGrid {
       category: asset.category.slice(0, 100),
       provenance: provenanceSchema.parse(asset.provenance),
       ...(asset.libraryHidden ? { libraryHidden: true } : {}),
+      ...(asset.crop ? { crop: asset.crop } : {}),
     }));
   const localAssetIds = workspace.assets
     .filter((asset) => !asset.provenance && asset.trashedAt === undefined)

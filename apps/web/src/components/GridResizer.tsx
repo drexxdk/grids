@@ -20,6 +20,7 @@ export function GridResizer({
   ref,
   style,
   viewportHeight,
+  controlsHeight,
   previewWidth,
   onOverflowChange,
   heading,
@@ -32,6 +33,7 @@ export function GridResizer({
   ref?: Ref<HTMLDivElement>;
   style?: CSSProperties;
   viewportHeight?: number;
+  controlsHeight?: number;
   previewWidth?: number;
   onOverflowChange?: (size: { width: number; height: number }) => void;
   heading?: ReactNode;
@@ -51,27 +53,12 @@ export function GridResizer({
     if (!content || !viewport || !area) return;
     const workspace = viewport.closest<HTMLElement>("[data-workspace-scroll]");
     const canvasArea = area.parentElement;
-    const syncedViewport = {
-      left: viewport.scrollLeft,
-      top: viewport.scrollTop,
-    };
+    let syncedViewportLeft = viewport.scrollLeft;
     // Frame size beyond the sticky canvas area; reached by scrolling after the board.
     let extra = { width: 0, height: 0 };
     const measureExtra = () => {
       if (!canvasArea) return { width: 0, height: 0 };
       const style = getComputedStyle(canvasArea);
-      // Height as if the horizontal scrollbar is shown, so toggling it cannot change the extent.
-      const nativeBar =
-        parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--native-scrollbar-width",
-          ),
-        ) || 0;
-      const stableClientHeight = workspace
-        ? canvasArea.clientHeight +
-          (workspace.offsetHeight - workspace.clientHeight) -
-          nativeBar
-        : canvasArea.clientHeight;
       return {
         width: Math.max(
           0,
@@ -83,7 +70,7 @@ export function GridResizer({
         height: Math.max(
           0,
           area.offsetHeight -
-            (stableClientHeight -
+            (canvasArea.clientHeight -
               parseFloat(style.paddingTop) -
               parseFloat(style.paddingBottom)),
         ),
@@ -92,43 +79,35 @@ export function GridResizer({
     const syncViewport = () => {
       if (!workspace) return;
       viewport.scrollLeft = workspace.scrollLeft;
-      viewport.scrollTop = workspace.scrollTop;
-      syncedViewport.left = viewport.scrollLeft;
-      syncedViewport.top = viewport.scrollTop;
+      viewport.scrollTop = 0;
+      syncedViewportLeft = viewport.scrollLeft;
       const x = Math.min(
         extra.width,
         workspace.scrollLeft - viewport.scrollLeft,
       );
-      const y = Math.min(
-        extra.height,
-        workspace.scrollTop - viewport.scrollTop,
-      );
+      const y = Math.min(extra.height, workspace.scrollTop);
       area.style.translate = x > 0 || y > 0 ? `${-x}px ${-y}px` : "";
       area.style.setProperty("--frame-shift-y", `${y > 0 ? y : 0}px`);
     };
     const syncWorkspace = () => {
       if (!workspace) return;
-      if (viewport.scrollLeft !== syncedViewport.left) {
+      if (viewport.scrollLeft !== syncedViewportLeft) {
         workspace.scrollLeft = viewport.scrollLeft;
-        syncedViewport.left = viewport.scrollLeft;
+        syncedViewportLeft = viewport.scrollLeft;
       }
-      if (viewport.scrollTop !== syncedViewport.top) {
-        workspace.scrollTop = viewport.scrollTop;
-        syncedViewport.top = viewport.scrollTop;
-      }
+      if (viewport.scrollTop !== 0) viewport.scrollTop = 0;
     };
     const update = () => {
       extra = measureExtra();
-      const viewportOverflow = {
-        width: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
-        height: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
-      };
+      const viewportOverflowWidth = Math.max(
+        0,
+        viewport.scrollWidth - viewport.clientWidth,
+      );
       const overflow = {
-        width: viewportOverflow.width + extra.width,
-        height: viewportOverflow.height + extra.height,
+        width: viewportOverflowWidth + extra.width,
+        height: extra.height,
       };
-      viewport.toggleAttribute("data-overflow-x", viewportOverflow.width > 0);
-      viewport.toggleAttribute("data-overflow-y", viewportOverflow.height > 0);
+      viewport.toggleAttribute("data-overflow-x", viewportOverflowWidth > 0);
       if (
         overflow.width !== overflowRef.current.width ||
         overflow.height !== overflowRef.current.height
@@ -163,7 +142,7 @@ export function GridResizer({
       data-controls-placement={bottomControls ? "canvas" : "header"}
       className={
         bottomControls
-          ? `grid min-h-0 min-w-0 ${leadingSpace ? "grid-cols-[44px_minmax(0,1fr)_44px] gap-2" : "grid-cols-[minmax(0,1fr)_44px] gap-2 pr-3 pb-3"} grid-rows-[minmax(0,1fr)_44px] [&_button:focus-visible]:-outline-offset-3!`
+          ? `grid min-h-0 min-w-0 ${leadingSpace ? "grid-cols-[44px_minmax(0,1fr)_44px] gap-2" : "grid-cols-[minmax(0,1fr)_44px] gap-2 pr-2 pb-2"} grid-rows-[minmax(0,1fr)_44px] [&_button:focus-visible]:-outline-offset-3!`
           : "flex min-h-0 min-w-0 items-center justify-center"
       }
     >
@@ -190,7 +169,7 @@ export function GridResizer({
         <div
           ref={viewportRef}
           data-canvas-viewport
-          className="min-w-0 overflow-hidden [clip-path:inset(var(--clip-y,-100vmax)_var(--clip-x,-100vmax))] data-overflow-x:[--clip-x:calc(var(--preview-cell-width,200px)*0.03+2px)] data-overflow-y:[--clip-y:calc(var(--preview-cell-width,200px)*0.03+2px)]"
+          className="min-w-0 overflow-hidden [clip-path:inset(var(--frame-shift-y,0px)_var(--clip-x,-100vmax)_-100vmax_var(--clip-x,-100vmax))] data-overflow-x:[--clip-x:calc(var(--preview-cell-width,200px)*0.03+2px)]"
           style={{
             height: viewportHeight,
             boxSizing: "content-box",
@@ -205,7 +184,8 @@ export function GridResizer({
       {bottomControls && (
         <>
           <div
-            className={`${leadingSpace ? "col-start-3" : "col-start-2"} row-start-1 flex items-center justify-center`}
+            style={{ height: controlsHeight }}
+            className={`${leadingSpace ? "col-start-3" : "col-start-2"} row-start-1 flex items-center justify-center translate-y-(--frame-shift-y,0px)`}
           >
             {sideControls}
           </div>

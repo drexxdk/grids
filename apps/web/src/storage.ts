@@ -241,6 +241,7 @@ export class LocalWorkspaceStore {
           provenance,
           trashedAt,
           libraryHidden,
+          crop,
         }) => ({
           id,
           category,
@@ -249,6 +250,7 @@ export class LocalWorkspaceStore {
           ...(provenance ? { provenance } : {}),
           ...(trashedAt !== undefined ? { trashedAt } : {}),
           ...(libraryHidden ? { libraryHidden } : {}),
+          ...(crop ? { crop } : {}),
         }),
       ),
     });

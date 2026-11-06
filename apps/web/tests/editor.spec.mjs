@@ -492,6 +492,18 @@ for (const [mode, controlsTest] of [
           await selectField(page, "image-shape", shape);
           const scroller = page.locator("[data-workspace-scroll]");
           await scroller.evaluate((element) => element.scrollTo(0, 0));
+          await expect
+            .poll(() =>
+              page.evaluate(() => {
+                const cells = document.querySelectorAll(".grid-cell");
+                const last = cells[cells.length - 1].getBoundingClientRect();
+                const rows = document
+                  .querySelector('[aria-label="Row controls"]')
+                  .getBoundingClientRect();
+                return rows.top >= last.bottom;
+              }),
+            )
+            .toBe(true);
           if (viewport.height === 360) {
             await expect
               .poll(() =>
@@ -578,16 +590,16 @@ for (const [mode, rowTest] of [
                 scrollbarTakesSpace:
                   element.offsetHeight > element.clientHeight,
                 cardFills:
-                  Math.abs(card.top - bounds.top - 8) <= 1 &&
+                  Math.abs(card.top - bounds.top - 12) <= 1 &&
                   Math.abs(
-                    card.bottom - bounds.top - element.clientHeight + 8,
+                    card.bottom - bounds.top - element.clientHeight + 12,
                   ) <= 1,
               };
             }, cardSelector),
           )
           .toEqual({
-            top: 8,
-            bottom: 8,
+            top: 12,
+            bottom: 12,
             scrollbar: "auto",
             scrollbarTakesSpace: mode === "classic",
             cardFills: true,
@@ -727,6 +739,7 @@ touchTest("compact image shelf keeps square uploads readable without changing pl
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await setEditorViewport(page, { width: 901, height: 900 });
+  await expect(library).toHaveCount(1);
   await expect(library.locator(":scope > :first-child").getByRole("button", { name: "Add images", exact: true })).toBeVisible();
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue("Keep my caption");
@@ -827,21 +840,20 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
       exact: true,
     });
 
-    const viewport = page.locator("[data-canvas-viewport]");
+    const scroller = page.locator("[data-workspace-scroll]");
     await expect
       .poll(() =>
-        viewport.evaluate(
+        scroller.evaluate(
           (element) => element.scrollHeight > element.clientHeight,
         ),
       )
       .toBe(true);
     const heading = await page.locator(".board-export-heading").boundingBox();
-    await viewport.evaluate((element) => {
+    await scroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
-      element.scrollLeft = element.scrollWidth;
     });
     await expect
-      .poll(() => viewport.evaluate((element) => element.scrollTop))
+      .poll(() => scroller.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(0);
     expect(await page.locator(".board-export-heading").boundingBox()).toEqual(
       heading,
@@ -1486,7 +1498,7 @@ test("responsive grid resizing keeps controls reachable and preserves cell conte
   await setEditorViewport(page, { width: 390, height: 720 });
   for (let count = 0; count < 2; count++)
     await page.getByRole("button", { name: "Add row", exact: true }).click();
-  const scroller = page.locator("[data-canvas-viewport]");
+  const scroller = page.locator("[data-workspace-scroll]");
   await scroller.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
     element.scrollLeft = element.scrollWidth;
@@ -1592,7 +1604,7 @@ scrollbarTest(
 );
 
 nativeTouchTest(
-  "workspace-edge scrolling moves grid items while heading and controls stay fixed",
+  "workspace-edge scrolling moves rows and row controls while heading and column controls stay fixed",
   async ({ page }, testInfo) => {
     await setEditorViewport(page, { width: 960, height: 600 });
     await page.goto("./");
@@ -1607,7 +1619,6 @@ nativeTouchTest(
     const fixed = [
       page.locator("[data-canvas-header]"),
       page.locator(".board-export-heading"),
-      page.getByRole("group", { name: "Row controls", exact: true }),
       page.getByRole("group", { name: "Column controls", exact: true }),
       page.getByRole("button", { name: "Reset grid and images", exact: true }),
     ];
@@ -1637,6 +1648,11 @@ nativeTouchTest(
         fixed.map((locator) => locator.boundingBox()),
       );
       const cardBefore = await page.locator(".grid-cell").first().boundingBox();
+      const rows = page.getByRole("group", { name: "Row controls", exact: true });
+      const rowsBefore = await rows.boundingBox();
+      const lastBefore = await page.locator(".grid-cell").last().boundingBox();
+      expect(rowsBefore.y).toBeGreaterThanOrEqual(lastBefore.y + lastBefore.height);
+      expect(rowsBefore.y).toBeGreaterThan(bounds.y + bounds.height);
       if (width === 960) {
         expect(
           await scroller.evaluate(async (outer) => {
@@ -1663,7 +1679,7 @@ nativeTouchTest(
               outer.removeEventListener("scroll", advanceScroll);
             }
           }),
-        ).toEqual([200, 200, 200, 200]);
+        ).toEqual([200, 200, 200, 0]);
         await scroller.evaluate((element) => element.scrollTo(0, 0));
         await expect
           .poll(() =>
@@ -1736,18 +1752,22 @@ nativeTouchTest(
             element.scrollLeft,
             element.scrollTop,
           ]);
-          return Math.max(
-            ...outer.map((offset, index) => Math.abs(offset - inner[index])),
-          );
+          return Math.abs(outer[0] - inner[0]);
         })
         .toBeLessThan(1);
       const cardAfter = await page.locator(".grid-cell").first().boundingBox();
       expect(cardAfter.x).toBeLessThan(cardBefore.x);
       expect(cardAfter.y).toBeLessThan(cardBefore.y);
+      const scrolled = await scroller.evaluate((element) => element.scrollTop);
+      expect(Math.abs((await rows.boundingBox()).y - rowsBefore.y + scrolled)).toBeLessThan(1);
       expect(
         await Promise.all(fixed.map((locator) => locator.boundingBox())),
       ).toEqual(before);
       expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0]);
+      await scroller.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      await expect(rows).toBeInViewport({ ratio: 1 });
+      const lastAfter = await page.locator(".grid-cell").last().boundingBox();
+      expect((await rows.boundingBox()).y).toBeGreaterThanOrEqual(lastAfter.y + lastAfter.height);
       await page.screenshot({
         path: testInfo.outputPath(`workspace-scroll-${width}.png`),
       });
@@ -1819,6 +1839,14 @@ test("theme cards stay square and render fixed 2x2 samples independently of grid
     );
     expect(sizes.length).toBeGreaterThan(0);
     expect(Math.max(...sizes)).toBeLessThanOrEqual(1);
+    if (width < 901) {
+      expect(await page.locator("[data-theme-tile]").evaluateAll((cards) =>
+        cards.every((card, index) =>
+          index === 0 ||
+          card.getBoundingClientRect().left >= cards[index - 1].getBoundingClientRect().right - 1,
+        ),
+      )).toBe(true);
+    }
   }
   await contact.scrollIntoViewIfNeeded();
   await contact.click();
@@ -2766,6 +2794,116 @@ test("export combines settings and downloads on desktop and mobile", async ({
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
 });
+
+for (const [mode, cropTest] of [["desktop", test], ["touch", touchTest]]) {
+  cropTest(`library crop defaults persist without changing existing placements on ${mode}`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("./");
+    const original = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="200" height="200" fill="#ff0000"/><rect x="200" width="200" height="200" fill="#00ff00"/><rect x="400" width="200" height="200" fill="#0000ff"/></svg>',
+    );
+    await page.locator("#upload").setInputFiles({
+      name: "Library crop.svg", mimeType: "image/svg+xml", buffer: original,
+    });
+    await expect(page.locator("#asset-library .asset")).toHaveCount(1);
+    await chooseImage(page, "Library crop");
+    const before = await savedWorkspace(page);
+    const card = page.locator("#asset-library .asset").first();
+    const thumbnail = card.locator("[data-library-thumbnail]");
+    async function centerPixel(locator) {
+      const bytes = [...await locator.screenshot()];
+      return page.evaluate(async (bytes) => {
+        const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        const pixel = [...context.getImageData(Math.floor(bitmap.width / 2), Math.floor(bitmap.height / 2), 1, 1).data];
+        bitmap.close();
+        return pixel;
+      }, bytes);
+    }
+    const cropDialog = page.getByRole("dialog", { name: "Crop image", exact: true });
+    async function openCrop() {
+      if (mode === "touch") await thumbnail.tap();
+      else await thumbnail.hover();
+      await card.getByRole("button", { name: "Crop image", exact: true }).click();
+      await expect(cropDialog.getByRole("button", { name: "Apply crop", exact: true })).toBeEnabled();
+    }
+    await openCrop();
+    await cropDialog.locator("#crop-zoom").fill("2");
+    await cropDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(cropDialog).toHaveCount(0);
+    await expect(thumbnail).toBeFocused();
+    expect((await savedWorkspace(page)).assets[0].crop).toBeUndefined();
+    await openCrop();
+    await expect(cropDialog.locator("#crop-zoom")).toHaveValue("1");
+    await cropDialog.locator("#crop-zoom").fill("2");
+    const bounds = await cropDialog.locator(".crop-window").boundingBox();
+    const y = bounds.y + bounds.height / 2;
+    for (let pan = 0; pan < 4; pan++) {
+      await page.mouse.move(bounds.x + bounds.width / 2, y);
+      await page.mouse.down();
+      await page.mouse.move(8, y, { steps: 12 });
+      await page.mouse.up();
+    }
+    await cropDialog.getByRole("button", { name: "Apply crop", exact: true }).click();
+    await expect(cropDialog).toHaveCount(0);
+    const cropped = await savedWorkspace(page);
+    const crop = cropped.assets[0].crop;
+    expect(crop.x).toBeGreaterThan(0.6);
+    expect(cropped.grid).toEqual(before.grid);
+    await reloadWorkspace(page);
+    expect((await savedWorkspace(page)).assets[0].crop).toEqual(crop);
+    expect(await centerPixel(thumbnail)).toEqual([0, 0, 255, 255]);
+    expect(await centerPixel(page.locator(".cell-image-button").first())).toEqual([0, 255, 0, 255]);
+    await openCrop();
+    await expect.poll(async () => Number(await cropDialog.locator("#crop-zoom").inputValue())).toBeCloseTo(2, 1);
+    await cropDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(cropDialog).toHaveCount(0);
+    if (mode === "desktop") {
+      await thumbnail.dragTo(page.locator(".cell-image-button").nth(1));
+    } else {
+      await chooseImage(page, "Library crop", 1);
+    }
+    expect((await savedWorkspace(page)).grid.cells[1].crop).toEqual(crop);
+    expect(await centerPixel(page.locator(".cell-image-button").nth(1))).toEqual([0, 0, 255, 255]);
+    await page.locator(".cell-image-button").nth(2).click();
+    const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+    const pickerCard = picker.locator(".asset").first();
+    if (mode === "desktop") await pickerCard.locator("[data-library-thumbnail]").hover();
+    await pickerCard.getByRole("button", { name: "Crop image", exact: true }).click();
+    await expect(cropDialog.getByRole("button", { name: "Apply crop", exact: true })).toBeEnabled();
+    await cropDialog.locator("#crop-zoom").fill("3");
+    await cropDialog.getByRole("button", { name: "Apply crop", exact: true }).click();
+    await expect(cropDialog).toHaveCount(0);
+    await expect(picker).toBeVisible();
+    const changed = await savedWorkspace(page);
+    expect(changed.assets[0].crop.width).toBeLessThan(crop.width);
+    expect(changed.grid.cells[0].crop).toBeUndefined();
+    expect(changed.grid.cells[1].crop).toEqual(crop);
+    expect(changed.grid.cells[2].assetId).toBeNull();
+    await pickerCard.locator("[data-library-thumbnail]").click();
+    await expect(picker).toHaveCount(0);
+    expect((await savedWorkspace(page)).grid.cells[2].crop).toEqual(changed.assets[0].crop);
+    expect(await page.evaluate(async () => {
+      const request = indexedDB.open("grids-client-v1");
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const record = db.transaction("images", "readonly").objectStore("images").getAll();
+        const images = await new Promise((resolve, reject) => {
+          record.onsuccess = () => resolve(record.result);
+          record.onerror = () => reject(record.error);
+        });
+        return [...new Uint8Array(await images[0].blob.arrayBuffer())];
+      } finally { db.close(); }
+    })).toEqual([...original]);
+  });
+}
 
 test("fullscreen visual cropping preserves originals and matches preview and export", async ({
   page,

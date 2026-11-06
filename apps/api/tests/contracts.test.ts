@@ -60,6 +60,24 @@ test("saved grids contain references only and restore browser-local images only 
   }).success);
 });
 
+test("library crop defaults round-trip through saved references and browser-local assets", () => {
+  const workspace = makeWorkspace();
+  const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
+  const local = { id: randomUUID(), title: "Local", category: "Imported", src: "blob:local", crop };
+  const remote = { id: randomUUID(), title: "Remote", category: "Imported", src: "blob:remote", provenance, crop };
+  workspace.assets = [local, remote];
+  workspace.grid.cells[0].assetId = remote.id;
+  const saved = toSavedGrid(workspace);
+  assert.deepEqual(saved.assets[0].crop, crop);
+  const restored = fromSavedGrid(saved, [local]);
+  assert.deepEqual(restored.assets.find((asset) => asset.id === remote.id)?.crop, crop);
+  assert.deepEqual(restored.assets.find((asset) => asset.id === local.id)?.crop, crop);
+  assert.equal(restored.grid.cells[0].crop, undefined);
+  assert.ok(!gridWriteSchema.safeParse({
+    name: "Grid", document: { ...saved, assets: [{ ...saved.assets[0], crop: { ...crop, width: 0.8 } }] },
+  }).success);
+});
+
 test("new public-domain provider references round-trip without image bytes", () => {
   const workspace = makeWorkspace();
   workspace.assets = [{

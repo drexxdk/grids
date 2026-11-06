@@ -64,18 +64,18 @@ export function PresetsPanel({
     >
       <section
         aria-label={t("presets.starters")}
-        className="flex min-w-0 flex-col gap-5 max-[901px]:h-(--shelf-content-height) max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:pl-3"
+        className="flex min-w-0 flex-col gap-5 max-[901px]:h-(--shelf-content-height) max-[901px]:flex-row max-[901px]:gap-3 max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:p-3"
       >
         {starterGroups.map((group) => (
           <section
             key={group.label}
             aria-label={t(group.label)}
-            className="flex min-w-0 flex-col gap-2 max-[901px]:min-h-0 max-[901px]:shrink-0 max-[901px]:last:pr-3"
+            className="flex min-w-0 flex-col gap-2 max-[901px]:contents"
           >
             <h3 className="field-label font-normal max-[901px]:hidden!">
               {t(group.label)}
             </h3>
-            <ul className="m-0 grid list-none grid-cols-2 items-start gap-3 p-0 max-[901px]:flex max-[901px]:min-h-0 max-[901px]:flex-1">
+            <ul className="m-0 grid list-none grid-cols-2 items-start gap-3 p-0 max-[901px]:contents">
               {group.starters.map((starter) => {
                 const original = {
                   ...starter,

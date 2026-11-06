@@ -125,7 +125,7 @@ export function GridCell({
   gridId: string;
   gridStyle: GridStyle;
   onPatch: (patch: CellPatch) => void;
-  onCrop: (crop: ImageCrop, assetId: string) => void;
+  onCrop?: (crop: ImageCrop, assetId: string) => void;
   onClear: () => void;
   onChoose: (trigger: HTMLButtonElement) => void;
   onUpload: () => void;
@@ -815,7 +815,7 @@ export function GridCell({
               )}
               {asset && (
                 <PopoverPanel
-                  static={hoverTools}
+                  static={hoverTools || Boolean(coarsePointer && library?.onSelect && onCrop)}
                   role="group"
                   aria-label={t("cell.actions.tools")}
                   className="pointer-events-none absolute inset-0 z-10"
@@ -886,22 +886,26 @@ export function GridCell({
                       >
                         <ImagePlus aria-hidden="true" />
                       </Button>
-                      <Button
-                        variant="icon"
-                        className={cardToolButtonStyles({
-                          position: "bottomRight",
-                        })}
-                        aria-label={t("crop.title")}
-                        title={t("crop.title")}
-                        onClick={() => {
-                          setHoverTools(false);
-                          close();
-                          setCropTarget(asset.id);
-                        }}
-                      >
-                        <Crop aria-hidden="true" />
-                      </Button>
                     </div>
+                  )}
+                  {onCrop && (
+                    <Button
+                      variant="icon"
+                      className={cardToolButtonStyles({
+                        position: "bottomRight",
+                        size: library ? "fixed" : "proportional",
+                      })}
+                      aria-label={t("crop.title")}
+                      title={t("crop.title")}
+                      disabled={library?.disabled}
+                      onClick={() => {
+                        setHoverTools(false);
+                        close();
+                        setCropTarget(asset.id);
+                      }}
+                    >
+                      <Crop aria-hidden="true" />
+                    </Button>
                   )}
                   {(asset || cell.title) &&
                     (selectsLibraryImage ||
@@ -1072,7 +1076,7 @@ export function GridCell({
               />
             </span>
           )}
-          {asset && cropTarget === asset.id && (
+          {asset && cropTarget === asset.id && onCrop && (
             <CropEditor
               asset={asset}
               aspect={geometry.aspectRatio}

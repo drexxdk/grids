@@ -93,6 +93,7 @@ export interface Asset {
   provenance?: z.infer<typeof provenanceSchema>;
   trashedAt?: number;
   libraryHidden?: boolean;
+  crop?: ImageCrop;
 }
 export function removeCreditRequiredImages(workspace: Workspace): Workspace {
   const removed = new Set(workspace.assets
@@ -301,6 +302,7 @@ export type GridPatch = Partial<
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
 export type DocumentCommand =
   | { type: "asset/title"; assetId: string; title: string }
+  | { type: "asset/crop"; assetId: string; crop: ImageCrop | undefined }
   | { type: "workspace/restore"; workspace: Workspace }
   | { type: "assets/trash-unused"; assetIds: string[]; trashedAt: number }
   | { type: "assets/restore"; assetIds: string[] }
@@ -352,6 +354,7 @@ export const makeCell = (asset: Asset | null = null): Cell => ({
   assetId: asset?.id ?? null,
   title: asset?.title.slice(0, captionMaxLength) ?? "",
   fit: "cover",
+  ...(asset?.crop ? { crop: asset.crop } : {}),
 });
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   id: crypto.randomUUID(),
@@ -667,6 +670,7 @@ export const workspaceSchema = z
         provenance: provenanceSchema.optional(),
         trashedAt: z.number().int().nonnegative().optional(),
         libraryHidden: z.boolean().optional(),
+        crop: cropSchema.optional(),
       }),
     ),
     grid: z.strictObject({
@@ -797,6 +801,21 @@ export function documentReducer(
     });
   };
   switch (command.type) {
+    case "asset/crop": {
+      if (
+        !workspace.assets.some(
+          (asset) => asset.id === command.assetId && asset.trashedAt === undefined && !asset.libraryHidden,
+        ) ||
+        (command.crop !== undefined && !cropSchema.safeParse(command.crop).success)
+      )
+        return workspace;
+      return {
+        ...workspace,
+        assets: workspace.assets.map((asset) =>
+          asset.id === command.assetId ? { ...asset, crop: command.crop } : asset,
+        ),
+      };
+    }
     case "asset/title": {
       if (
         !workspace.assets.some((asset) => asset.id === command.assetId) ||
@@ -913,7 +932,7 @@ export function documentReducer(
             assetId: asset.id,
             title: asset.title.slice(0, captionMaxLength),
             fit: "cover",
-            crop: undefined,
+            crop: asset.crop,
           }))
         : workspace;
     }
@@ -972,7 +991,7 @@ export function documentReducer(
                   assetId: asset.id,
                   title: asset.title.slice(0, captionMaxLength),
                   fit: "cover",
-                  crop: undefined,
+                  crop: asset.crop,
                 }
               : cell;
           }),

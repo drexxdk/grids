@@ -412,6 +412,7 @@ export default function App() {
     width: number;
     frameHeight: number;
     previewWidth: number;
+    controlsHeight: number;
     rowOffset: number;
     height: number;
     boardWidth: number;
@@ -502,17 +503,18 @@ export default function App() {
         boardWidth > viewportWidth - scrollbarWidth + 1 ? scrollbarWidth : 0;
       const height = Math.max(
         1,
-        Math.min(
-          availableHeight - cellWidth * headingAreaRatio,
-          cellWidth *
-            (boardHeightRatio - (board.headingVisible ? paddingRatio : 0)) +
-            horizontalScrollbar,
-        ),
+        cellWidth *
+          (boardHeightRatio - (board.headingVisible ? paddingRatio : 0)) +
+          horizontalScrollbar,
       );
       const next = {
-        width: viewportWidth + 64,
-        frameHeight: height + cellWidth * headingAreaRatio + 64,
+        width: viewportWidth + 60,
+        frameHeight: height + cellWidth * headingAreaRatio + 60,
         previewWidth: viewportWidth,
+        controlsHeight: Math.min(
+          availableHeight,
+          height + cellWidth * headingAreaRatio,
+        ),
         rowOffset: -scrollbarWidth / 2,
         height,
         boardWidth,
@@ -526,6 +528,7 @@ export default function App() {
         Math.abs(previous.width - next.width) < 0.01 &&
         Math.abs(previous.frameHeight - next.frameHeight) < 0.01 &&
         Math.abs(previous.previewWidth - next.previewWidth) < 0.01 &&
+        Math.abs(previous.controlsHeight - next.controlsHeight) < 0.01 &&
         Math.abs(previous.rowOffset - next.rowOffset) < 0.01 &&
         Math.abs(previous.height - next.height) < 0.01 &&
         Math.abs(previous.boardWidth - next.boardWidth) < 0.01 &&
@@ -1136,7 +1139,7 @@ export default function App() {
               >
                 <div
                   id="asset-library"
-                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:px-3 max-[901px]:scrollbar-safe-row! max-[901px]:after:w-3 max-[901px]:after:content-['']"
+                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:p-3!"
                 >
                   <UploadTile
                     ref={addImagesButton}
@@ -1166,6 +1169,9 @@ export default function App() {
                           assetId: asset.id,
                           title,
                         })
+                      }
+                      onCrop={(crop, assetId) =>
+                        dispatchDocument({ type: "asset/crop", assetId, crop })
                       }
                       disabled={false}
                       moving={cardDrag !== null}
@@ -1252,6 +1258,7 @@ export default function App() {
                     }
                     leadingSpace={false}
                     viewportHeight={previewSize?.height}
+                    controlsHeight={previewSize?.controlsHeight}
                     previewWidth={previewSize?.previewWidth}
                     onOverflowChange={setCanvasOverflow}
                     heading={
@@ -1422,7 +1429,7 @@ export default function App() {
                 data-sidebar-content
                 className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
               >
-                <div className="flex flex-col gap-6 max-[901px]:py-2 max-[901px]:pr-3 max-[901px]:pl-3">
+                <div className="flex flex-col gap-6 max-[901px]:p-3">
                   <fieldset
                     className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
                     aria-label={t("settings.canvas")}
@@ -1979,6 +1986,9 @@ export default function App() {
                       assetId: asset.id,
                       title,
                     })
+                  }
+                  onCrop={(crop, assetId) =>
+                    dispatchDocument({ type: "asset/crop", assetId, crop })
                   }
                   onDelete={() => deleteImages([asset.id])}
                   onSelect={() => {

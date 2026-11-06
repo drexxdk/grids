@@ -1,4 +1,4 @@
-import { cellGeometry, type Asset, type Cell, type GridStyle } from "../model";
+import { cellGeometry, type Asset, type Cell, type GridStyle, type ImageCrop } from "../model";
 import { captionMaxLength } from "../config";
 import type { CSSProperties, Ref } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -50,6 +50,7 @@ export function LibraryImage({
   cell,
   gridStyle,
   onTitle,
+  onCrop,
   captionRows,
   onMoveStart,
   onTouchDrag,
@@ -69,6 +70,7 @@ export function LibraryImage({
   cell?: Cell;
   gridStyle: GridStyle;
   onTitle: (title: string) => void;
+  onCrop?: (crop: ImageCrop, assetId: string) => void;
   captionRows: number;
   onMoveStart?: (source: CardDragSource, visual: CardDragVisual) => void;
   onTouchDrag?: (
@@ -107,12 +109,13 @@ export function LibraryImage({
       <GridCell
         cell={
           cell
-            ? { ...cell, title: asset.title.slice(0, captionMaxLength) }
+            ? { ...cell, title: asset.title.slice(0, captionMaxLength), crop: asset.crop }
             : {
                 id: asset.id,
                 assetId: asset.id,
                 title: asset.title.slice(0, captionMaxLength),
                 fit: "cover",
+                crop: asset.crop,
               }
         }
         asset={asset}
@@ -124,7 +127,7 @@ export function LibraryImage({
         onPatch={(patch) => {
           if (patch.title !== undefined) onTitle(patch.title);
         }}
-        onCrop={() => {}}
+        onCrop={onCrop}
         onClear={onDelete}
         onChoose={() => {}}
         onUpload={() => {}}

@@ -1500,6 +1500,47 @@ test("image captions stay independent across library, placements and overflow wi
   ).toBe(workspace);
 });
 
+test("library crops become placement defaults without changing existing cells or originals", () => {
+  const workspace = localWorkspace();
+  const asset = workspace.assets[0];
+  const existingCrop = { x: 0, y: 0, width: 0.5, height: 1 };
+  workspace.grid.cells[0] = { ...workspace.grid.cells[0], assetId: asset.id, crop: existingCrop };
+  workspace.grid.cells[15].crop = existingCrop;
+  workspace.grid = model.resizeBoard(workspace.grid, 3, 3);
+  const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
+  const cropped = model.documentReducer(workspace, { type: "asset/crop", assetId: asset.id, crop });
+  expect(cropped.grid).toBe(workspace.grid);
+  expect(cropped.assets[0]).toEqual({ ...asset, crop });
+  expect(workspace.assets[0].crop).toBeUndefined();
+  expect(cropped.grid.cells[0].crop).toEqual(existingCrop);
+  expect(cropped.grid.overflow.find((entry) => entry.cell.assetId === asset.id).cell.crop).toEqual(existingCrop);
+  expect(model.workspaceSchema.parse(JSON.parse(JSON.stringify(cropped))).assets[0].crop).toEqual(crop);
+  expect(model.makeCell(cropped.assets[0]).crop).toEqual(crop);
+  expect(model.makeBoard("Cropped", cropped.assets).cells[0].crop).toEqual(crop);
+  const placed = model.documentReducer(cropped, {
+    type: "cell/place", gridId: cropped.grid.id, cellId: cropped.grid.cells[1].id, assetId: asset.id,
+  });
+  expect(placed.grid.cells[1].crop).toEqual(crop);
+  const imported = model.documentReducer(placed, {
+    type: "assets/import", gridId: placed.grid.id, cellId: placed.grid.cells[2].id,
+    assets: [{ ...cropped.assets[0], id: crypto.randomUUID() }],
+  });
+  expect(imported.grid.cells[2].crop).toEqual(crop);
+  const reset = model.documentReducer(imported, { type: "asset/crop", assetId: asset.id, crop: undefined });
+  expect(reset.grid).toBe(imported.grid);
+  const replacement = model.documentReducer(reset, {
+    type: "cell/place", gridId: reset.grid.id, cellId: reset.grid.cells[1].id, assetId: asset.id,
+  });
+  expect(replacement.grid.cells[1].crop).toBeUndefined();
+  for (const command of [
+    { type: "asset/crop", assetId: crypto.randomUUID(), crop },
+    { type: "asset/crop", assetId: asset.id, crop: { ...crop, width: 0.8 } },
+  ]) expect(model.documentReducer(cropped, command)).toBe(cropped);
+  expect(model.workspaceSchema.safeParse({
+    ...cropped, assets: [{ ...cropped.assets[0], crop: { ...crop, width: 0.8 } }],
+  }).success).toBe(false);
+});
+
 test("visual crops preserve originals and share full-box source rectangles", () => {
   const workspace = localWorkspace();
   const cell = workspace.grid.cells[15];
