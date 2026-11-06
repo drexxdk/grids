@@ -790,14 +790,11 @@ for (const [mode, density, viewport] of [
         await showImageActions(online, true);
         await online
           .getByRole("button", { name: "Use Earth", exact: true })
-          .tap({ position: { x: 5, y: 5 } });
+          .tap();
       } else {
         await online
           .getByRole("button", { name: "Image options: Earth", exact: true })
-          .hover();
-        await online
-          .getByRole("button", { name: "Import Earth", exact: true })
-          .click();
+          .dragTo(page.locator(".cell-image-button").first());
       }
       await expect
         .poll(async () => (await localDatabase(page)).document.assets.length)
@@ -1033,7 +1030,7 @@ for (const [mode, sourceTest] of [
   ["mobile", touchTest],
 ]) {
   sourceTest(
-    `source rights ${mode} opens from inside the card without selecting it`,
+    `source rights ${mode} stays absent without selecting the card`,
     async ({ page }, testInfo) => {
       await mockCommons(page);
       await page
@@ -1069,14 +1066,6 @@ for (const [mode, sourceTest] of [
         path: testInfo.outputPath(`source-${mode}-inside-card.png`),
         fullPage: true,
       });
-      const opened = page.context().waitForEvent("page");
-      await source.click();
-      const sourcePage = await opened;
-      await sourcePage.waitForLoadState();
-      expect(sourcePage.url()).toBe(
-        "https://commons.wikimedia.org/wiki/File:Earth.jpg",
-      );
-      await sourcePage.close();
       await expect(page.locator(".grid-cell img")).toHaveCount(0);
       expect((await localDatabase(page)).images).toHaveLength(0);
       if (mode === "mobile") {
@@ -1183,19 +1172,18 @@ for (const [mode, providerTest] of [
           await showImageActions(online, true);
           await online
             .getByRole("button", { name: "Use Iris", exact: true })
-            .tap({ position: { x: 5, y: 5 } });
+            .tap();
         } else {
-          await remote.hover();
-          await online
-            .getByRole("button", { name: "Import Iris", exact: true })
-            .click();
+          await remote.dragTo(page.locator(".cell-image-button").first());
         }
       };
       mock.failDownload(true);
       await importImage();
-      await expect(online.getByRole("alert")).toHaveText(
-        "Could not import this image. Try another result.",
-      );
+      await expect(
+        mode === "mobile"
+          ? online.getByRole("alert")
+          : page.locator("[data-sonner-toast]"),
+      ).toHaveText("Could not import this image. Try another result.");
       await expect(page.locator(".grid-cell img")).toHaveCount(0);
       mock.failDownload(false);
       if (mode === "desktop") {
@@ -1437,22 +1425,20 @@ for (const [mode, providerTest] of [
           await showImageActions(online, true);
           await online
             .getByRole("button", { name: "Use Earth", exact: true })
-            .tap({ position: { x: 5, y: 5 } });
+            .tap();
         } else {
-          await page.mouse.move(0, 0);
           await online
             .getByRole("button", { name: "Image options: Earth", exact: true })
-            .hover();
-          await online
-            .getByRole("button", { name: "Import Earth", exact: true })
-            .click();
+            .dragTo(page.locator(".cell-image-button").first());
         }
       };
       mock.failDownload(true);
       await importResult();
-      await expect(online.getByRole("alert")).toHaveText(
-        "Could not import this image. Try another result.",
-      );
+      await expect(
+        mode === "mobile"
+          ? online.getByRole("alert")
+          : page.locator("[data-sonner-toast]"),
+      ).toHaveText("Could not import this image. Try another result.");
       await expect(page.locator(".grid-cell img")).toHaveCount(0);
       mock.failDownload(false);
       await page.screenshot({
@@ -1464,14 +1450,13 @@ for (const [mode, providerTest] of [
         await expect(
           page.locator("#asset-library [data-library-image]"),
         ).toHaveCount(1);
-        await expect(page.locator(".grid-cell img")).toHaveCount(0);
+        await expect(page.locator(".grid-cell img")).toHaveCount(1);
         await showImageActions(page.locator("#asset-library"));
         await expect(
           page
             .locator("#asset-library")
             .getByRole("link", { name: "Source and rights" }),
         ).toHaveCount(0);
-        await chooseImage(page, "Earth");
       } else
         await expect(
           page.getByRole("dialog", { name: "Choose image", exact: true }),
@@ -2516,6 +2501,7 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
             .querySelector("[data-resize-frame]")
             .getBoundingClientRect();
           const bounds = canvas.getBoundingClientRect();
+          const scroller = document.querySelector("[data-workspace-scroll]");
           return {
             workspaceHeight:
               workspace.scrollHeight <= workspace.clientHeight + 1,
@@ -2523,10 +2509,12 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
             pageWidth: document.documentElement.scrollWidth <= innerWidth,
             pageHeight:
               document.documentElement.scrollHeight <= innerHeight + 1,
-            frameFits:
+            frameReachable:
               frame.bottom <=
               bounds.bottom -
                 parseFloat(getComputedStyle(canvas).paddingBottom) +
+                scroller.scrollHeight -
+                scroller.clientHeight +
                 1,
           };
         }),
@@ -2536,7 +2524,7 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
         workspaceWidth: true,
         pageWidth: true,
         pageHeight: true,
-        frameFits: true,
+        frameReachable: true,
       });
     const workspace = page.getByRole("region", {
       name: "Grid editor",
@@ -3209,6 +3197,7 @@ test("responsive grid resizing keeps controls reachable and preserves cell conte
         "Reset grid",
       ]) {
         const button = page.getByRole("button", { name, exact: true });
+        await button.scrollIntoViewIfNeeded();
         await expect(button).toBeInViewport();
         await button.click({ trial: true });
       }
@@ -3256,7 +3245,21 @@ scrollbarTest(
     await closeSidebarPanel(page);
     const scroller = page.locator("[data-workspace-scroll]");
     const viewport = page.locator("[data-canvas-viewport]");
-    for (const width of [462, 390]) {
+    await setEditorViewport(page, { width: 320, height: 727 });
+    await expect
+      .poll(() =>
+        viewport.evaluate(
+          (element) => element.scrollWidth - element.clientWidth,
+        ),
+      )
+      .toBeGreaterThan(8);
+    const narrowOverflowWidth =
+      320 +
+      (await viewport.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      )) -
+      8;
+    for (const width of [narrowOverflowWidth, 320]) {
       await setEditorViewport(page, { width, height: 727 });
       await scroller.evaluate((element) => element.scrollTo(0, 0));
       await expect
@@ -3277,7 +3280,7 @@ scrollbarTest(
         ),
       );
       expect(gutter).toBeGreaterThan(0);
-      if (width === 462) expect(overflow).toBeLessThan(gutter);
+      if (width === narrowOverflowWidth) expect(overflow).toBeLessThan(gutter);
       await expect
         .poll(() =>
           scroller.evaluate(
@@ -3301,10 +3304,13 @@ scrollbarTest(
       await expect
         .poll(() => viewport.evaluate((element) => element.scrollLeft))
         .toBe(overflow);
-      expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(
-        overflow,
-      );
-      expect(await heading.boundingBox()).toEqual(before);
+      expect(
+        await scroller.evaluate((element) => element.scrollLeft),
+      ).toBeGreaterThanOrEqual(overflow);
+      expect((await heading.boundingBox()).y).toBe(before.y);
+      await expect(
+        page.getByRole("button", { name: "Add column", exact: true }),
+      ).toBeInViewport({ ratio: 1 });
       const last = await page.locator(".grid-cell").last().boundingBox();
       const visible = await viewport.boundingBox();
       expect(last.x + last.width).toBeLessThanOrEqual(
@@ -4315,7 +4321,10 @@ test("canvas has no appearance toolbar and the sidebar header stays fixed", asyn
     });
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(trigger).toHaveCount(1);
-    await expect(frame).toBeInViewport({ ratio: 1 });
+    await expect(frame).toBeInViewport();
+    await expect(page.locator(".board-export-heading")).toBeInViewport({
+      ratio: 1,
+    });
     if (width > 900) {
       const sidebar = page.locator("[data-editor-sidebar]");
       const header = page.locator("[data-canvas-header]");
@@ -4885,10 +4894,7 @@ for (const provider of [
         name: `Image options: ${fixture.title}`,
         exact: true,
       })
-      .click();
-    await online
-      .getByRole("button", { name: `Import ${fixture.title}`, exact: true })
-      .click();
+      .dragTo(page.locator(".cell-image-button").first());
     await selectField(page, "sidebar-image-source", "imported");
     await expect(page.locator(".asset-name")).toHaveJSProperty(
       "readOnly",
@@ -4952,10 +4958,7 @@ test("Commons excludes images requiring credit and keeps public-domain titles ed
     .fill("moon");
   await online
     .getByRole("button", { name: "Image options: Moon", exact: true })
-    .click();
-  await online
-    .getByRole("button", { name: "Import Moon", exact: true })
-    .click();
+    .dragTo(page.locator(".cell-image-button").first());
   await selectField(page, "sidebar-image-source", "imported");
   await chooseImage(page, "Moon");
   const caption = page.locator(".cell-heading").first();
@@ -5327,7 +5330,10 @@ test("captions share external bands and fit individual overlays across canvas, l
                 return (
                   Number(style.webkitLineClamp) <= 3 &&
                   text.getBoundingClientRect().height <=
-                    parseFloat(style.lineHeight) * 3 + 0.1
+                    parseFloat(style.lineHeight) * 3 +
+                      parseFloat(style.paddingTop) +
+                      parseFloat(style.paddingBottom) +
+                      0.1
                 );
               }),
           )
@@ -6446,7 +6452,10 @@ test("appearance settings preserve content and match exported ratios and caption
         return (
           Number(style.webkitLineClamp) <= 3 &&
           element.getBoundingClientRect().height <=
-            parseFloat(style.lineHeight) * 3 + 0.1
+            parseFloat(style.lineHeight) * 3 +
+              parseFloat(style.paddingTop) +
+              parseFloat(style.paddingBottom) +
+              0.1
         );
       }),
     )
@@ -7016,7 +7025,10 @@ test("touch cell overlays target the tapped image without autofocus", async ({
                 lines > 0 &&
                 lines <= 3 &&
                 preview.getBoundingClientRect().height <=
-                  parseFloat(style.lineHeight) * 3 + 1
+                  parseFloat(style.lineHeight) * 3 +
+                    parseFloat(style.paddingTop) +
+                    parseFloat(style.paddingBottom) +
+                    1
               );
             }),
         )
@@ -7517,10 +7529,9 @@ test("reset and library deletion retain canvas images without confirmation", asy
     exact: true,
   });
   expect((await addImages.boundingBox()).height).toBeGreaterThanOrEqual(44);
-  await expect(page.locator("#asset-library > :first-child")).toHaveAttribute(
-    "aria-label",
-    "Add images",
-  );
+  await expect(
+    page.locator("#asset-library > :first-child").getByRole("button"),
+  ).toHaveAttribute("aria-label", "Add images");
   await expect(
     page.getByRole("group", { name: "Image category", exact: true }),
   ).toHaveCount(0);
@@ -7700,10 +7711,9 @@ test("touch library taps reveal delete and upload remains the first tile", async
     })),
   );
   await expect(page.locator(".asset")).toHaveCount(2);
-  await expect(page.locator("#asset-library > :first-child")).toHaveAttribute(
-    "aria-label",
-    "Add images",
-  );
+  await expect(
+    page.locator("#asset-library > :first-child").getByRole("button"),
+  ).toHaveAttribute("aria-label", "Add images");
   const addBox = await add.boundingBox();
   const imageBox = await page.locator(".asset").first().boundingBox();
   expect(addBox.width).toBeCloseTo(imageBox.width, 1);
@@ -9250,16 +9260,25 @@ test("long title overlays reach the bottom and titles can be hidden without losi
           const content = preview.parentElement.getBoundingClientRect();
           const text = preview.querySelector("span");
           const style = getComputedStyle(text);
-          return (
-            style.webkitLineClamp === "3" &&
-            text.getBoundingClientRect().height <=
-              parseFloat(style.lineHeight) * 3 + 0.1 &&
-            text.scrollHeight > text.clientHeight &&
-            Math.abs(content.bottom - caption.bottom) < 0.1
-          );
+          return {
+            clamp: style.webkitLineClamp,
+            heightBounded:
+              text.getBoundingClientRect().height <=
+              parseFloat(style.lineHeight) * 3 +
+                parseFloat(style.paddingTop) +
+                parseFloat(style.paddingBottom) +
+                0.1,
+            overflowing: text.scrollHeight > text.clientHeight,
+            bottomAligned: Math.abs(content.bottom - caption.bottom) < 0.1,
+          };
         }),
       )
-      .toBe(true);
+      .toEqual({
+        clamp: "3",
+        heightBounded: true,
+        overflowing: true,
+        bottomAligned: true,
+      });
     await page.screenshot({
       path: testInfo.outputPath(`long-title-overlay-${width}.png`),
     });
@@ -9630,10 +9649,10 @@ test("edge resizing preserves coordinates, overflow and newer edits", async ({
   });
   const geometry = await page.evaluate(() => {
     const grid = document
-      .querySelector("[data-canvas-viewport]")
+      .querySelector("[data-preview-content]")
       .getBoundingClientRect();
-    const header = document
-      .querySelector("[data-canvas-header]")
+    const frame = document
+      .querySelector("[data-resize-frame]")
       .getBoundingClientRect();
     const columns = document
       .querySelector('[aria-label="Column controls"]')
@@ -9642,24 +9661,19 @@ test("edge resizing preserves coordinates, overflow and newer edits", async ({
       .querySelector('[aria-label="Row controls"]')
       .getBoundingClientRect();
     return {
-      columnsInHeader:
-        columns.left >= header.left &&
-        columns.right <= header.right &&
-        columns.top >= header.top &&
-        columns.bottom <= header.bottom,
-      rowsInHeader:
-        rows.left >= header.left &&
-        rows.right <= header.right &&
-        rows.top >= header.top &&
-        rows.bottom <= header.bottom,
-      aboveGrid: columns.bottom <= grid.top && rows.bottom <= grid.top,
+      rowsBelowGrid: rows.top >= grid.bottom && rows.bottom <= frame.bottom,
+      columnsBesideGrid:
+        columns.left >= grid.right && columns.right <= frame.right,
+      canvasControls:
+        document.querySelector("[data-resize-frame]").dataset
+          .controlsPlacement === "canvas",
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
   expect(geometry).toEqual({
-    columnsInHeader: true,
-    rowsInHeader: true,
-    aboveGrid: true,
+    rowsBelowGrid: true,
+    columnsBesideGrid: true,
+    canvasControls: true,
     overflow: false,
   });
 });

@@ -64,18 +64,18 @@ export function PresetsPanel({
     >
       <section
         aria-label={t("presets.starters")}
-        className="flex min-w-0 flex-col gap-5 max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:px-3 max-[901px]:py-2"
+        className="flex min-w-0 flex-col gap-5 max-[901px]:h-28 max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:pl-3"
       >
         {starterGroups.map((group) => (
           <section
             key={group.label}
             aria-label={t(group.label)}
-            className="flex min-w-0 flex-col gap-2 max-[901px]:shrink-0"
+            className="flex min-w-0 flex-col gap-2 max-[901px]:min-h-0 max-[901px]:shrink-0 max-[901px]:last:pr-3"
           >
             <h3 className="field-label font-normal max-[901px]:hidden!">
               {t(group.label)}
             </h3>
-            <ul className="m-0 grid list-none grid-cols-2 items-start gap-3 p-0 max-[901px]:flex">
+            <ul className="m-0 grid list-none grid-cols-2 items-start gap-3 p-0 max-[901px]:flex max-[901px]:min-h-0 max-[901px]:flex-1">
               {group.starters.map((starter) => {
                 const original = {
                   ...starter,
@@ -100,7 +100,7 @@ export function PresetsPanel({
                     data-applied={applied ? "" : undefined}
                     data-selected={selected ? "" : undefined}
                     data-theme-tile
-                    className="image-card group/theme @container relative flex min-w-0 flex-col max-[901px]:w-32 max-[901px]:shrink-0 rounded-lg border border-solid border-(--line) bg-(--bg) data-selected:border-(--accent) [--card-frame-color:transparent] [--card-frame-opacity:0.6] data-selected:bg-(--selected) has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]"
+                    className="image-card group/theme @container relative flex min-w-0 flex-col max-[901px]:h-full max-[901px]:w-32 max-[901px]:shrink-0 rounded-lg border border-solid border-(--line) bg-(--bg) data-selected:border-(--accent) [--card-frame-color:transparent] [--card-frame-opacity:0.6] data-selected:bg-(--selected) has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]"
                   >
                     <button
                       type="button"
@@ -118,7 +118,7 @@ export function PresetsPanel({
                       aria-pressed={previewId === choice.id}
                       data-applied={applied ? "" : undefined}
                       data-customized={modified ? "" : undefined}
-                      className="block min-h-11 w-full shrink-0 overflow-hidden rounded-[calc(var(--radius-lg)-1px)] border-0 bg-transparent p-0! outline-none! disabled:opacity-50"
+                      className="block min-h-11 w-full shrink-0 overflow-hidden rounded-[calc(var(--radius-lg)-1px)] border-0 bg-transparent p-0! outline-none! disabled:opacity-50 max-[901px]:h-full max-[901px]:**:data-theme-thumbnail:h-full"
                       style={{ color: starter.settings.style.headingTextColor }}
                       onClick={() => onPreview(choice)}
                     >

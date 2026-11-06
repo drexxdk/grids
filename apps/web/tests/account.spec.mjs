@@ -507,14 +507,12 @@ test("preset gallery tiles preview only on activation and applying preserves con
   await expect(tile).toHaveAttribute("data-applied", "");
   await expect(tile).toHaveAttribute("data-customized", "");
   await expect(tile).toHaveText("");
-  const controls = page
-    .locator("[data-theme-tile]")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Preview Warm gallery",
-        exact: true,
-      }),
-    });
+  const controls = page.locator("[data-theme-tile]").filter({
+    has: page.getByRole("button", {
+      name: "Preview Warm gallery",
+      exact: true,
+    }),
+  });
   await expect(
     controls.getByRole("button", { name: "Reset", exact: true }),
   ).toBeVisible();
@@ -717,6 +715,15 @@ for (const signedIn of [false, true]) {
     await expect(
       gallery.getByRole("region", { name: "Shared presets", exact: true }),
     ).toHaveCount(0);
+    if (signedIn) {
+      const dialog = await openAccount(page);
+      await expect(page.locator("[data-theme-tile]")).toHaveCount(24);
+      await dialog.getByRole("button", { name: "Close dialog" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(
+        gallery.getByRole("button", { name: /^Preview / }),
+      ).toHaveCount(24);
+    }
     await page.evaluate(() =>
       history.replaceState(
         { ...history.state, gridsAccountView: "library" },

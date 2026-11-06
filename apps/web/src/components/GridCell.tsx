@@ -819,6 +819,9 @@ export function GridCell({
                   role="group"
                   aria-label={t("cell.actions.tools")}
                   className="pointer-events-none absolute inset-0 z-10"
+                  onPointerDownCapture={() => {
+                    touchOpenedAt.current = 0;
+                  }}
                   onClickCapture={(event) => {
                     // The browser's click after the opening tap would land on a tool button.
                     if (Date.now() - touchOpenedAt.current < 500) {
@@ -978,7 +981,7 @@ export function GridCell({
               }}
             >
               <span
-                className="-mb-[0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em]"
+                className="mb-[-0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em]"
                 style={{ WebkitLineClamp: "var(--library-caption-lines,3)" }}
               >
                 {cell.title || t("editor.headingPlaceholder")}

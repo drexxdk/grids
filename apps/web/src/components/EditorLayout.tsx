@@ -367,7 +367,7 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className="relative isolate z-0 min-h-0 flex-1 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+                  className={`relative isolate z-0 min-h-0 flex-1 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain ${selectedPanel === 1 ? "max-[901px]:scrollbar-gutter-stable max-[901px]:pr-[max(0px,1rem-var(--native-scrollbar-width,0px))]" : ""} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
                 >
                   <div
                     role="tabpanel"

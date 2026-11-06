@@ -349,7 +349,7 @@ export function OnlineImages({
       <div
         className={
           compactRow
-            ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:h-28 max-[901px]:min-w-0 max-[901px]:items-stretch max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:pt-2 max-[901px]:pr-4 max-[901px]:pb-2"
+            ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:h-28 max-[901px]:min-w-0 max-[901px]:items-stretch max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:after:w-2 max-[901px]:after:shrink-0 max-[901px]:after:content-['']"
             : "contents"
         }
       >
@@ -397,7 +397,7 @@ export function OnlineImages({
           </div>
         )}
         <div
-          className={`relative ${compactRow ? "max-[901px]:h-full max-[901px]:shrink-0" : ""}`}
+          className={`relative ${compactRow ? "max-[901px]:min-h-0 max-[901px]:shrink-0" : ""}`}
           data-online-card-area
         >
           <div className={gridClassName}>

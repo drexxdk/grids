@@ -1373,7 +1373,7 @@ export default function App() {
                 )}
                 <div
                   id="asset-library"
-                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:h-28 max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:p-1 max-[901px]:pr-3 ${librarySource !== "imported" ? "hidden!" : ""}`}
+                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:h-28 max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:px-1 max-[901px]:scrollbar-safe-row! max-[901px]:after:w-3 max-[901px]:after:content-[''] ${librarySource !== "imported" ? "hidden!" : ""}`}
                   hidden={librarySource !== "imported"}
                 >
                   <UploadTile
@@ -2062,24 +2062,22 @@ export default function App() {
               </div>
             </aside>
           )}
-          {() =>
-            accountView ? null : (
-              <PresetsPanel
-                currentSettings={currentSettings}
-                appliedPresetId={appliedPreset?.id ?? null}
-                customizations={presetCustomizations}
-                previewId={presetPreview?.choice.id}
-                disabled={
-                  !loaded || conflict || importProgress !== null || exporting
-                }
-                onPreview={(choice) => {
-                  setHeadingEditing(false);
-                  setPresetPreview({ choice, key: crypto.randomUUID() });
-                }}
-                onReset={(choice) => applyPreset(choice)}
-              />
-            )
-          }
+          {() => (
+            <PresetsPanel
+              currentSettings={currentSettings}
+              appliedPresetId={appliedPreset?.id ?? null}
+              customizations={presetCustomizations}
+              previewId={presetPreview?.choice.id}
+              disabled={
+                !loaded || conflict || importProgress !== null || exporting
+              }
+              onPreview={(choice) => {
+                setHeadingEditing(false);
+                setPresetPreview({ choice, key: crypto.randomUUID() });
+              }}
+              onReset={(choice) => applyPreset(choice)}
+            />
+          )}
         </EditorLayout>
       </main>
       {cardDrag?.visual &&
