@@ -12,7 +12,12 @@ import {
 } from "./model";
 import { captionMaxLength } from "./config";
 
-export function dimensions(item: Board, size: number, captionRows = 1) {
+export function dimensions(
+  item: Board,
+  size: number,
+  captionRows = 1,
+  headingRows = 1,
+) {
   const spacing = gridSpacing(item, size);
   const gap = Math.round(spacing.gap);
   const padding = Math.round(spacing.padding);
@@ -31,7 +36,7 @@ export function dimensions(item: Board, size: number, captionRows = 1) {
   const titleHeight = geometry.captionHeight;
   const headingHeight =
     item.headingVisible && item.heading?.trim()
-      ? Math.round(headingGeometry(item, size).height) + headingGap
+      ? Math.round(headingGeometry(item, size, headingRows).height) + headingGap
       : 0;
   return {
     gap,
@@ -99,30 +104,61 @@ export function layoutCaption(
     (width * sizePercent) / 100,
     Math.max(0, maximumHeight / 1.05),
   );
-  context.letterSpacing = "0px";
-  context.font = `${fontWeight} ${fontSize}px "${font}"`;
-  let lines = wrapTitle(
-    context,
-    title,
-    width - captionPadding(width).horizontal * 2,
-    true,
-  );
   const maximumLines =
     fontSize > 0
       ? Math.max(1, Math.min(3, Math.floor(maximumHeight / (fontSize * 1.05))))
       : 3;
+  return layoutText(
+    context,
+    title,
+    font,
+    fontSize,
+    width - captionPadding(width).horizontal * 2,
+    fontWeight,
+    maximumLines,
+  );
+}
+function layoutText(
+  context: CanvasRenderingContext2D,
+  title: string,
+  font: string,
+  fontSize: number,
+  width: number,
+  fontWeight: number,
+  maximumLines = 3,
+  letterSpacing = "0px",
+) {
+  context.letterSpacing = letterSpacing;
+  context.font = `${fontWeight} ${fontSize}px "${font}"`;
+  let lines = wrapTitle(context, title, width, true);
   if (lines.length > maximumLines) {
     lines = lines.slice(0, maximumLines);
     const characters = Array.from(lines[maximumLines - 1].trimEnd());
-    const availableWidth = width - captionPadding(width).horizontal * 2;
     while (
       characters.length &&
-      context.measureText(`${characters.join("")}\u2026`).width > availableWidth
+      context.measureText(`${characters.join("")}\u2026`).width > width
     )
       characters.pop();
     lines[maximumLines - 1] = `${characters.join("").trimEnd()}\u2026`;
   }
   return { fontSize, lines };
+}
+export function layoutHeading(
+  context: CanvasRenderingContext2D,
+  item: Board,
+  size: number,
+  width = item.columns * size + (item.columns - 1) * gridSpacing(item, size).gap,
+) {
+  return layoutText(
+    context,
+    (item.heading.trim() ? item.heading : "Add heading").toUpperCase(),
+    item.headingFont,
+    (size * (item.headingFontSize ?? 21)) / 100,
+    width - headingGeometry(item, size).padding * 2,
+    resolveFontWeight(item.headingFont, item.headingFontWeight),
+    3,
+    "0.5px",
+  );
 }
 export function sharedCaptionRows(
   item: Board,
@@ -153,29 +189,6 @@ export function sharedCaptionRows(
     ),
   );
 }
-export function fitTitle(
-  context: CanvasRenderingContext2D,
-  title: string,
-  font: string,
-  maximumSize: number,
-  width: number,
-  height: number,
-  fontWeight = 400,
-) {
-  let fontSize = Math.max(1, Math.round(maximumSize));
-  let lines;
-  do {
-    context.font = `${fontWeight} ${fontSize}px "${font}"`;
-    lines = wrapTitle(context, title, width);
-    if (
-      lines.length * fontSize * 1.05 <= height &&
-      lines.every((line) => context.measureText(line).width <= width)
-    )
-      break;
-    fontSize--;
-  } while (fontSize > 1);
-  return { fontSize, lines };
-}
 function drawTitle(
   context: CanvasRenderingContext2D,
   title: string,
@@ -187,7 +200,7 @@ function drawTitle(
   height: number,
   color: string,
   fontWeight = 400,
-  padding = { horizontal: width * 0.04, vertical: height * 0.09 },
+  padding = { horizontal: 0, vertical: 0 },
   caption = false,
   captionSizePercent = 12,
 ) {
@@ -202,14 +215,15 @@ function drawTitle(
         fontWeight,
         height - padding.vertical * 2,
       )
-    : fitTitle(
+    : layoutText(
         context,
         title,
         font,
         maximumSize,
         width - padding.horizontal * 2,
-        height - padding.vertical * 2,
         fontWeight,
+        3,
+        "0.5px",
       );
   context.fillStyle = color;
   context.textAlign = "center";
@@ -241,8 +255,12 @@ export async function createExport(
       throw new Error(`${font} could not load. Please reload and try again.`);
   }
   const captionRows = sharedCaptionRows(item, assets);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Your browser could not create an image.");
+  const headingRows = layoutHeading(context, item, size).lines.length;
   const { gap, padding, headingGap, headingHeight, width, height, rowHeights } =
-    dimensions(item, size, captionRows);
+    dimensions(item, size, captionRows, headingRows);
   if (
     !Number.isSafeInteger(width) ||
     !Number.isSafeInteger(height) ||
@@ -254,11 +272,8 @@ export async function createExport(
     throw new Error(
       `Export exceeds the ${maximumPixels / 1_000_000} MP limit. Choose a smaller resolution.`,
     );
-  const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Your browser could not create an image.");
   context.fillStyle = item.background;
   context.fillRect(0, 0, width, height);
   const publisher = publishers[item.publisher];

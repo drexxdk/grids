@@ -164,10 +164,15 @@ export interface GridLayout {
   rows: number;
   columns: number;
 }
-export function headingGeometry(style: GridStyle, width: number) {
+export function headingGeometry(style: GridStyle, width: number, rows = 1) {
   const padding = ((style.headingPadding ?? 30) * width) / 600;
   const contentHeight =
-    width * Math.max(0.28, (style.headingFontSize ?? 21) * 0.014);
+    width *
+    Math.max(
+      0.28,
+      (style.headingFontSize ?? 21) * 0.014,
+      ((style.headingFontSize ?? 21) / 100) * 1.05 * rows,
+    );
   return { padding, contentHeight, height: contentHeight + padding * 2 };
 }
 export interface GridStyle {

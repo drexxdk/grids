@@ -1390,6 +1390,11 @@ test("independent typography settings validate, roundtrip and reset without chan
     contentHeight: 63,
     height: 90,
   });
+  const multilineHeading = model.headingGeometry(restored.grid, 150, 3);
+  expect(multilineHeading.contentHeight).toBeCloseTo(150 * 0.3 * 1.05 * 3);
+  expect(multilineHeading.height).toBeCloseTo(
+    multilineHeading.contentHeight + 27,
+  );
   expect(model.cellGeometry(restored.grid, 150).captionHeight).toBe(55);
   expect(model.cellGeometry(restored.grid, 150, 0)).toMatchObject({
     captionHeight: 0,

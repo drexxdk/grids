@@ -42,6 +42,7 @@ import {
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
+import { centerTextArea, TextScrollbar } from "./components/TextScrollbar";
 import {
   GridCell,
   type CardDragSource,
@@ -92,7 +93,7 @@ import {
 import {
   createExport,
   dimensions,
-  fitTitle,
+  layoutHeading,
   loadImage,
   sharedCaptionRows,
 } from "./export";
@@ -103,47 +104,31 @@ const pickerGridClassName =
 
 function BoardHeading({
   board,
+  rows,
   editing,
   onEdit,
   onChange,
 }: {
   board: Board;
+  rows: number;
   editing: boolean;
   onEdit: (editing: boolean) => void;
   onChange: (heading: string) => void;
 }) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const fieldClass =
-    "board-heading-text border-0! rounded-none! bg-transparent p-(--heading-padding)! text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-current placeholder:opacity-70";
+    "board-heading-text border-0! rounded-[inherit]! bg-transparent text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-current placeholder:opacity-70";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
   useLayoutEffect(() => {
-    const heading = headingRef.current;
-    if (!heading || !heading.parentElement) return;
-    let cancelled = false;
-    const fit = () => {
-      if (cancelled) return;
-      const context = document.createElement("canvas").getContext("2d");
-      if (!context || !heading.firstElementChild) return;
-      context.letterSpacing = "0.5px";
-      const fontRatio = (board.headingFontSize ?? 21) / 100;
-      const geometry = headingGeometry(board, 1);
-      const cellWidth = heading.clientHeight / geometry.height;
-      heading.style.fontSize = `${fitTitle(context, board.heading || "Add heading", board.headingFont, cellWidth * fontRatio, (heading.firstElementChild.clientWidth - cellWidth * geometry.padding * 2) * 0.92, cellWidth * geometry.contentHeight * 0.82, resolveFontWeight(board.headingFont, board.headingFontWeight)).fontSize}px`;
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(heading.parentElement);
-    fit();
-    document.fonts
-      .load(
-        `${resolveFontWeight(board.headingFont, board.headingFontWeight)} 48px "${board.headingFont}"`,
-      )
-      .then(fit);
-    document.fonts.ready.then(fit);
+    const field = input.current;
+    if (!field || !editing) return;
+    const center = () => centerTextArea(field);
+    const observer = new ResizeObserver(center);
+    observer.observe(field);
+    center();
     return () => {
-      cancelled = true;
       observer.disconnect();
     };
   }, [
@@ -152,13 +137,12 @@ function BoardHeading({
     board.headingFontSize,
     board.headingPadding,
     board.headingFontWeight,
-    board.columns,
+    rows,
     editing,
   ]);
   return (
     <h2
-      ref={headingRef}
-      className="board-export-heading group relative overflow-hidden p-0! after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-solid after:border-transparent after:transition-colors hover:after:border-(--heading-feedback-color) focus-within:after:border-(--heading-feedback-color)"
+      className="board-export-heading group relative p-0! after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-solid after:border-transparent after:transition-colors hover:after:border-(--heading-feedback-color) focus-within:after:border-(--heading-feedback-color)"
       style={
         {
           borderRadius: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${(board.cornerRadius ?? 12.5) / 100})`,
@@ -172,7 +156,8 @@ function BoardHeading({
           )
             ? "#202325"
             : "var(--accent)",
-          height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).height})`,
+          fontSize: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${(board.headingFontSize ?? 21) / 100})`,
+          height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1, rows).height})`,
           "--heading-padding": `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).padding})`,
           ...(!board.heading.trim()
             ? {
@@ -187,17 +172,22 @@ function BoardHeading({
       }
     >
       {editing ? (
-        <input
+        <textarea
           ref={input}
-          className={fieldClass}
+          className={`${fieldClass} min-h-0! field-sizing-fixed! resize-none! overflow-y-auto! overscroll-contain scrollbar-none [&::-webkit-scrollbar]:hidden`}
           aria-label={t("editor.headingLabel")}
+          rows={1}
           maxLength={captionMaxLength}
           value={board.heading}
           placeholder={t("editor.headingPlaceholder")}
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => onEdit(false)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === "Escape") {
+            if (
+              !event.nativeEvent.isComposing &&
+              ((event.key === "Enter" && !event.shiftKey) ||
+                event.key === "Escape")
+            ) {
               event.preventDefault();
               onEdit(false);
             }
@@ -209,12 +199,12 @@ function BoardHeading({
             border: 0,
             textAlign: "center",
             width: "100%",
-            padding: 0,
+            padding: "var(--heading-padding)",
           }}
         />
       ) : (
         <button
-          className={fieldClass}
+          className={`${fieldClass} overflow-hidden p-(--heading-padding)!`}
           aria-label={t("editor.editHeading", {
             value1: board.heading.trim()
               ? board.heading
@@ -222,18 +212,24 @@ function BoardHeading({
           })}
           onClick={() => onEdit(true)}
         >
-          {board.heading.trim() ? (
-            board.heading
-          ) : (
-            <span
-              data-heading-placeholder
-              className="normal-case text-inherit opacity-70"
-            >
-              {t("editor.headingPlaceholder")}
-            </span>
-          )}
+          <span
+            data-heading-preview
+            data-heading-placeholder={!board.heading.trim() || undefined}
+            className={`mb-[-0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em] ${board.heading.trim() ? "" : "normal-case text-inherit opacity-70"}`}
+          >
+            {board.heading.trim()
+              ? board.heading
+              : t("editor.headingPlaceholder")}
+          </span>
         </button>
       )}
+      <TextScrollbar
+        field={input}
+        active={editing}
+        value={board.heading}
+        kind="heading"
+        style={{ top: 0, height: "100%" }}
+      />
     </h2>
   );
 }
@@ -420,12 +416,15 @@ export default function App() {
     gap: number;
     padding: number;
     headingGap: number;
+    headingRows: number;
   } | null>(null);
   useLayoutEffect(() => {
     const frame = previewFrame;
     const container = frame?.parentElement;
     if (!frame || !container) return;
+    let disposed = false;
     const fit = () => {
+      if (disposed) return;
       const padding = getComputedStyle(container);
       const workspaceWidth =
         container.clientWidth - parseFloat(padding.paddingLeft) * 2;
@@ -462,12 +461,8 @@ export default function App() {
       const headingGapRatio = board.headingVisible ? gapRatio : 0;
       const widthRatio =
         board.columns + (board.columns - 1) * gapRatio + paddingRatio * 2;
-      const headingRatio = board.headingVisible
-        ? headingGeometry(board, 1).height
-        : 0;
-      const headingAreaRatio = board.headingVisible
-        ? headingRatio + headingGapRatio + paddingRatio
-        : 0;
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return;
       const assetIds = new Set(displayAssets.map((asset) => asset.id));
       const rowHeights = Array.from({ length: board.rows }, (_, row) => {
         const hasImage = board.cells
@@ -479,21 +474,48 @@ export default function App() {
         rowHeights.reduce((total, height) => total + height, 0) / 600 +
         (board.rows - 1) * gapRatio +
         paddingRatio * 2;
-      const heightRatio = boardHeightRatio + headingRatio + headingGapRatio;
       const viewport = frame.querySelector<HTMLElement>(
         "[data-canvas-viewport]",
       );
       const scrollbarWidth = viewport
         ? viewport.offsetWidth - viewport.clientWidth
         : 0;
-      const cellWidth = Math.max(
-        previewCardMinWidth,
-        Math.min(
-          previewCardMaxWidth,
-          (availableWidth - scrollbarWidth) / widthRatio,
-          availableHeight / heightRatio,
-        ),
-      );
+      const fitCellWidth = (headingRows: number) =>
+        Math.max(
+          previewCardMinWidth,
+          Math.min(
+            previewCardMaxWidth,
+            (availableWidth - scrollbarWidth) / widthRatio,
+            availableHeight /
+              (boardHeightRatio +
+                (board.headingVisible
+                  ? headingGeometry(board, 1, headingRows).height +
+                    headingGapRatio
+                  : 0)),
+          ),
+        );
+      let headingRows = 1;
+      if (board.headingVisible) {
+        for (; headingRows < 3; headingRows++) {
+          const width = fitCellWidth(headingRows);
+          const headingWidth =
+            Math.min(availableWidth, width * widthRatio + scrollbarWidth) -
+            width * paddingRatio -
+            Math.max(12, width * paddingRatio);
+          if (
+            layoutHeading(context, board, width, headingWidth).lines.length <=
+            headingRows
+          )
+            break;
+        }
+      }
+      const headingRatio = board.headingVisible
+        ? headingGeometry(board, 1, headingRows).height
+        : 0;
+      const headingAreaRatio = board.headingVisible
+        ? headingRatio + headingGapRatio + paddingRatio
+        : 0;
+      const cellWidth = fitCellWidth(headingRows);
       const boardWidth = cellWidth * widthRatio;
       const viewportWidth = Math.max(
         1,
@@ -522,6 +544,7 @@ export default function App() {
         gap: cellWidth * gapRatio,
         padding: cellWidth * paddingRatio,
         headingGap: cellWidth * headingGapRatio,
+        headingRows,
       };
       setPreviewSize((previous) =>
         previous &&
@@ -535,7 +558,8 @@ export default function App() {
         Math.abs(previous.cellWidth - next.cellWidth) < 0.01 &&
         Math.abs(previous.gap - next.gap) < 0.01 &&
         Math.abs(previous.padding - next.padding) < 0.01 &&
-        Math.abs(previous.headingGap - next.headingGap) < 0.01
+        Math.abs(previous.headingGap - next.headingGap) < 0.01 &&
+        previous.headingRows === next.headingRows
           ? previous
           : next,
       );
@@ -547,7 +571,13 @@ export default function App() {
       observer.observe(frame.previousElementSibling);
     window.addEventListener("resize", fitBeforePaint);
     fit();
+    document.fonts
+      .load(
+        `${resolveFontWeight(board.headingFont, board.headingFontWeight)} 48px "${board.headingFont}"`,
+      )
+      .then(fit);
     return () => {
+      disposed = true;
       observer.disconnect();
       window.removeEventListener("resize", fitBeforePaint);
     };
@@ -562,6 +592,9 @@ export default function App() {
     board.titlesVisible,
     board.captionAlignment,
     board.headingVisible,
+    board.heading,
+    board.headingFont,
+    board.headingFontWeight,
     board.headingFontSize,
     board.headingPadding,
     board.cells,
@@ -1265,6 +1298,7 @@ export default function App() {
                       board.headingVisible && (
                         <BoardHeading
                           board={board}
+                          rows={previewSize?.headingRows ?? 1}
                           editing={headingEditing}
                           onEdit={setHeadingEditing}
                           onChange={(heading) => patchBoard({ heading })}

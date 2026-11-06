@@ -36,6 +36,7 @@ import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 import { CardFrame } from "./CardFrame";
+import { centerTextArea, TextScrollbar } from "./TextScrollbar";
 import { isLightCanvasColor } from "../canvasTheme";
 
 const cardToolButtonStyles = cva(
@@ -169,50 +170,7 @@ export function GridCell({
   const [loadedImage, setLoadedImage] = useState<string | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const caption = useRef<HTMLTextAreaElement>(null);
-  const [captionScroll, setCaptionScroll] = useState<{
-    top: number;
-    height: number;
-    contentHeight: number;
-  } | null>(null);
-  const scrollbarOffset = useRef(0);
-  const captionFocused = captionScroll !== null;
-  useLayoutEffect(() => {
-    const field = caption.current;
-    if (!field || !captionFocused) return;
-    const update = () =>
-      setCaptionScroll({
-        top: field.scrollTop,
-        height: field.clientHeight,
-        contentHeight: field.scrollHeight,
-      });
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(field);
-    field.addEventListener("scroll", update);
-    return () => {
-      observer.disconnect();
-      field.removeEventListener("scroll", update);
-    };
-  }, [captionFocused, cell.title]);
-  const scrollCaption = (pointerY: number, track: HTMLDivElement) => {
-    const field = caption.current;
-    if (!field) return;
-    const bounds = track.getBoundingClientRect();
-    const thumbHeight = Math.min(
-      bounds.height,
-      Math.max(16, (bounds.height * field.clientHeight) / field.scrollHeight),
-    );
-    field.scrollTop =
-      Math.max(
-        0,
-        Math.min(
-          1,
-          (pointerY - bounds.top - scrollbarOffset.current) /
-            Math.max(1, bounds.height - thumbHeight),
-        ),
-      ) *
-      (field.scrollHeight - field.clientHeight);
-  };
+  const [captionFocused, setCaptionFocused] = useState(false);
   const [overlayCaptionRows, setOverlayCaptionRows] = useState(1);
   const dragPreview = useRef<HTMLCanvasElement | null>(null);
   const touchDragged = useRef(false);
@@ -347,15 +305,6 @@ export function GridCell({
   )
     .toString(16)
     .padStart(2, "0")}`;
-  const centerCaptionText = (field: HTMLTextAreaElement) => {
-    const padding = parseFloat(getComputedStyle(field).paddingBottom) || 0;
-    const height = field.style.height;
-    field.style.paddingTop = `${padding}px`;
-    field.style.height = "0px";
-    const content = field.scrollHeight - padding * 2;
-    field.style.height = height;
-    field.style.paddingTop = `${Math.max(padding, (field.clientHeight - content) / 2)}px`;
-  };
   const captionStyle = {
     top:
       overlay && alignment === "bottom"
@@ -407,7 +356,7 @@ export function GridCell({
       );
       field.style.fontSize = `${fontSize}px`;
       field.style.padding = `${padding.vertical}px ${padding.horizontal}px`;
-      if (document.activeElement === field) centerCaptionText(field);
+      if (document.activeElement === field) centerTextArea(field);
       field.parentElement?.style.setProperty(
         "--library-caption-font-size",
         `${fontSize}px`,
@@ -958,18 +907,14 @@ export function GridCell({
                 }
               }}
               onFocus={(event) => {
-                centerCaptionText(event.currentTarget);
-                setCaptionScroll({
-                  top: event.currentTarget.scrollTop,
-                  height: event.currentTarget.clientHeight,
-                  contentHeight: event.currentTarget.scrollHeight,
-                });
+                centerTextArea(event.currentTarget);
+                setCaptionFocused(true);
                 if (open || hoverTools) {
                   setHoverTools(false);
                   close(event.currentTarget);
                 }
               }}
-              onBlur={() => setCaptionScroll(null)}
+              onBlur={() => setCaptionFocused(false)}
               onChange={(event) => onPatch({ title: event.target.value })}
             />
             <div
@@ -1024,45 +969,15 @@ export function GridCell({
               }
             />
           </div>
-          {captionScroll &&
-            captionScroll.contentHeight > captionScroll.height && (
-              <div
-                aria-hidden="true"
-                data-caption-scrollbar
-                className="absolute -right-3 z-50 w-2 touch-none rounded-sm bg-(--line) cursor-default!"
-                style={{
-                  top: `${(geometry.captionTop / geometry.height) * 100}%`,
-                  height: `${(geometry.captionHeight / geometry.height) * 100}%`,
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  const thumb =
-                    event.currentTarget.firstElementChild!.getBoundingClientRect();
-                  scrollbarOffset.current =
-                    event.target === event.currentTarget
-                      ? thumb.height / 2
-                      : event.clientY - thumb.top;
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  scrollCaption(event.clientY, event.currentTarget);
-                }}
-                onPointerMove={(event) => {
-                  if (event.currentTarget.hasPointerCapture(event.pointerId))
-                    scrollCaption(event.clientY, event.currentTarget);
-                }}
-                onPointerUp={(event) =>
-                  event.currentTarget.releasePointerCapture(event.pointerId)
-                }
-              >
-                <div
-                  className="absolute inset-x-0 rounded-sm bg-(--accent)"
-                  style={{
-                    height: `min(100%, max(16px, ${(captionScroll.height / captionScroll.contentHeight) * 100}%))`,
-                    top: `calc((100% - min(100%, max(16px, ${(captionScroll.height / captionScroll.contentHeight) * 100}%))) * ${captionScroll.top / (captionScroll.contentHeight - captionScroll.height)})`,
-                  }}
-                />
-              </div>
-            )}
+          <TextScrollbar
+            field={caption}
+            active={captionFocused}
+            value={cell.title}
+            style={{
+              top: `${(geometry.captionTop / geometry.height) * 100}%`,
+              height: `${(geometry.captionHeight / geometry.height) * 100}%`,
+            }}
+          />
           <CardFrame dashed={dropPlaceholder} />
           {importing && (
             <span

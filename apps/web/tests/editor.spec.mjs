@@ -2638,6 +2638,120 @@ test("grid headings support mouse and keyboard editing across viewport sizes", a
   ).toBeVisible();
 });
 
+for (const [platform, headingTest] of [
+  ["desktop", test],
+  ["touch", touchTest],
+]) {
+  headingTest(`${platform} grid headings keep their font size, clamp to three lines and scroll outside while editing`, async ({
+    page,
+  }) => {
+    await page.goto("./");
+    const title =
+      "Line one\nLine two\nLine three\nLine four\nLine five\nLine six";
+    await editHeading(page, title);
+    const preview = page.locator("[data-heading-preview]");
+    await expect(preview).toHaveText(title);
+    await expect
+      .poll(() =>
+        preview.evaluate((text) => {
+          const heading = text.closest("h2");
+          const style = getComputedStyle(heading);
+          const fontSize = parseFloat(style.fontSize);
+          return {
+            chosenSize:
+              Math.abs(
+                fontSize -
+                  parseFloat(style.getPropertyValue("--preview-cell-width")) *
+                    0.21,
+              ) < 0.1,
+            clamp: getComputedStyle(text).webkitLineClamp,
+            bounded:
+              text.clientHeight <= fontSize * (3 * 1.05 + 0.15) + 1,
+            overflow: text.scrollHeight > text.clientHeight,
+          };
+        }),
+      )
+      .toEqual({ chosenSize: true, clamp: "3", bounded: true, overflow: true });
+
+    const trigger = page.getByRole("button", { name: /^Edit grid heading: / });
+    const bounds = await trigger.boundingBox();
+    await trigger.click();
+    const field = page.getByRole("textbox", {
+      name: "Grid heading",
+      exact: true,
+    });
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(title);
+    expect(await field.boundingBox()).toEqual(bounds);
+    const scrollbar = page.locator("[data-heading-scrollbar]");
+    await expect(scrollbar).toBeVisible();
+    const track = await scrollbar.boundingBox();
+    expect(track.x).toBeGreaterThanOrEqual(bounds.x + bounds.width);
+    await field.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect
+      .poll(() => field.evaluate((element) => element.scrollTop))
+      .toBe(0);
+    expect(track.x + track.width).toBeLessThanOrEqual(page.viewportSize().width);
+    await page.mouse.move(track.x + track.width / 2, track.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(
+      track.x + track.width / 2,
+      track.y + track.height - 2,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect(field).toBeFocused();
+    await expect
+      .poll(() => field.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await field.press("Escape");
+    await expect(scrollbar).toHaveCount(0);
+    await expect(preview).toBeVisible();
+    await reloadWorkspace(page);
+    await expect(preview).toHaveText(title);
+
+    await selectExportField(page, "resolution", "150");
+    await page.evaluate(() => {
+      const original = CanvasRenderingContext2D.prototype.fillText;
+      window.headingDrawing = [];
+      window.restoreHeadingDrawing = () => {
+        CanvasRenderingContext2D.prototype.fillText = original;
+      };
+      CanvasRenderingContext2D.prototype.fillText = function (
+        text,
+        ...parameters
+      ) {
+        window.headingDrawing.push({ text, font: this.font });
+        return original.call(this, text, ...parameters);
+      };
+    });
+    const download = await downloadBoard(page);
+    expect((await readFile(await download.path())).length).toBeGreaterThan(100);
+    const drawing = await page.evaluate(() => {
+      window.restoreHeadingDrawing();
+      return window.headingDrawing;
+    });
+    expect(drawing.map((entry) => entry.text)).toEqual([
+      "LINE ONE",
+      "LINE TWO",
+      "LINE THREE\u2026",
+    ]);
+    expect(drawing.every((entry) => entry.font.includes("31.5px"))).toBe(true);
+
+    await trigger.click();
+    await field.fill("First");
+    await field.press("End");
+    await field.press("Shift+Enter");
+    await field.pressSequentially("Second");
+    await expect(field).toHaveValue("First\nSecond");
+    await field.press("Enter");
+    await expect(preview).toHaveText("First\nSecond");
+    await expect(scrollbar).toHaveCount(0);
+  });
+}
+
 test("canvas has no appearance toolbar and the sidebar header stays fixed", async ({
   page,
 }, testInfo) => {

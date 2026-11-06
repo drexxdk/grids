@@ -162,7 +162,7 @@ export function GridResizer({
           className="pointer-events-none absolute top-(--frame-shift-y,0px) bottom-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
         />
         {heading && (
-          <div className="relative z-10 translate-y-(--frame-shift-y,0px) overflow-hidden bg-(--board-bg) px-(--canvas-inset,0px) pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">
+          <div className="relative z-10 translate-y-(--frame-shift-y,0px) bg-(--board-bg) px-(--canvas-inset,0px) pr-[max(12px,var(--canvas-inset,0px))] pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">
             {heading}
           </div>
         )}
