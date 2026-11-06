@@ -4,7 +4,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   PanelsTopLeft,
-  Settings2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, useReducedMotion } from "motion/react";
@@ -33,19 +32,12 @@ export function EditorLayout({
   actions,
   canvasControls,
   status,
-  previewId,
-  previewing = false,
-  previewBar,
 }: {
   actions: ReactNode;
   canvasControls: ReactNode;
   status?: ReactNode;
-  previewId?: string;
-  previewing?: boolean;
-  previewBar?: ReactNode;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
-    (actions: ReactNode) => ReactNode,
     (actions: ReactNode) => ReactNode,
     () => ReactNode,
   ];
@@ -59,13 +51,11 @@ export function EditorLayout({
   );
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
-  const panelOrder = [0, 2, 1];
+  const panelOrder = [0, 2] as const;
   const panelsId = useId();
   const panelScroll = useRef(
     new Map<number, Map<HTMLElement, [number, number]>>(),
   );
-  const presetsVisited = useRef(false);
-  if (selectedPanel === 2) presetsVisited.current = true;
   const rememberPanelScroll = () => {
     const aside = document.getElementById(panelsId);
     const panel = document.getElementById(
@@ -217,7 +207,7 @@ export function EditorLayout({
       document.fonts.removeEventListener("loadingdone", measure);
     };
   }, [compact, sidebarOpen, headerLayout, compactExport, controlsInHeader]);
-  const [library, workspace, settings, presets] = children;
+  const [library, workspace, themes] = children;
   const brand = (
     <a className="brand shrink-0" href="./">
       <span className="brand-mark">
@@ -228,7 +218,6 @@ export function EditorLayout({
   );
   const canvasActions = (
     <div
-      inert={previewing}
       className={`relative flex gap-2 ${headerLayout === "scroll" ? "w-full min-w-0 shrink-0 flex-row items-center pr-3" : "w-full min-w-0 flex-col"}`}
     >
       <div
@@ -242,7 +231,6 @@ export function EditorLayout({
       </div>
       <div
         ref={resizeControls}
-        inert={previewing}
         data-canvas-controls
         className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-(--panel) py-3 pr-3" : `overflow-hidden pr-3 ${compact ? "" : "scrollbar-gutter-stable"} flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
       >
@@ -289,11 +277,6 @@ export function EditorLayout({
       className={`group/header relative col-span-full flex min-h-19 shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-(--line) bg-(--bg) [&_button:focus-visible]:-outline-offset-3! ${headerLayout === "scroll" ? "w-[calc(100%+var(--native-scrollbar-width,0px)-var(--fixed-scrollbar-inset,0px))]" : "w-[calc(100%+var(--native-scrollbar-width,0px))]"}`}
     >
       {canvasActions}
-      {previewBar && (
-        <div className="@container absolute inset-0 z-40 flex items-center bg-(--bg) pr-[calc(12px+var(--fixed-scrollbar-inset,0px))] pl-3">
-          {previewBar}
-        </div>
-      )}
     </header>
   );
   return (
@@ -330,7 +313,7 @@ export function EditorLayout({
                 id={panelsId}
                 data-editor-sidebar
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-39.25 max-h-[45dvh] flex-row overflow-y-hidden border-t [--shelf-content-height:min(156px,calc(45dvh-1px))]" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? `flex flex-row overflow-y-hidden border-t ${selectedPanel === 2 ? "h-[min(400px,50dvh)]" : "h-39.25 max-h-[45dvh]"} [--shelf-content-height:min(156px,calc(45dvh-1px))]` : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
               >
                 <div
                   data-sidebar-sticky
@@ -362,7 +345,6 @@ export function EditorLayout({
                         tabs={[
                           { label: t("editor.images"), icon: Images },
                           { label: t("presets.title"), icon: LayoutGrid },
-                          { label: t("editor.settings"), icon: Settings2 },
                         ]}
                       />
                     </div>
@@ -370,7 +352,7 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 min-[901px]:pt-4 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain ${selectedPanel === 1 ? "max-[901px]:scrollbar-gutter-stable" : ""} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
+                  className="relative isolate z-0 min-h-0 min-w-0 flex-1 min-[901px]:pt-4 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
                 >
                   <div
                     role="tabpanel"
@@ -381,16 +363,7 @@ export function EditorLayout({
                   >
                     {library(null, true)}
                   </div>
-                  <div
-                    role="tabpanel"
-                    id={`${panelsId}-panel-2`}
-                    aria-labelledby={`${panelsId}-tab-2`}
-                    hidden={selectedPanel !== 1}
-                    className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
-                  >
-                    {settings(null)}
-                  </div>
-                  {presetsVisited.current && (
+                  {
                     <div
                       role="tabpanel"
                       id={`${panelsId}-panel-1`}
@@ -398,9 +371,9 @@ export function EditorLayout({
                       hidden={selectedPanel !== 2}
                       className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                     >
-                      {presets()}
+                      {themes()}
                     </div>
-                  )}
+                  }
                 </div>
               </aside>
             </MotionDiv>

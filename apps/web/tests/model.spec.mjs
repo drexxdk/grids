@@ -62,7 +62,9 @@ test("refined dark defaults keep captions readable without restyling saved grids
   const luminance = (color) => {
     const channels = color.match(/[0-9a-f]{2}/gi).map((part) => {
       const value = parseInt(part, 16) / 255;
-      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      return value <= 0.04045
+        ? value / 12.92
+        : ((value + 0.055) / 1.055) ** 2.4;
     });
     return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
   };
@@ -70,19 +72,35 @@ test("refined dark defaults keep captions readable without restyling saved grids
     [workspace.grid.cellTextColor, workspace.grid.cellBackgroundColor],
     [workspace.grid.headingTextColor, workspace.grid.headingBackgroundColor],
   ]) {
-    expect((luminance(text) + 0.05) / (luminance(background) + 0.05)).toBeGreaterThanOrEqual(7);
+    expect(
+      (luminance(text) + 0.05) / (luminance(background) + 0.05),
+    ).toBeGreaterThanOrEqual(7);
   }
   const opacity = workspace.grid.captionOverlayOpacity / 100;
-  const overlayOnWhite = `#${workspace.grid.captionOverlayColor.slice(1).match(/../g).map((part) =>
-    Math.round(parseInt(part, 16) * opacity + 255 * (1 - opacity)).toString(16).padStart(2, "0"),
-  ).join("")}`;
-  expect((luminance(workspace.grid.cellTextColor) + 0.05) / (luminance(overlayOnWhite) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  const overlayOnWhite = `#${workspace.grid.captionOverlayColor
+    .slice(1)
+    .match(/../g)
+    .map((part) =>
+      Math.round(parseInt(part, 16) * opacity + 255 * (1 - opacity))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+  expect(
+    (luminance(workspace.grid.cellTextColor) + 0.05) /
+      (luminance(overlayOnWhite) + 0.05),
+  ).toBeGreaterThanOrEqual(4.5);
   const legacy = JSON.parse(JSON.stringify(localWorkspace()));
   expect(model.workspaceSchema.parse(legacy)).toEqual(legacy);
   const reset = model.resetWorkspace(legacy);
-  expect(model.getEditorSettings(reset).style).toEqual(model.getEditorSettings(workspace).style);
+  expect(model.getEditorSettings(reset).style).toEqual(
+    model.getEditorSettings(workspace).style,
+  );
   expect(reset.assets).toBe(legacy.assets);
-  expect(presets.starterPresets.find((preset) => preset.id === "starter:botanical").settings.style).toMatchObject({
+  expect(
+    presets.starterPresets.find((preset) => preset.id === "starter:botanical")
+      .settings.style,
+  ).toMatchObject({
     imageAspect: "portrait",
     captionPlacement: "overlay",
     cornerRadius: 12.5,
@@ -94,56 +112,129 @@ test("refined dark defaults keep captions readable without restyling saved grids
 
 test("preset starters adapt to current layouts and sample previews stay separate from content", () => {
   expect(presets.starterPresets).toHaveLength(24);
-  expect(new Set(presets.starterPresets.map((preset) => preset.id)).size).toBe(24);
+  expect(new Set(presets.starterPresets.map((preset) => preset.id)).size).toBe(
+    24,
+  );
   const draft = model.makeWorkspace();
-  draft.assets = [{ id: crypto.randomUUID(), title: "Keep me", category: "local", src: "blob:local" }];
-  draft.grid.cells[0] = { ...draft.grid.cells[0], assetId: draft.assets[0].id, title: "My caption" };
-  draft.grid.cells[8] = { ...draft.grid.cells[8], assetId: draft.assets[0].id, title: "Keep in overflow",
-    crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } };
+  draft.assets = [
+    {
+      id: crypto.randomUUID(),
+      title: "Keep me",
+      category: "local",
+      src: "blob:local",
+    },
+  ];
+  draft.grid.cells[0] = {
+    ...draft.grid.cells[0],
+    assetId: draft.assets[0].id,
+    title: "My caption",
+  };
+  draft.grid.cells[8] = {
+    ...draft.grid.cells[8],
+    assetId: draft.assets[0].id,
+    title: "Keep in overflow",
+    crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 },
+  };
   const original = structuredClone(draft);
   for (const starter of presets.starterPresets) {
-    expect(model.editorSettingsSchema.safeParse(starter.settings).success).toBe(true);
+    expect(model.editorSettingsSchema.safeParse(starter.settings).success).toBe(
+      true,
+    );
     const choice = { ...starter, name: starter.nameKey };
-    for (const [rows, columns] of [[1, 1], [2, 5], [5, 2], [6, 4]]) {
-      const current = model.applyEditorSettings(draft, { ...model.getEditorSettings(draft), layout: { rows, columns } });
-      const settings = presets.presetSettingsForLayout(starter.settings, current.grid);
+    for (const [rows, columns] of [
+      [1, 1],
+      [2, 5],
+      [5, 2],
+      [6, 4],
+    ]) {
+      const current = model.applyEditorSettings(draft, {
+        ...model.getEditorSettings(draft),
+        layout: { rows, columns },
+      });
+      const settings = presets.presetSettingsForLayout(
+        starter.settings,
+        current.grid,
+      );
       expect(settings.layout).toEqual({ rows, columns });
       expect(settings.style).toEqual(starter.settings.style);
       const preview = presets.presetPreviewWorkspace(choice, current.grid);
       expect(preview.grid).toMatchObject({ rows, columns });
       expect(preview.grid.cells).toHaveLength(rows * columns);
-      expect(preview.grid.cells.every((cell) => preview.assets.some((asset) => asset.id === cell.assetId))).toBe(true);
-      expect(preview.assets.every((asset) => asset.category === "preset-preview")).toBe(true);
+      expect(
+        preview.grid.cells.every((cell) =>
+          preview.assets.some((asset) => asset.id === cell.assetId),
+        ),
+      ).toBe(true);
+      expect(
+        preview.assets.every((asset) => asset.category === "preset-preview"),
+      ).toBe(true);
       const applied = model.applyEditorSettings(current, settings);
       expect(applied.grid).toMatchObject({ rows, columns });
       expect(applied.assets).toEqual(original.assets);
       expect(applied.grid.cells).toEqual(current.grid.cells);
       expect(applied.grid.overflow).toEqual(current.grid.overflow);
-      const retained = [...applied.grid.cells, ...applied.grid.overflow.map((item) => item.cell)];
+      const retained = [
+        ...applied.grid.cells,
+        ...applied.grid.overflow.map((item) => item.cell),
+      ];
       expect(retained).toContainEqual(original.grid.cells[0]);
       expect(retained).toContainEqual(original.grid.cells[8]);
     }
     expect(draft).toEqual(original);
   }
-  expect(navigation.readNavigation(navigation.parseEditorState({}), new URL("https://example.com/?panel=presets")).selectedPanel).toBe(2);
-  expect(navigation.readNavigation(navigation.parseEditorState({}), new URL("https://example.com/?panel=themes")).selectedPanel).toBe(2);
+  expect(
+    navigation.readNavigation(
+      navigation.parseEditorState({}),
+      new URL("https://example.com/?panel=presets"),
+    ).selectedPanel,
+  ).toBe(2);
+  expect(
+    navigation.readNavigation(
+      navigation.parseEditorState({}),
+      new URL("https://example.com/?panel=themes"),
+    ).selectedPanel,
+  ).toBe(2);
 });
 
 test("preset palettes theme headings, card surfaces and captions with readable colors", () => {
-  const luminance = (color) => [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => {
-    const channel = parseInt(color.slice(1 + index * 2, 3 + index * 2), 16) / 255;
-    return sum + weight * (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
-  }, 0);
-  const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) /
+  const luminance = (color) =>
+    [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => {
+      const channel =
+        parseInt(color.slice(1 + index * 2, 3 + index * 2), 16) / 255;
+      return (
+        sum +
+        weight *
+          (channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4)
+      );
+    }, 0);
+  const contrast = (a, b) =>
+    (Math.max(luminance(a), luminance(b)) + 0.05) /
     (Math.min(luminance(a), luminance(b)) + 0.05);
-  for (const { id, settings: { style } } of presets.starterPresets) {
+  for (const {
+    id,
+    settings: { style },
+  } of presets.starterPresets) {
     expect(style.headingBackgroundColor, id).toBe(style.background);
     expect(style.cellBackgroundColor, id).toMatch(/^#[0-9a-f]{6}$/);
-    expect(contrast(style.headingTextColor, style.headingBackgroundColor), `${id}: heading`).toBeGreaterThanOrEqual(4.5);
-    const captionBackground = style.captionPlacement === "overlay" ? style.captionOverlayColor : style.cellBackgroundColor;
-    expect(contrast(style.cellTextColor, captionBackground), `${id}: captions`).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(style.headingTextColor, style.headingBackgroundColor),
+      `${id}: heading`,
+    ).toBeGreaterThanOrEqual(4.5);
+    const captionBackground =
+      style.captionPlacement === "overlay"
+        ? style.captionOverlayColor
+        : style.cellBackgroundColor;
+    expect(
+      contrast(style.cellTextColor, captionBackground),
+      `${id}: captions`,
+    ).toBeGreaterThanOrEqual(4.5);
     if (luminance(style.background) >= 0.5)
-      expect(luminance(style.cellBackgroundColor), `${id}: light cards`).toBeGreaterThanOrEqual(0.5);
+      expect(
+        luminance(style.cellBackgroundColor),
+        `${id}: light cards`,
+      ).toBeGreaterThanOrEqual(0.5);
   }
 });
 
@@ -161,11 +252,11 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
   const restored = navigation.readNavigation(
     defaults,
     new URL(
-      "https://example.com/grids/?panel=settings&source=commons&q=earth&offset=27&other=keep#anchor",
+      "https://example.com/grids/?panel=themes&source=commons&q=earth&offset=27&other=keep#anchor",
     ),
   );
   expect(restored).toMatchObject({
-    selectedPanel: 1,
+    selectedPanel: 2,
     librarySource: "commons",
     browsing: {
       "library:commons": {
@@ -179,7 +270,9 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
 
   const url = navigation.navigationUrl(
     restored,
-    new URL("https://example.com/grids/?panel=settings&source=commons&q=earth&topic=all&offset=27&other=keep#anchor"),
+    new URL(
+      "https://example.com/grids/?panel=themes&source=commons&q=earth&topic=all&offset=27&other=keep#anchor",
+    ),
   );
   expect([...url.searchParams.keys()]).toEqual(["other"]);
   expect(url.searchParams.get("other")).toBe("keep");
@@ -195,7 +288,7 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
   ).toEqual(restored);
   const entry = {
     gridsNavigation: {
-      selectedPanel: 1,
+      selectedPanel: 2,
       source: "commons",
       browsing: { ...restored.browsing["library:commons"], history: [0, 15] },
     },
@@ -206,9 +299,11 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
     ].history,
   ).toEqual([0, 15]);
   expect(navigation.readNavigation(defaults, url, false, entry)).toMatchObject({
-    selectedPanel: 1,
+    selectedPanel: 2,
     librarySource: "commons",
-    browsing: { "library:commons": { query: "earth", request: { offset: 27 } } },
+    browsing: {
+      "library:commons": { query: "earth", request: { offset: 27 } },
+    },
   });
   expect(
     navigation.readNavigation(defaults, url, false, {
@@ -247,19 +342,40 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
   ).toBeNull();
 });
 
-test("browser preset customizations contain validated settings and ignore grid dimensions when matching", () => {
+test("browser navigation stores no selected theme or per-theme customizations", () => {
   const original = presets.starterPresets[0].settings;
   const customized = model.editorSettingsSchema.parse({
-    ...original, style: { ...original.style, background: "#123456" },
+    ...original,
+    style: { ...original.style, background: "#123456" },
   });
-  const state = navigation.parseEditorState({ presetCustomizations: { "starter:gallery": customized } });
-  expect(state.presetCustomizations).toEqual({ "starter:gallery": customized });
-  expect(navigation.parseEditorState({}).presetCustomizations).toEqual({});
-  expect(presets.samePresetSettings(customized, { ...customized, layout: { rows: 1, columns: 8 } })).toBe(true);
+  const state = navigation.parseEditorState({
+    presetCustomizations: { "starter:gallery": customized },
+  });
+  expect(state).not.toHaveProperty("presetCustomizations");
+  expect(
+    navigation.parseEditorState({
+      appliedPreset: { id: "starter:gallery", settings: original },
+    }),
+  ).not.toHaveProperty("appliedPreset");
+  expect(navigation.parseEditorState({ selectedPanel: 1 }).selectedPanel).toBe(
+    0,
+  );
+  expect(
+    presets.samePresetSettings(customized, {
+      ...customized,
+      layout: { rows: 1, columns: 8 },
+    }),
+  ).toBe(true);
   expect(presets.samePresetSettings(original, customized)).toBe(false);
-  expect(presets.samePresetSettings(customized, { ...customized, exportSettings: {
-    ...customized.exportSettings, resolution: customized.exportSettings.resolution + 1,
-  } })).toBe(false);
+  expect(
+    presets.samePresetSettings(customized, {
+      ...customized,
+      exportSettings: {
+        ...customized.exportSettings,
+        resolution: customized.exportSettings.resolution + 1,
+      },
+    }),
+  ).toBe(false);
 });
 
 test("provider topic scopes reach every batch and use separate page cache entries", async () => {
@@ -943,38 +1059,86 @@ test("provider provenance validates safe source URLs and stays out of settings",
 test("removing legacy credited images preserves other images, captions, crops and settings", () => {
   const workspace = model.makeWorkspace();
   const asset = {
-    id: crypto.randomUUID(), title: "Original image", category: "Imported",
+    id: crypto.randomUUID(),
+    title: "Original image",
+    category: "Imported",
     src: "https://live.staticflickr.com/1/photo.jpg",
     provenance: {
-      provider: "openverse", entityId: crypto.randomUUID(),
-      title: "Original image", creator: "Example photographer",
+      provider: "openverse",
+      entityId: crypto.randomUUID(),
+      title: "Original image",
+      creator: "Example photographer",
       sourcePage: "https://www.flickr.com/photos/example/123",
       originalUrl: "https://live.staticflickr.com/1/photo.jpg",
-      license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+      license: "CC BY 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
     },
   };
-  const local = { id: crypto.randomUUID(), title: "Local", category: "Imported", src: "blob:local" };
+  const local = {
+    id: crypto.randomUUID(),
+    title: "Local",
+    category: "Imported",
+    src: "blob:local",
+  };
   const publicDomain = {
-    ...asset, id: crypto.randomUUID(),
-    provenance: { ...asset.provenance, license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/" },
+    ...asset,
+    id: crypto.randomUUID(),
+    provenance: {
+      ...asset.provenance,
+      license: "CC0",
+      licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+    },
   };
   workspace.assets = [asset, local, publicDomain];
-  workspace.grid.cells[0] = { ...workspace.grid.cells[0], assetId: asset.id, title: "Credit", crop: { x: 0, y: 0, width: 0.5, height: 0.5 } };
-  workspace.grid.cells[1] = { ...workspace.grid.cells[1], assetId: local.id, title: "Keep caption", crop: { x: 0, y: 0, width: 0.5, height: 0.5 } };
+  workspace.grid.cells[0] = {
+    ...workspace.grid.cells[0],
+    assetId: asset.id,
+    title: "Credit",
+    crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
+  };
+  workspace.grid.cells[1] = {
+    ...workspace.grid.cells[1],
+    assetId: local.id,
+    title: "Keep caption",
+    crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
+  };
   workspace.grid.cells[2].assetId = publicDomain.id;
-  workspace.grid.overflow = [{ row: 3, column: 0, cell: { ...workspace.grid.cells[0], id: crypto.randomUUID() } }];
+  workspace.grid.overflow = [
+    {
+      row: 3,
+      column: 0,
+      cell: { ...workspace.grid.cells[0], id: crypto.randomUUID() },
+    },
+  ];
   workspace.grid.gap = 42;
   const clean = model.removeCreditRequiredImages(workspace);
   expect(clean.assets).toEqual([local, publicDomain]);
-  expect(clean.grid.cells[0]).toMatchObject({ assetId: null, title: "", crop: undefined });
-  expect(clean.grid.overflow[0].cell).toMatchObject({ assetId: null, title: "", crop: undefined });
+  expect(clean.grid.cells[0]).toMatchObject({
+    assetId: null,
+    title: "",
+    crop: undefined,
+  });
+  expect(clean.grid.overflow[0].cell).toMatchObject({
+    assetId: null,
+    title: "",
+    crop: undefined,
+  });
   expect(clean.grid.cells[1]).toEqual(workspace.grid.cells[1]);
   expect(clean.grid.cells[2]).toEqual(workspace.grid.cells[2]);
-  expect(model.getEditorSettings(clean)).toEqual(model.getEditorSettings(workspace));
+  expect(model.getEditorSettings(clean)).toEqual(
+    model.getEditorSettings(workspace),
+  );
   expect(model.removeCreditRequiredImages(clean)).toBe(clean);
   expect(model.workspaceSchema.safeParse(clean).success).toBe(true);
   expect(workspace.assets).toHaveLength(3);
-  for (const license of ["CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0", "CC BY-SA 4.0"])
+  for (const license of [
+    "CC BY 1.0",
+    "CC BY 2.0",
+    "CC BY 2.5",
+    "CC BY 3.0",
+    "CC BY 4.0",
+    "CC BY-SA 4.0",
+  ])
     expect(model.imageLicenseSchema.safeParse(license).success).toBe(false);
 });
 
@@ -990,35 +1154,73 @@ test("keyless catalog cursors retain filtered rows across differently sized page
       items: Array.from({ length: 12 }, (_, index) => {
         const id = offset + index;
         return {
-          object_number: `KKS${id}`, frontend_url: `https://open.smk.dk/artwork/image/KKS${id}`,
-          titles: [{ title: `Artwork ${id}` }], artist: ["Artist"],
-          public_domain: true, rights: id === 0 ? "Restricted" : "https://creativecommons.org/publicdomain/mark/1.0/",
-          image_iiif_id: `https://iip.smk.dk/iiif/jp2/${id}.jp2`, image_width: 8000, image_height: 4000,
+          object_number: `KKS${id}`,
+          frontend_url: `https://open.smk.dk/artwork/image/KKS${id}`,
+          titles: [{ title: `Artwork ${id}` }],
+          artist: ["Artist"],
+          public_domain: true,
+          rights:
+            id === 0
+              ? "Restricted"
+              : "https://creativecommons.org/publicdomain/mark/1.0/",
+          image_iiif_id: `https://iip.smk.dk/iiif/jp2/${id}.jp2`,
+          image_width: 8000,
+          image_height: 4000,
         };
       }),
     });
   };
   try {
     const query = crypto.randomUUID();
-    const first = await providers.smk.search(query, new AbortController().signal, 0, null, 2);
+    const first = await providers.smk.search(
+      query,
+      new AbortController().signal,
+      0,
+      null,
+      2,
+    );
     expect(first.images.map((image) => image.id)).toEqual(["KKS1", "KKS2"]);
     expect(first.next).toBe(3);
-    const second = await providers.smk.search(query, new AbortController().signal, first.next, null, 10);
-    expect(second.images.map((image) => image.id)).toEqual(Array.from({ length: 10 }, (_, index) => `KKS${index + 3}`));
+    const second = await providers.smk.search(
+      query,
+      new AbortController().signal,
+      first.next,
+      null,
+      10,
+    );
+    expect(second.images.map((image) => image.id)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `KKS${index + 3}`),
+    );
     expect(second.next).toBe(13);
-    expect(requests.map((url) => url.searchParams.get("rows"))).toEqual(["12", "12", "12"]);
-    expect(requests.map((url) => url.searchParams.get("offset"))).toEqual(["0", "0", "12"]);
-    expect(first.images[0].original).toMatchObject({ width: 4000, height: 2000, mime: "image/jpeg" });
+    expect(requests.map((url) => url.searchParams.get("rows"))).toEqual([
+      "12",
+      "12",
+      "12",
+    ]);
+    expect(requests.map((url) => url.searchParams.get("offset"))).toEqual([
+      "0",
+      "0",
+      "12",
+    ]);
+    expect(first.images[0].original).toMatchObject({
+      width: 4000,
+      height: 2000,
+      mime: "image/jpeg",
+    });
     expect(first.images[0].original.url).toContain("/full/!4000,4000/");
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("keyless nature searches combine topics and text and require photo-level CC0 rights", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   const photo = {
-    id: 123, url: "https://inaturalist-open-data.s3.amazonaws.com/photos/123/square.jpg",
-    license_code: "cc0", attribution: "Photographer",
+    id: 123,
+    url: "https://inaturalist-open-data.s3.amazonaws.com/photos/123/square.jpg",
+    license_code: "cc0",
+    attribution: "Photographer",
     original_dimensions: { width: 800, height: 600 },
   };
   globalThis.fetch = async (input) => {
@@ -1034,11 +1236,21 @@ test("keyless nature searches combine topics and text and require photo-level CC
   };
   try {
     const query = crypto.randomUUID();
-    const result = await providers.inaturalist.search(query, new AbortController().signal, 0, "birds");
+    const result = await providers.inaturalist.search(
+      query,
+      new AbortController().signal,
+      0,
+      "birds",
+    );
     expect(result.images.map((image) => image.id)).toEqual(["123"]);
     expect(requests[0].searchParams.get("taxon_name")).toBe(query);
     expect(requests[0].searchParams.get("taxon_id")).toBe("3");
-    await providers.inaturalist.search(crypto.randomUUID(), new AbortController().signal, 0, null);
+    await providers.inaturalist.search(
+      crypto.randomUUID(),
+      new AbortController().signal,
+      0,
+      null,
+    );
     expect(requests[1].searchParams.has("taxon_id")).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1049,42 +1261,86 @@ test("keyless catalogs reject unsafe rights and hosts and expose quota and malfo
   const originalFetch = globalThis.fetch;
   const originalParser = globalThis.DOMParser;
   globalThis.DOMParser = class {
-    parseFromString(value) { return { body: { textContent: value } }; }
+    parseFromString(value) {
+      return { body: { textContent: value } };
+    }
   };
   const id = crypto.randomUUID();
   const image = {
-    id, title: "Photo", creator: "Photographer", url: "https://live.staticflickr.com/1/photo.jpg",
+    id,
+    title: "Photo",
+    creator: "Photographer",
+    url: "https://live.staticflickr.com/1/photo.jpg",
     foreign_landing_url: "https://www.flickr.com/photos/example/123",
-    license: "cc0", license_version: "1.0", license_url: "https://creativecommons.org/publicdomain/zero/1.0/",
-    width: 800, height: 600, filesize: null, mature: false,
+    license: "cc0",
+    license_version: "1.0",
+    license_url: "https://creativecommons.org/publicdomain/zero/1.0/",
+    width: 800,
+    height: 600,
+    filesize: null,
+    mature: false,
   };
   try {
-    globalThis.fetch = async () => Response.json({
-      result_count: 5, page_count: 1,
-      results: [
-        { ...image, id: crypto.randomUUID(), license: "by-sa" },
-        { ...image, id: crypto.randomUUID(), license: "by", license_version: "4.0" },
-        { ...image, id: crypto.randomUUID(), url: "https://evil.example/photo.jpg" },
-        { ...image, id: crypto.randomUUID(), foreign_landing_url: "https://localhost/private" },
-        image,
-      ],
-    });
-    const result = await providers.openverse.search(crypto.randomUUID(), new AbortController().signal);
+    globalThis.fetch = async () =>
+      Response.json({
+        result_count: 5,
+        page_count: 1,
+        results: [
+          { ...image, id: crypto.randomUUID(), license: "by-sa" },
+          {
+            ...image,
+            id: crypto.randomUUID(),
+            license: "by",
+            license_version: "4.0",
+          },
+          {
+            ...image,
+            id: crypto.randomUUID(),
+            url: "https://evil.example/photo.jpg",
+          },
+          {
+            ...image,
+            id: crypto.randomUUID(),
+            foreign_landing_url: "https://localhost/private",
+          },
+          image,
+        ],
+      });
+    const result = await providers.openverse.search(
+      crypto.randomUUID(),
+      new AbortController().signal,
+    );
     expect(result.images.map((item) => item.id)).toEqual([id]);
     expect(result.images[0].license).toBe("CC0");
-    globalThis.fetch = async () => { throw new Error("Unsupported downloads must not reach the network."); };
-    await expect(providers.downloadProviderImage({
-      ...result.images[0], license: "CC BY 4.0",
-    }, new AbortController().signal)).rejects.toMatchObject({ kind: "invalid" });
-    globalThis.fetch = async () => new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
-    await expect(providers.openverse.search(crypto.randomUUID(), new AbortController().signal))
-      .rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
+    globalThis.fetch = async () => {
+      throw new Error("Unsupported downloads must not reach the network.");
+    };
+    await expect(
+      providers.downloadProviderImage(
+        {
+          ...result.images[0],
+          license: "CC BY 4.0",
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ kind: "invalid" });
+    globalThis.fetch = async () =>
+      new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
+    await expect(
+      providers.openverse.search(
+        crypto.randomUUID(),
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
     globalThis.fetch = async () => new Response("not JSON");
-    await expect(providers.smk.search(crypto.randomUUID(), new AbortController().signal))
-      .rejects.toMatchObject({ kind: "invalid" });
+    await expect(
+      providers.smk.search(crypto.randomUUID(), new AbortController().signal),
+    ).rejects.toMatchObject({ kind: "invalid" });
     const controller = new AbortController();
     controller.abort();
-    await expect(providers.inaturalist.search("bird", controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      providers.inaturalist.search("bird", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.DOMParser = originalParser;
@@ -1097,55 +1353,115 @@ test("Wellcome requires image-level public-domain rights and open access before 
   const location = {
     url: "https://iiif.wellcomecollection.org/image/V1/info.json",
     locationType: { id: "iiif-image" },
-    license: { id: "pdm", url: "https://creativecommons.org/share-your-work/public-domain/pdm/" },
+    license: {
+      id: "pdm",
+      url: "https://creativecommons.org/share-your-work/public-domain/pdm/",
+    },
     accessConditions: [{ status: { id: "open" } }],
   };
-  const work = (id, value) => ({ id, title: "Flowers", items: [{ locations: [
-    { locationType: { id: "closed-stores" } }, value,
-  ] }] });
+  const work = (id, value) => ({
+    id,
+    title: "Flowers",
+    items: [{ locations: [{ locationType: { id: "closed-stores" } }, value] }],
+  });
   globalThis.fetch = async (input) => {
     const url = new URL(input);
     requests.push(url);
     if (url.hostname === "api.wellcomecollection.org")
-      return Response.json({ totalResults: 7, results: [
-        work("abcd1234", location),
-        { ...work("bbbb1234", { ...location, license: { id: "cc-by", url: "https://creativecommons.org/licenses/by/4.0/" } }),
-          thumbnail: { license: { id: "cc-0" } } },
-        work("cccc1234", { ...location, url: "https://evil.example/image/info.json" }),
-        work("dddd1234", { ...location, license: undefined }),
-        work("eeee1234", { ...location, accessConditions: [{ status: { id: "closed" } }] }),
-        work("ffff1234", { ...location, license: { ...location.license, id: "cc-0" } }),
-        work("abcd5678", { ...location, url: "https://iiif.wellcomecollection.org/image/V2/info.json",
-          license: { id: "cc-0", url: "https://creativecommons.org/publicdomain/zero/1.0/" } }),
-      ] });
+      return Response.json({
+        totalResults: 7,
+        results: [
+          work("abcd1234", location),
+          {
+            ...work("bbbb1234", {
+              ...location,
+              license: {
+                id: "cc-by",
+                url: "https://creativecommons.org/licenses/by/4.0/",
+              },
+            }),
+            thumbnail: { license: { id: "cc-0" } },
+          },
+          work("cccc1234", {
+            ...location,
+            url: "https://evil.example/image/info.json",
+          }),
+          work("dddd1234", { ...location, license: undefined }),
+          work("eeee1234", {
+            ...location,
+            accessConditions: [{ status: { id: "closed" } }],
+          }),
+          work("ffff1234", {
+            ...location,
+            license: { ...location.license, id: "cc-0" },
+          }),
+          work("abcd5678", {
+            ...location,
+            url: "https://iiif.wellcomecollection.org/image/V2/info.json",
+            license: {
+              id: "cc-0",
+              url: "https://creativecommons.org/publicdomain/zero/1.0/",
+            },
+          }),
+        ],
+      });
     expect(url.hostname).toBe("iiif.wellcomecollection.org");
-    expect(["/image/V1/info.json", "/image/V2/info.json"]).toContain(url.pathname);
+    expect(["/image/V1/info.json", "/image/V2/info.json"]).toContain(
+      url.pathname,
+    );
     return Response.json({
-      "@id": url.href.replace("/info.json", ""), width: 8000, height: 4000,
-      ...(url.pathname.includes("/V2/") ? {
-        profile: ["http://iiif.io/api/image/2/level2.json", { maxWidth: 1000, maxArea: 500000 }],
-      } : {}),
+      "@id": url.href.replace("/info.json", ""),
+      width: 8000,
+      height: 4000,
+      ...(url.pathname.includes("/V2/")
+        ? {
+            profile: [
+              "http://iiif.io/api/image/2/level2.json",
+              { maxWidth: 1000, maxArea: 500000 },
+            ],
+          }
+        : {}),
     });
   };
   try {
     const query = crypto.randomUUID();
-    const first = await providers.wellcome.search(query, new AbortController().signal, 0, null, 1);
+    const first = await providers.wellcome.search(
+      query,
+      new AbortController().signal,
+      0,
+      null,
+      1,
+    );
     expect(first.images.map(({ id }) => id)).toEqual(["abcd1234"]);
     expect(first.next).toBe(1);
     expect(first.images[0]).toMatchObject({
-      license: "Public domain", licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+      license: "Public domain",
+      licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
       sourcePage: "https://wellcomecollection.org/works/abcd1234",
       original: { width: 4000, height: 2000, mime: "image/jpeg" },
     });
-    const second = await providers.wellcome.search(query, new AbortController().signal, first.next);
+    const second = await providers.wellcome.search(
+      query,
+      new AbortController().signal,
+      first.next,
+    );
     expect(second.images.map(({ id }) => id)).toEqual(["abcd5678"]);
     expect(second.images[0].license).toBe("CC0");
-    expect(second.images[0].original).toMatchObject({ width: 1000, height: 500 });
+    expect(second.images[0].original).toMatchObject({
+      width: 1000,
+      height: 500,
+    });
     expect(second.next).toBeUndefined();
-    expect(requests[0].searchParams.get("items.locations.license")).toBe("pdm,cc-0");
+    expect(requests[0].searchParams.get("items.locations.license")).toBe(
+      "pdm,cc-0",
+    );
     expect(requests[0].searchParams.get("include")).toBe("items,contributors");
-    expect(requests.every((url) => !url.searchParams.has("api_key"))).toBe(true);
-  } finally { globalThis.fetch = originalFetch; }
+    expect(requests.every((url) => !url.searchParams.has("api_key"))).toBe(
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Rijksmuseum resolves image rights and opaque search tokens without skipping raw cursor positions", async () => {
@@ -1159,47 +1475,110 @@ test("Rijksmuseum resolves image rights and opaque search tokens without skippin
       if (second) expect(url.searchParams.get("pageToken")).toBe("opaque-next");
       return Response.json({
         partOf: { totalItems: 113 },
-        orderedItems: Array.from({ length: second ? 13 : 100 }, (_, index) =>
-          ({ id: `https://id.rijksmuseum.nl/${index + (second ? 101 : 1)}` })),
-        ...(second ? {} : { next: { id: "https://data.rijksmuseum.nl/search/collection?pageToken=opaque-next" } }),
+        orderedItems: Array.from({ length: second ? 13 : 100 }, (_, index) => ({
+          id: `https://id.rijksmuseum.nl/${index + (second ? 101 : 1)}`,
+        })),
+        ...(second
+          ? {}
+          : {
+              next: {
+                id: "https://data.rijksmuseum.nl/search/collection?pageToken=opaque-next",
+              },
+            }),
       });
     }
     if (url.hostname === "iiif.micr.io")
-      return Response.json({ id: url.href.replace("/info.json", ""), width: 8000, height: 4000 });
+      return Response.json({
+        id: url.href.replace("/info.json", ""),
+        width: 8000,
+        height: 4000,
+      });
     expect(url.hostname).toBe("data.rijksmuseum.nl");
     const id = url.pathname.slice(1);
     return Response.json({
       id: `https://id.rijksmuseum.nl/${id}`,
       identified_by: [{ type: "Name", content: `Artwork ${id}` }],
-      produced_by: { carried_out_by: [{ identified_by: [{ type: "Name", content: "Painter" }] }] },
-      subject_of: [{
-        digitally_carried_by: [{
-          access_point: [{ id: `https://iiif.micr.io/image${id}/full/max/0/default.jpg` }],
-          referred_to_by: [{ classified_as: [{ id: "https://vocab.getty.edu/aat/300460240" }],
-            content: id === "1" ? "https://creativecommons.org/licenses/by/4.0/" : "https://creativecommons.org/publicdomain/mark/1.0/" }],
-        }],
-        subject_to: [{ classified_as: [{ id: "https://creativecommons.org/publicdomain/zero/1.0/" }] }],
-      }],
+      produced_by: {
+        carried_out_by: [
+          { identified_by: [{ type: "Name", content: "Painter" }] },
+        ],
+      },
+      subject_of: [
+        {
+          digitally_carried_by: [
+            {
+              access_point: [
+                {
+                  id: `https://iiif.micr.io/image${id}/full/max/0/default.jpg`,
+                },
+              ],
+              referred_to_by: [
+                {
+                  classified_as: [
+                    { id: "https://vocab.getty.edu/aat/300460240" },
+                  ],
+                  content:
+                    id === "1"
+                      ? "https://creativecommons.org/licenses/by/4.0/"
+                      : "https://creativecommons.org/publicdomain/mark/1.0/",
+                },
+              ],
+            },
+          ],
+          subject_to: [
+            {
+              classified_as: [
+                { id: "https://creativecommons.org/publicdomain/zero/1.0/" },
+              ],
+            },
+          ],
+        },
+      ],
     });
   };
   try {
     const query = crypto.randomUUID();
-    const first = await providers.rijksmuseum.search(query, new AbortController().signal, 0, null, 2);
+    const first = await providers.rijksmuseum.search(
+      query,
+      new AbortController().signal,
+      0,
+      null,
+      2,
+    );
     expect(first.images.map(({ id }) => id)).toEqual(["2", "3"]);
     expect(first.next).toBe(3);
     expect(first.images[0]).toMatchObject({
-      creator: "Painter", license: "Public domain",
+      creator: "Painter",
+      license: "Public domain",
       original: { width: 4000, height: 2000 },
     });
-    const second = await providers.rijksmuseum.search(query, new AbortController().signal, first.next);
-    expect(second.images.map(({ id }) => id)).toEqual(Array.from({ length: 12 }, (_, index) => String(index + 4)));
-    const crossing = await providers.rijksmuseum.search(query, new AbortController().signal, 98, null, 3);
+    const second = await providers.rijksmuseum.search(
+      query,
+      new AbortController().signal,
+      first.next,
+    );
+    expect(second.images.map(({ id }) => id)).toEqual(
+      Array.from({ length: 12 }, (_, index) => String(index + 4)),
+    );
+    const crossing = await providers.rijksmuseum.search(
+      query,
+      new AbortController().signal,
+      98,
+      null,
+      3,
+    );
     expect(crossing.images.map(({ id }) => id)).toEqual(["99", "100", "101"]);
     expect(crossing.next).toBe(101);
     expect(searches).toHaveLength(2);
     expect(searches[0].searchParams.get("title")).toBe(query);
-    expect(searches.every((url) => url.searchParams.get("imageAvailable") === "true")).toBe(true);
-  } finally { globalThis.fetch = originalFetch; }
+    expect(
+      searches.every(
+        (url) => url.searchParams.get("imageAvailable") === "true",
+      ),
+    ).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("museum detail deadlines keep progressive results and resume at the first unprocessed image", async () => {
@@ -1211,27 +1590,54 @@ test("museum detail deadlines keep progressive results and resume at the first u
   globalThis.fetch = async (input) => {
     const url = new URL(input);
     if (url.hostname === "api.wellcomecollection.org")
-      return Response.json({ totalResults: 2, results: ["aaaa1234", "bbbb1234"].map((id, index) => ({
-        id, title: `Image ${index}`, items: [{ locations: [{
-          url: `https://iiif.wellcomecollection.org/image/deadline${index}/info.json`,
-          locationType: { id: "iiif-image" },
-          license: { id: "pdm", url: "https://creativecommons.org/publicdomain/mark/1.0/" },
-        }] }],
-      })) });
+      return Response.json({
+        totalResults: 2,
+        results: ["aaaa1234", "bbbb1234"].map((id, index) => ({
+          id,
+          title: `Image ${index}`,
+          items: [
+            {
+              locations: [
+                {
+                  url: `https://iiif.wellcomecollection.org/image/deadline${index}/info.json`,
+                  locationType: { id: "iiif-image" },
+                  license: {
+                    id: "pdm",
+                    url: "https://creativecommons.org/publicdomain/mark/1.0/",
+                  },
+                },
+              ],
+            },
+          ],
+        })),
+      });
     if (url.pathname.includes("deadline1") && !timedOut) {
       timedOut = true;
-      deadline.abort(new DOMException("Search deadline exceeded", "TimeoutError"));
+      deadline.abort(
+        new DOMException("Search deadline exceeded", "TimeoutError"),
+      );
       throw deadline.signal.reason;
     }
-    return Response.json({ id: url.href.replace("/info.json", ""), width: 800, height: 600 });
+    return Response.json({
+      id: url.href.replace("/info.json", ""),
+      width: 800,
+      height: 600,
+    });
   };
   try {
     const query = crypto.randomUUID();
-    const first = await providers.wellcome.search(query, new AbortController().signal);
+    const first = await providers.wellcome.search(
+      query,
+      new AbortController().signal,
+    );
     expect(first.images.map(({ id }) => id)).toEqual(["aaaa1234"]);
     expect(first).toMatchObject({ next: 1, incomplete: true });
     AbortSignal.timeout = originalTimeout;
-    const second = await providers.wellcome.search(query, new AbortController().signal, first.next);
+    const second = await providers.wellcome.search(
+      query,
+      new AbortController().signal,
+      first.next,
+    );
     expect(second.images.map(({ id }) => id)).toEqual(["bbbb1234"]);
     expect(second.next).toBeUndefined();
   } finally {
@@ -1244,27 +1650,39 @@ test("new museum catalogs report quotas and malformed metadata and respect cance
   const originalFetch = globalThis.fetch;
   try {
     for (const provider of [providers.rijksmuseum, providers.wellcome]) {
-      globalThis.fetch = async () => new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
-      await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
-        .rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
+      globalThis.fetch = async () =>
+        new Response("{}", { status: 429, headers: { "Retry-After": "2" } });
+      await expect(
+        provider.search(crypto.randomUUID(), new AbortController().signal),
+      ).rejects.toMatchObject({ kind: "quota", retryAfter: 2000 });
       globalThis.fetch = async () => Response.json({});
-      await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
-        .rejects.toMatchObject({ kind: "invalid" });
+      await expect(
+        provider.search(crypto.randomUUID(), new AbortController().signal),
+      ).rejects.toMatchObject({ kind: "invalid" });
       if (provider.id === "rijksmuseum") {
-        globalThis.fetch = async () => Response.json({
-          partOf: { totalItems: 101 },
-          orderedItems: Array.from({ length: 100 }, (_, index) =>
-            ({ id: `https://id.rijksmuseum.nl/${index + 1}` })),
-          next: { id: "https://evil.example/search/collection?pageToken=unsafe" },
-        });
-        await expect(provider.search(crypto.randomUUID(), new AbortController().signal))
-          .rejects.toMatchObject({ kind: "invalid" });
+        globalThis.fetch = async () =>
+          Response.json({
+            partOf: { totalItems: 101 },
+            orderedItems: Array.from({ length: 100 }, (_, index) => ({
+              id: `https://id.rijksmuseum.nl/${index + 1}`,
+            })),
+            next: {
+              id: "https://evil.example/search/collection?pageToken=unsafe",
+            },
+          });
+        await expect(
+          provider.search(crypto.randomUUID(), new AbortController().signal),
+        ).rejects.toMatchObject({ kind: "invalid" });
       }
       const controller = new AbortController();
       controller.abort();
-      await expect(provider.search(crypto.randomUUID(), controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+      await expect(
+        provider.search(crypto.randomUUID(), controller.signal),
+      ).rejects.toMatchObject({ name: "AbortError" });
     }
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("translations render valid ICU messages, plurals and interpolated values", async () => {
@@ -1509,41 +1927,73 @@ test("library crops become placement defaults without changing existing cells or
   const workspace = localWorkspace();
   const asset = workspace.assets[0];
   const existingCrop = { x: 0, y: 0, width: 0.5, height: 1 };
-  workspace.grid.cells[0] = { ...workspace.grid.cells[0], assetId: asset.id, crop: existingCrop };
+  workspace.grid.cells[0] = {
+    ...workspace.grid.cells[0],
+    assetId: asset.id,
+    crop: existingCrop,
+  };
   workspace.grid.cells[15].crop = existingCrop;
   workspace.grid = model.resizeBoard(workspace.grid, 3, 3);
   const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
-  const cropped = model.documentReducer(workspace, { type: "asset/crop", assetId: asset.id, crop });
+  const cropped = model.documentReducer(workspace, {
+    type: "asset/crop",
+    assetId: asset.id,
+    crop,
+  });
   expect(cropped.grid).toBe(workspace.grid);
   expect(cropped.assets[0]).toEqual({ ...asset, crop });
   expect(workspace.assets[0].crop).toBeUndefined();
   expect(cropped.grid.cells[0].crop).toEqual(existingCrop);
-  expect(cropped.grid.overflow.find((entry) => entry.cell.assetId === asset.id).cell.crop).toEqual(existingCrop);
-  expect(model.workspaceSchema.parse(JSON.parse(JSON.stringify(cropped))).assets[0].crop).toEqual(crop);
+  expect(
+    cropped.grid.overflow.find((entry) => entry.cell.assetId === asset.id).cell
+      .crop,
+  ).toEqual(existingCrop);
+  expect(
+    model.workspaceSchema.parse(JSON.parse(JSON.stringify(cropped))).assets[0]
+      .crop,
+  ).toEqual(crop);
   expect(model.makeCell(cropped.assets[0]).crop).toEqual(crop);
-  expect(model.makeBoard("Cropped", cropped.assets).cells[0].crop).toEqual(crop);
+  expect(model.makeBoard("Cropped", cropped.assets).cells[0].crop).toEqual(
+    crop,
+  );
   const placed = model.documentReducer(cropped, {
-    type: "cell/place", gridId: cropped.grid.id, cellId: cropped.grid.cells[1].id, assetId: asset.id,
+    type: "cell/place",
+    gridId: cropped.grid.id,
+    cellId: cropped.grid.cells[1].id,
+    assetId: asset.id,
   });
   expect(placed.grid.cells[1].crop).toEqual(crop);
   const imported = model.documentReducer(placed, {
-    type: "assets/import", gridId: placed.grid.id, cellId: placed.grid.cells[2].id,
+    type: "assets/import",
+    gridId: placed.grid.id,
+    cellId: placed.grid.cells[2].id,
     assets: [{ ...cropped.assets[0], id: crypto.randomUUID() }],
   });
   expect(imported.grid.cells[2].crop).toEqual(crop);
-  const reset = model.documentReducer(imported, { type: "asset/crop", assetId: asset.id, crop: undefined });
+  const reset = model.documentReducer(imported, {
+    type: "asset/crop",
+    assetId: asset.id,
+    crop: undefined,
+  });
   expect(reset.grid).toBe(imported.grid);
   const replacement = model.documentReducer(reset, {
-    type: "cell/place", gridId: reset.grid.id, cellId: reset.grid.cells[1].id, assetId: asset.id,
+    type: "cell/place",
+    gridId: reset.grid.id,
+    cellId: reset.grid.cells[1].id,
+    assetId: asset.id,
   });
   expect(replacement.grid.cells[1].crop).toBeUndefined();
   for (const command of [
     { type: "asset/crop", assetId: crypto.randomUUID(), crop },
     { type: "asset/crop", assetId: asset.id, crop: { ...crop, width: 0.8 } },
-  ]) expect(model.documentReducer(cropped, command)).toBe(cropped);
-  expect(model.workspaceSchema.safeParse({
-    ...cropped, assets: [{ ...cropped.assets[0], crop: { ...crop, width: 0.8 } }],
-  }).success).toBe(false);
+  ])
+    expect(model.documentReducer(cropped, command)).toBe(cropped);
+  expect(
+    model.workspaceSchema.safeParse({
+      ...cropped,
+      assets: [{ ...cropped.assets[0], crop: { ...crop, width: 0.8 } }],
+    }).success,
+  ).toBe(false);
 });
 
 test("visual crops preserve originals and share full-box source rectangles", () => {
@@ -1678,15 +2128,22 @@ test("overlay bands reserve only the caption rows that fit at the selected font 
       const short = model.cellGeometry(settings, width, 1);
       const long = model.cellGeometry(settings, width, 3);
       expect(long.captionHeight).toBe(short.captionHeight);
-      expect(long.imageHeight - long.captionHeight).toBeGreaterThanOrEqual(width * 0.5);
+      expect(long.imageHeight - long.captionHeight).toBeGreaterThanOrEqual(
+        width * 0.5,
+      );
       expect(model.cellGeometry(settings, width, 0).captionHeight).toBe(0);
-      expect(model.cellGeometry({ ...settings, titlesVisible: false }, width, 3).captionHeight).toBe(0);
+      expect(
+        model.cellGeometry({ ...settings, titlesVisible: false }, width, 3)
+          .captionHeight,
+      ).toBe(0);
     }
     const smaller = { ...style, cellFontSize: 24 };
-    expect(model.cellGeometry(smaller, width, 3).captionHeight)
-      .toBe(model.cellGeometry(smaller, width, 2).captionHeight);
-    expect(model.cellGeometry(smaller, width, 2).captionHeight)
-      .toBeGreaterThan(model.cellGeometry(smaller, width, 1).captionHeight);
+    expect(model.cellGeometry(smaller, width, 3).captionHeight).toBe(
+      model.cellGeometry(smaller, width, 2).captionHeight,
+    );
+    expect(model.cellGeometry(smaller, width, 2).captionHeight).toBeGreaterThan(
+      model.cellGeometry(smaller, width, 1).captionHeight,
+    );
   }
 });
 

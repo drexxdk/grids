@@ -1,4 +1,32 @@
 {
+  "builder": {
+    "palettes": {
+      "Snow": "Snow",
+      "Ink": "Ink",
+      "Forest": "Forest",
+      "Ocean": "Ocean",
+      "Rose": "Rose",
+      "Sun": "Sun"
+    },
+    "colors": "Colors",
+    "layout": "Layout",
+    "heading": "Canvas heading",
+    "captions": "Card headings",
+    "custom": "Custom",
+    "off": "Off",
+    "spacing": "Spacing",
+    "flush": "Seamless",
+    "compact": "Compact",
+    "airy": "Spacious",
+    "rounded": "Rounded corners",
+    "typography": "Typography",
+    "customize": "Customize",
+    "headingBackground": "Heading background",
+    "headingText": "Heading text",
+    "cardBackground": "Card background",
+    "cardText": "Card text",
+    "next": "Next"
+  },
   "presets": {
     "title": "Themes",
     "starters": "Starting points",

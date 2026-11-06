@@ -2,7 +2,6 @@ import { useSyncExternalStore, type SetStateAction } from "react";
 import { z } from "zod";
 import { imageProviders, type ImageProvider } from "../providers";
 import { providerQueryMaxLength } from "../config";
-import { editorSettingsSchema } from "../model";
 import { toast } from "sonner";
 import { t } from "../i18n";
 
@@ -29,14 +28,8 @@ const browsingSchema = z.object({
   history: z.array(offsetSchema).max(navigationHistoryLimit),
 });
 const stateSchema = z.object({
-  selectedPanel: z.number().int().min(0).max(2).default(0),
+  selectedPanel: z.union([z.literal(0), z.literal(2)]).default(0),
   sidebarOpen: z.boolean().default(true),
-  appliedPreset: z.object({
-    id: z.string().min(1).max(200),
-    settings: editorSettingsSchema,
-    updatedAt: z.string().optional(),
-  }).nullable().default(null),
-  presetCustomizations: z.record(z.string().min(1).max(200), editorSettingsSchema).default({}),
   librarySource: sourceSchema.default("imported"),
   pickerSource: sourceSchema.default("imported"),
   browsing: z.record(z.string().max(60), browsingSchema).default({}),
@@ -95,14 +88,19 @@ export function readNavigation(
       ...state,
       selectedPanel: visited.selectedPanel,
       librarySource: visited.source,
-      browsing: browse ? {
-        ...state.browsing,
-        [`library:${visited.source}`]: {
-          ...browse,
-          query: browse.request?.query ?? browse.query,
-          selectedTopic: browse.request?.topic === undefined ? browse.selectedTopic : browse.request.topic,
-        },
-      } : state.browsing,
+      browsing: browse
+        ? {
+            ...state.browsing,
+            [`library:${visited.source}`]: {
+              ...browse,
+              query: browse.request?.query ?? browse.query,
+              selectedTopic:
+                browse.request?.topic === undefined
+                  ? browse.selectedTopic
+                  : browse.request.topic,
+            },
+          }
+        : state.browsing,
     };
   }
   const panel = url.searchParams.get("panel");
@@ -112,7 +110,7 @@ export function readNavigation(
   const source = parsedSource.success ? parsedSource.data : "imported";
   const next = {
     ...state,
-    selectedPanel: panel === "themes" || panel === "presets" ? 2 : panel === "settings" ? 1 : 0,
+    selectedPanel: panel === "themes" ? (2 as const) : (0 as const),
     librarySource: source,
   };
   const provider = imageProviders.find((item) => item.id === source);
@@ -143,7 +141,8 @@ export function readNavigation(
       ? parsedEntry.data.gridsNavigation.browsing
       : null;
   const history =
-    visited && visited.request?.query === request?.query &&
+    visited &&
+    visited.request?.query === request?.query &&
     visited?.request?.topic === request.topic &&
     visited?.request?.offset === offset
       ? visited.history
@@ -205,7 +204,9 @@ function update(next: EditorState, mode: HistoryMode) {
   if (mode !== "silent") {
     const url = navigationUrl(next, new URL(window.location.href));
     const previous = historySchema.safeParse(window.history.state);
-    const before = previous.success ? previous.data.gridsNavigation.browsing?.request : undefined;
+    const before = previous.success
+      ? previous.data.gridsNavigation.browsing?.request
+      : undefined;
     const after = next.browsing[`library:${next.librarySource}`]?.request;
     const entry = {
       ...window.history.state,
@@ -215,15 +216,18 @@ function update(next: EditorState, mode: HistoryMode) {
         browsing: next.browsing[`library:${next.librarySource}`],
       },
     };
-    const changed = !previous.success ||
+    const changed =
+      !previous.success ||
       previous.data.gridsNavigation.selectedPanel !== next.selectedPanel ||
       previous.data.gridsNavigation.source !== next.librarySource ||
-      before?.query !== after?.query || before?.topic !== after?.topic || before?.offset !== after?.offset;
-    window.history[
-      mode === "push" && changed
-        ? "pushState"
-        : "replaceState"
-    ](entry, "", url);
+      before?.query !== after?.query ||
+      before?.topic !== after?.topic ||
+      before?.offset !== after?.offset;
+    window.history[mode === "push" && changed ? "pushState" : "replaceState"](
+      entry,
+      "",
+      url,
+    );
   }
   for (const listener of listeners) listener();
 }
@@ -258,7 +262,7 @@ export function useEditorState<Key extends keyof Omit<EditorState, "browsing">>(
     const next = typeof value === "function" ? value(previous[key]) : value;
     update(
       { ...previous, [key]: next },
-      key === "pickerSource" || key === "sidebarOpen" || key === "appliedPreset" || key === "presetCustomizations" ? "silent" : "push",
+      key === "pickerSource" || key === "sidebarOpen" ? "silent" : "push",
     );
   };
   return [current[key], set] as const;

@@ -1,12 +1,8 @@
 import { t } from "./i18n";
-import {
-  captionMaxLength,
-  imageUploadAccept,
-} from "./config";
+import { captionMaxLength, imageUploadAccept } from "./config";
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useReducer,
   useRef,
   useState,
@@ -22,23 +18,12 @@ import {
   ImagePlus,
   RefreshCw,
   RotateCcw,
-  RectangleVertical,
-  RectangleHorizontal,
-  Square,
-  PanelTop,
-  PanelBottom,
-  PanelTopDashed,
-  PanelBottomDashed,
-  Check,
-  X,
 } from "lucide-react";
 import {
   Button,
   ColorField,
-  IconRadioField,
   PercentField,
   SelectField,
-  Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
@@ -49,23 +34,14 @@ import {
   type CardDragVisual,
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
-import { PresetsPanel } from "./components/PresetsPanel";
-import {
-  presetPreviewWorkspace,
-  presetSettingsForLayout,
-  samePresetSettings,
-  starterPresets,
-  type PresetChoice,
-} from "./presets";
+import { ThemeBuilder } from "./components/PresetsPanel";
 import { isLightCanvasColor } from "./canvasTheme";
 import {
   LibraryImage,
   LibraryImagePlaceholder,
 } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
-import { useEditorState } from "./browser/navigation";
 import {
-  fontOptions,
   fontWeightOptions,
   previewCardMinWidth,
   previewCardMaxWidth,
@@ -76,9 +52,6 @@ import {
   createResizeCommand,
   documentReducer,
   publishers,
-  getEditorSettings,
-  editorSettingsSchema,
-  applyEditorSettings,
   cellGeometry,
   headingGeometry,
   gridSpacing,
@@ -88,7 +61,6 @@ import {
   type GridPatch,
   type ImageFormat,
   type ExportSettings,
-  type GridStyle,
 } from "./model";
 import {
   createExport,
@@ -247,82 +219,7 @@ export default function App() {
   const [conflict, setConflict] = useState(false);
   const [reloadOpen, setReloadOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [presetPreview, setPresetPreview] = useState<{
-    choice: PresetChoice;
-    key: string;
-  } | null>(null);
-  const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
-  const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
-  const [appliedPreset, setAppliedPreset] = useEditorState("appliedPreset");
-  const [presetCustomizations, setPresetCustomizations] = useEditorState(
-    "presetCustomizations",
-  );
-  const currentSettings = getEditorSettings(workspace);
-  const currentSettingsSignature = JSON.stringify(currentSettings);
-  useEffect(() => {
-    const starter = starterPresets.find(
-      (choice) => choice.id === appliedPreset?.id,
-    );
-    if (!loaded || conflict || !starter) return;
-    const customized = !samePresetSettings(starter.settings, currentSettings);
-    const saved = presetCustomizations[starter.id];
-    if (customized && saved && samePresetSettings(saved, currentSettings))
-      return;
-    if (!customized && !saved) return;
-    setPresetCustomizations((previous) => {
-      const next = { ...previous };
-      if (customized)
-        next[starter.id] = editorSettingsSchema.parse(
-          presetSettingsForLayout(currentSettings, starter.settings.layout),
-        );
-      else delete next[starter.id];
-      return next;
-    });
-  }, [
-    loaded,
-    conflict,
-    appliedPreset?.id,
-    currentSettingsSignature,
-    presetCustomizations,
-  ]);
-  const previewWorkspace = useMemo(
-    () =>
-      presetPreview
-        ? presetPreviewWorkspace(presetPreview.choice, workspace.grid)
-        : null,
-    [presetPreview?.choice, workspace.grid.rows, workspace.grid.columns],
-  );
-  const displayAssets = previewWorkspace?.assets ?? workspace.assets;
-  function applyPreset(choice: PresetChoice) {
-    dispatchDocument({
-      type: "workspace/restore",
-      workspace: applyEditorSettings(
-        workspace,
-        presetSettingsForLayout(choice.settings, workspace.grid),
-      ),
-    });
-    setAppliedPreset({
-      id: choice.id,
-      settings: editorSettingsSchema.parse(choice.settings),
-      updatedAt: choice.updatedAt,
-    });
-    setPresetPreview(null);
-    setHeadingEditing(false);
-  }
-  useEffect(() => {
-    if (
-      selectedPanel !== 2 ||
-      (!sidebarOpen && !window.matchMedia("(width < 901px)").matches)
-    )
-      setPresetPreview(null);
-  }, [selectedPanel, sidebarOpen]);
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPresetPreview(null);
-    };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, []);
+  const displayAssets = workspace.assets;
   const [canSave, setCanSave] = useState(false);
   const activeAssets = workspace.assets.filter(
     (asset) => asset.trashedAt === undefined && !asset.libraryHidden,
@@ -391,7 +288,7 @@ export default function App() {
   const replaceUpload = useRef<HTMLInputElement>(null);
   const resetGridButton = useRef<HTMLButtonElement>(null);
   const [resetGridOpen, setResetGridOpen] = useState(false);
-  const board = previewWorkspace?.grid ?? workspace.grid;
+  const board = workspace.grid;
   useLayoutEffect(() => {
     const cleaned = removeCreditRequiredImages(workspace);
     if (cleaned === workspace) return;
@@ -1011,7 +908,6 @@ export default function App() {
     localStore.current?.scheduleImageDeletion(
       workspace.assets.map((asset) => asset.id),
     );
-    setAppliedPreset(null);
     dispatchDocument(createResetGridCommand());
     setHeadingEditing(false);
     setImageTarget(null);
@@ -1032,48 +928,6 @@ export default function App() {
     <>
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
         <EditorLayout
-          previewing={presetPreview !== null}
-          previewId={presetPreview?.key}
-          previewBar={
-            presetPreview && (
-              <div
-                role="status"
-                data-preset-preview
-                className="flex w-full min-w-0 items-center justify-between gap-3"
-              >
-                <div className="hidden min-w-0 text-sm @min-[30rem]:block">
-                  <strong className="block truncate">
-                    {t("presets.previewing", {
-                      value1: presetPreview.choice.name,
-                    })}
-                  </strong>
-                  <p className="m-0 truncate text-xs text-(--muted)">
-                    {t("presets.samples")}
-                  </p>
-                </div>
-                <div className="ml-auto flex shrink-0 gap-2">
-                  <Button
-                    variant="success"
-                    className="h-11 shrink-0 py-0"
-                    onClick={() => applyPreset(presetPreview.choice)}
-                  >
-                    <Check aria-hidden="true" className="size-4" />
-                    <span className="@max-[13rem]:sr-only">
-                      {t("presets.apply")}
-                    </span>
-                  </Button>
-                  <Button
-                    className="size-11 shrink-0 p-0"
-                    title={t("presets.close")}
-                    aria-label={t("presets.close")}
-                    onClick={() => setPresetPreview(null)}
-                  >
-                    <X aria-hidden="true" className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            )
-          }
           canvasControls={null}
           status={
             <span
@@ -1104,9 +958,7 @@ export default function App() {
                 aria-haspopup="dialog"
                 aria-label={t("editor.reset.title")}
                 title={t("editor.reset.tooltip")}
-                disabled={
-                  importProgress !== null || exporting || presetPreview !== null
-                }
+                disabled={importProgress !== null || exporting}
                 onClick={() => setResetGridOpen(true)}
               >
                 <RotateCcw aria-hidden="true" className="size-5!" />
@@ -1118,7 +970,7 @@ export default function App() {
                 title={t("export.title")}
                 aria-label={t("export.title")}
                 className="h-11 shrink-0 py-0 group-data-compact-export/header:size-11 group-data-compact-export/header:gap-0 group-data-compact-export/header:p-0 [&_svg]:size-5 [&_svg]:shrink-0"
-                disabled={exporting || presetPreview !== null}
+                disabled={exporting}
                 onClick={() => setExportOpen(true)}
               >
                 <Download />
@@ -1266,10 +1118,7 @@ export default function App() {
                 data-workspace-scroll
                 className="relative min-h-0 flex-1 overflow-auto overscroll-x-contain scrollbar-gutter-stable"
               >
-                <div
-                  inert={presetPreview !== null}
-                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! pr-0! pb-0!"
-                >
+                <div className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! pr-0! pb-0!">
                   <GridResizer
                     ref={setPreviewFrame}
                     bottomControls={
@@ -1446,413 +1295,225 @@ export default function App() {
               </div>
             </section>
           )}
-          {(settingsActions) => (
-            <aside
-              className="settings-panel max-[901px]:px-0! min-[901px]:flex! min-[901px]:flex-col min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden"
-              aria-label={t("settings.title")}
+          {() => (
+            <ThemeBuilder
+              board={board}
+              disabled={conflict || importProgress !== null || exporting}
+              onChange={(patch) => {
+                if (patch.headingVisible !== undefined)
+                  setHeadingEditing(false);
+                patchBoard(patch);
+              }}
             >
-              {settingsActions && (
-                <div
-                  data-sidebar-header
-                  className="min-h-19 shrink-0 border-0 border-b border-solid border-(--line) py-3"
-                >
-                  {settingsActions}
+              <div className="@container/settings flex min-w-0 flex-col gap-4">
+                <ColorField
+                  id="background"
+                  label={t("settings.fields.background")}
+                  value={board.background}
+                  onChange={(background) => patchBoard({ background })}
+                />
+                <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                  <ColorField
+                    id="heading-background-color"
+                    label={t("builder.headingBackground")}
+                    value={board.headingBackgroundColor ?? board.background}
+                    onChange={(headingBackgroundColor) =>
+                      patchBoard({ headingBackgroundColor })
+                    }
+                  />
+                  <ColorField
+                    id="heading-text-color"
+                    label={t("builder.headingText")}
+                    value={board.headingTextColor ?? palette.text}
+                    onChange={(headingTextColor) =>
+                      patchBoard({ headingTextColor })
+                    }
+                  />
+                  <ColorField
+                    id="cell-background-color"
+                    label={t("builder.cardBackground")}
+                    value={board.cellBackgroundColor ?? "#111315"}
+                    onChange={(cellBackgroundColor) =>
+                      patchBoard({ cellBackgroundColor })
+                    }
+                  />
+                  <ColorField
+                    id="cell-text-color"
+                    label={t("builder.cardText")}
+                    value={board.cellTextColor ?? "#f4f4ef"}
+                    onChange={(cellTextColor) => patchBoard({ cellTextColor })}
+                  />
                 </div>
-              )}
-              <div
-                data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0"
+              </div>
+              <fieldset
+                className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+                aria-label={t("settings.canvas")}
               >
-                <div className="flex flex-col gap-6 max-[901px]:p-3">
-                  <fieldset
-                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
-                    aria-label={t("settings.canvas")}
-                  >
-                    <h3 className="m-0 text-sm font-semibold text-(--text)">
-                      {t("settings.canvas")}
-                    </h3>
-                    <ColorField
-                      id="background"
-                      label={t("settings.fields.background")}
-                      value={board.background}
-                      onChange={(background) => patchBoard({ background })}
-                    />
+                <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                  <PercentField
+                    id="canvas-padding"
+                    label={t("settings.fields.padding")}
+                    outputId="canvas-padding-value"
+                    max={120}
+                    value={board.canvasPadding ?? 60}
+                    onChange={(canvasPadding) => patchBoard({ canvasPadding })}
+                  />
+                  <PercentField
+                    id="gap"
+                    label={t("settings.fields.gap")}
+                    outputId="gap-value"
+                    max={120}
+                    value={board.gap}
+                    onChange={(gap) => patchBoard({ gap })}
+                  />
+                </div>
+                <PercentField
+                  id="corner-rounding"
+                  label={t("settings.fields.rounding")}
+                  max={25}
+                  value={board.cornerRadius ?? 12.5}
+                  onChange={(cornerRadius) => patchBoard({ cornerRadius })}
+                />
+              </fieldset>
+              <fieldset
+                className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+                aria-label={t("settings.heading")}
+              >
+                {board.headingVisible && (
+                  <>
                     <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
                       <PercentField
-                        id="canvas-padding"
-                        label={t("settings.fields.padding")}
-                        outputId="canvas-padding-value"
-                        max={120}
-                        value={board.canvasPadding ?? 60}
-                        onChange={(canvasPadding) =>
-                          patchBoard({ canvasPadding })
+                        id="heading-font-weight"
+                        label={t("settings.fields.fontWeight")}
+                        outputValue={resolveFontWeight(
+                          board.headingFont,
+                          board.headingFontWeight,
+                        )}
+                        min={board.headingFont === "Manrope" ? 100 : 400}
+                        max={board.headingFont === "Manrope" ? 900 : 700}
+                        step={board.headingFont === "Manrope" ? 100 : 300}
+                        value={resolveFontWeight(
+                          board.headingFont,
+                          board.headingFontWeight,
+                        )}
+                        valueText={
+                          fontWeightOptions(board.headingFont).find(
+                            (option) =>
+                              option.value ===
+                              resolveFontWeight(
+                                board.headingFont,
+                                board.headingFontWeight,
+                              ),
+                          )?.label
+                        }
+                        onChange={(headingFontWeight) =>
+                          patchBoard({ headingFontWeight })
                         }
                       />
                       <PercentField
-                        id="gap"
-                        label={t("settings.fields.gap")}
-                        outputId="gap-value"
-                        max={120}
-                        value={board.gap}
-                        onChange={(gap) => patchBoard({ gap })}
+                        id="heading-font-size"
+                        label={t("settings.fields.fontSize")}
+                        min={6}
+                        max={36}
+                        value={board.headingFontSize ?? 21}
+                        onChange={(headingFontSize) =>
+                          patchBoard({ headingFontSize })
+                        }
                       />
                     </div>
                     <PercentField
-                      id="corner-rounding"
-                      label={t("settings.fields.rounding")}
-                      max={25}
-                      value={board.cornerRadius ?? 12.5}
-                      onChange={(cornerRadius) => patchBoard({ cornerRadius })}
-                    />
-                  </fieldset>
-                  <fieldset
-                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 border-t border-solid border-(--line) p-0 pt-6"
-                    aria-label={t("settings.heading")}
-                  >
-                    <h3 className="m-0 text-sm font-semibold text-(--text)">
-                      {t("settings.heading")}
-                    </h3>
-                    <Toggle
-                      label={t("settings.fields.showHeading")}
-                      checked={board.headingVisible}
-                      onChange={(headingVisible) => {
-                        setHeadingEditing(false);
-                        patchBoard({ headingVisible });
-                      }}
-                    />
-                    {board.headingVisible && (
-                      <>
-                        <SelectField
-                          id="heading-font"
-                          largeFontPreview
-                          label={t("settings.fields.font")}
-                          value={board.headingFont}
-                          options={fontOptions.map((font) => ({
-                            value: font,
-                            label: font,
-                            fontFamily: font,
-                            fontWeight: resolveFontWeight(
-                              font,
-                              board.headingFontWeight,
-                            ),
-                          }))}
-                          onChange={(headingFont) =>
-                            patchBoard({
-                              headingFont,
-                              headingFontWeight: resolveFontWeight(
-                                headingFont,
-                                board.headingFontWeight,
-                              ),
-                            })
-                          }
-                        />
-                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                          <PercentField
-                            id="heading-font-weight"
-                            label={t("settings.fields.fontWeight")}
-                            outputValue={resolveFontWeight(
-                              board.headingFont,
-                              board.headingFontWeight,
-                            )}
-                            min={board.headingFont === "Manrope" ? 100 : 400}
-                            max={board.headingFont === "Manrope" ? 900 : 700}
-                            step={board.headingFont === "Manrope" ? 100 : 300}
-                            value={resolveFontWeight(
-                              board.headingFont,
-                              board.headingFontWeight,
-                            )}
-                            valueText={
-                              fontWeightOptions(board.headingFont).find(
-                                (option) =>
-                                  option.value ===
-                                  resolveFontWeight(
-                                    board.headingFont,
-                                    board.headingFontWeight,
-                                  ),
-                              )?.label
-                            }
-                            onChange={(headingFontWeight) =>
-                              patchBoard({ headingFontWeight })
-                            }
-                          />
-                          <PercentField
-                            id="heading-font-size"
-                            label={t("settings.fields.fontSize")}
-                            min={6}
-                            max={36}
-                            value={board.headingFontSize ?? 21}
-                            onChange={(headingFontSize) =>
-                              patchBoard({ headingFontSize })
-                            }
-                          />
-                        </div>
-                        <PercentField
-                          id="heading-padding"
-                          label={t("settings.fields.padding")}
-                          max={60}
-                          value={board.headingPadding ?? 30}
-                          onChange={(headingPadding) =>
-                            patchBoard({ headingPadding })
-                          }
-                        />
-                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                          <ColorField
-                            id="heading-background-color"
-                            label={t("settings.fields.background")}
-                            value={
-                              board.headingBackgroundColor ??
-                              (!board.heading.trim()
-                                ? palette.caption
-                                : palette.color === "transparent"
-                                  ? board.background
-                                  : palette.color)
-                            }
-                            onChange={(headingBackgroundColor) =>
-                              patchBoard({ headingBackgroundColor })
-                            }
-                          />
-                          <ColorField
-                            id="heading-text-color"
-                            label={t("settings.fields.textColor")}
-                            value={board.headingTextColor ?? palette.text}
-                            onChange={(headingTextColor) =>
-                              patchBoard({ headingTextColor })
-                            }
-                          />
-                        </div>
-                      </>
-                    )}
-                  </fieldset>
-                  <fieldset
-                    className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 border-t border-solid border-(--line) p-0 pt-6"
-                    aria-label={t("settings.card")}
-                  >
-                    <h3 className="m-0 text-sm font-semibold text-(--text)">
-                      {t("settings.card")}
-                    </h3>
-                    <IconRadioField
-                      id="image-shape"
-                      label={t("editor.imageShape.label")}
-                      value={board.imageAspect ?? "square"}
-                      columns={3}
-                      options={[
-                        {
-                          value: "portrait",
-                          label: t("editor.imageShape.portrait"),
-                          icon: RectangleVertical,
-                        },
-                        {
-                          value: "landscape",
-                          label: t("editor.imageShape.landscape"),
-                          icon: RectangleHorizontal,
-                        },
-                        {
-                          value: "square",
-                          label: t("editor.imageShape.square"),
-                          icon: Square,
-                        },
-                      ]}
-                      onChange={(imageAspect) =>
-                        patchBoard({
-                          imageAspect: imageAspect as NonNullable<
-                            Board["imageAspect"]
-                          >,
-                        })
+                      id="heading-padding"
+                      label={t("settings.fields.padding")}
+                      max={60}
+                      value={board.headingPadding ?? 30}
+                      onChange={(headingPadding) =>
+                        patchBoard({ headingPadding })
                       }
                     />
-                    <Toggle
-                      label={t("settings.fields.showTitles")}
-                      checked={board.titlesVisible !== false}
-                      onChange={(titlesVisible) =>
-                        patchBoard({ titlesVisible })
-                      }
-                    />
-                    {board.titlesVisible !== false && (
-                      <>
-                        <IconRadioField
-                          id="caption-position"
-                          label={t("editor.captionPosition.label")}
-                          value={
-                            board.captionPlacement === "overlay"
-                              ? `overlay-${board.captionAlignment === "top" ? "top" : "bottom"}`
-                              : (board.captionPlacement ?? "below")
-                          }
-                          columns={2}
-                          options={[
-                            {
-                              value: "above",
-                              label: t("editor.captionPosition.above"),
-                              icon: PanelTop,
-                            },
-                            {
-                              value: "below",
-                              label: t("editor.captionPosition.below"),
-                              icon: PanelBottom,
-                            },
-                            {
-                              value: "overlay-top",
-                              label: t("editor.captionPosition.overlayTop"),
-                              icon: PanelTopDashed,
-                            },
-                            {
-                              value: "overlay-bottom",
-                              label: t("editor.captionPosition.overlayBottom"),
-                              icon: PanelBottomDashed,
-                            },
-                          ]}
-                          onChange={(position) =>
-                            patchBoard(
-                              position === "above" || position === "below"
-                                ? { captionPlacement: position }
-                                : {
-                                    captionPlacement: "overlay",
-                                    captionAlignment:
-                                      position === "overlay-top"
-                                        ? "top"
-                                        : "bottom",
-                                  },
-                            )
-                          }
-                        />
-                        <SelectField
-                          id="cell-font"
-                          largeFontPreview
-                          label={t("settings.fields.font")}
-                          value={board.cellFont}
-                          options={fontOptions.map((font) => ({
-                            value: font,
-                            label: font,
-                            fontFamily: font,
-                            fontWeight: resolveFontWeight(
-                              font,
-                              board.cellFontWeight,
-                            ),
-                          }))}
-                          onChange={(cellFont) =>
-                            patchBoard({
-                              cellFont,
-                              cellFontWeight: resolveFontWeight(
-                                cellFont,
+                  </>
+                )}
+              </fieldset>
+              <fieldset
+                className="@container/settings m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+                aria-label={t("settings.card")}
+              >
+                {board.titlesVisible !== false && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                      <PercentField
+                        id="cell-font-weight"
+                        label={t("settings.fields.fontWeight")}
+                        outputValue={resolveFontWeight(
+                          board.cellFont,
+                          board.cellFontWeight,
+                        )}
+                        min={board.cellFont === "Manrope" ? 100 : 400}
+                        max={board.cellFont === "Manrope" ? 900 : 700}
+                        step={board.cellFont === "Manrope" ? 100 : 300}
+                        value={resolveFontWeight(
+                          board.cellFont,
+                          board.cellFontWeight,
+                        )}
+                        valueText={
+                          fontWeightOptions(board.cellFont).find(
+                            (option) =>
+                              option.value ===
+                              resolveFontWeight(
+                                board.cellFont,
                                 board.cellFontWeight,
                               ),
+                          )?.label
+                        }
+                        onChange={(cellFontWeight) =>
+                          patchBoard({ cellFontWeight })
+                        }
+                      />
+                      <PercentField
+                        id="cell-font-size"
+                        label={t("settings.fields.fontSize")}
+                        min={6}
+                        max={36}
+                        value={board.cellFontSize ?? 12}
+                        onChange={(cellFontSize) =>
+                          patchBoard({ cellFontSize })
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
+                      <ColorField
+                        id="caption-overlay"
+                        label={t("settings.fields.overlayColor")}
+                        value={board.captionOverlayColor ?? "#000000"}
+                        onChange={(captionOverlayColor) =>
+                          patchBoard({ captionOverlayColor })
+                        }
+                      />
+                      <div className="flex flex-col gap-2">
+                        <label
+                          className="field-label"
+                          htmlFor="caption-opacity"
+                        >
+                          {t("settings.fields.overlayOpacity")}{" "}
+                          <output>{board.captionOverlayOpacity ?? 60}%</output>
+                        </label>
+                        <input
+                          id="caption-opacity"
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={board.captionOverlayOpacity ?? 60}
+                          onChange={(event) =>
+                            patchBoard({
+                              captionOverlayOpacity: Number(event.target.value),
                             })
                           }
                         />
-                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                          <PercentField
-                            id="cell-font-weight"
-                            label={t("settings.fields.fontWeight")}
-                            outputValue={resolveFontWeight(
-                              board.cellFont,
-                              board.cellFontWeight,
-                            )}
-                            min={board.cellFont === "Manrope" ? 100 : 400}
-                            max={board.cellFont === "Manrope" ? 900 : 700}
-                            step={board.cellFont === "Manrope" ? 100 : 300}
-                            value={resolveFontWeight(
-                              board.cellFont,
-                              board.cellFontWeight,
-                            )}
-                            valueText={
-                              fontWeightOptions(board.cellFont).find(
-                                (option) =>
-                                  option.value ===
-                                  resolveFontWeight(
-                                    board.cellFont,
-                                    board.cellFontWeight,
-                                  ),
-                              )?.label
-                            }
-                            onChange={(cellFontWeight) =>
-                              patchBoard({ cellFontWeight })
-                            }
-                          />
-                          <PercentField
-                            id="cell-font-size"
-                            label={t("settings.fields.fontSize")}
-                            min={6}
-                            max={36}
-                            value={board.cellFontSize ?? 12}
-                            onChange={(cellFontSize) =>
-                              patchBoard({ cellFontSize })
-                            }
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                          <ColorField
-                            id="cell-background-color"
-                            label={t("settings.fields.background")}
-                            value={board.cellBackgroundColor ?? "#111315"}
-                            onChange={(cellBackgroundColor) =>
-                              patchBoard({ cellBackgroundColor })
-                            }
-                          />
-                          <ColorField
-                            id="cell-text-color"
-                            label={t("settings.fields.textColor")}
-                            value={board.cellTextColor ?? "#f4f4ef"}
-                            onChange={(cellTextColor) =>
-                              patchBoard({ cellTextColor })
-                            }
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                          <ColorField
-                            id="caption-overlay"
-                            label={t("settings.fields.overlayColor")}
-                            value={board.captionOverlayColor ?? "#000000"}
-                            onChange={(captionOverlayColor) =>
-                              patchBoard({ captionOverlayColor })
-                            }
-                          />
-                          <div className="flex flex-col gap-2">
-                            <label
-                              className="field-label"
-                              htmlFor="caption-opacity"
-                            >
-                              {t("settings.fields.overlayOpacity")}{" "}
-                              <output>
-                                {board.captionOverlayOpacity ?? 60}%
-                              </output>
-                            </label>
-                            <input
-                              id="caption-opacity"
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={board.captionOverlayOpacity ?? 60}
-                              onChange={(event) =>
-                                patchBoard({
-                                  captionOverlayOpacity: Number(
-                                    event.target.value,
-                                  ),
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </fieldset>
-                </div>
-              </div>
-            </aside>
-          )}
-          {() => (
-            <PresetsPanel
-              currentSettings={currentSettings}
-              appliedPresetId={appliedPreset?.id ?? null}
-              customizations={presetCustomizations}
-              previewId={presetPreview?.choice.id}
-              disabled={
-                !loaded || conflict || importProgress !== null || exporting
-              }
-              onPreview={(choice) => {
-                setHeadingEditing(false);
-                setPresetPreview({ choice, key: crypto.randomUUID() });
-              }}
-              onReset={(choice) => applyPreset(choice)}
-            />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </fieldset>
+            </ThemeBuilder>
           )}
         </EditorLayout>
       </main>
@@ -1988,10 +1649,7 @@ export default function App() {
             } as CSSProperties
           }
         >
-          <div
-            role="region"
-            aria-label={t("library.source.imported")}
-          >
+          <div role="region" aria-label={t("library.source.imported")}>
             <div className={pickerGridClassName}>
               <UploadTile
                 progress={importProgress}

@@ -176,7 +176,7 @@ export function ButtonGroup({
   );
 }
 
-function ChoiceButton({
+export function ChoiceButton({
   ref,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }) {
