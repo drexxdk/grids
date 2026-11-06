@@ -59,7 +59,7 @@ export function EditorLayout({
   );
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
-  const panelOrder = [2, 0, 1];
+  const panelOrder = [0, 2, 1];
   const panelsId = useId();
   const panelScroll = useRef(
     new Map<number, Map<HTMLElement, [number, number]>>(),
@@ -68,7 +68,9 @@ export function EditorLayout({
   if (selectedPanel === 2) presetsVisited.current = true;
   const rememberPanelScroll = () => {
     const aside = document.getElementById(panelsId);
-    const panel = document.getElementById(`${panelsId}-panel-${selectedPanel}`);
+    const panel = document.getElementById(
+      `${panelsId}-panel-${panelOrder.indexOf(selectedPanel)}`,
+    );
     if (!aside || !panel) return;
     const positions = new Map<HTMLElement, [number, number]>();
     const scrollers = [
@@ -328,11 +330,11 @@ export function EditorLayout({
                 id={panelsId}
                 data-editor-sidebar
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-39.25 max-h-[45dvh] flex-col overflow-y-hidden border-t" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-39.25 max-h-[45dvh] flex-row overflow-y-hidden border-t [--shelf-content-height:min(156px,calc(45dvh-1px))]" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
               >
                 <div
                   data-sidebar-sticky
-                  className="sticky top-0 z-20 shrink-0 bg-(--panel) max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
+                  className={`sticky top-0 z-20 shrink-0 bg-(--panel) ${compact ? "min-h-0 w-11 overflow-y-auto" : ""}`}
                 >
                   {!brandInHeader && !compact && (
                     <div
@@ -345,11 +347,12 @@ export function EditorLayout({
                   {
                     <div
                       data-panel-controls
-                      className={`flex shrink-0 flex-col gap-2 ${compact ? "" : "p-4"}`}
+                      className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full" : "p-4"}`}
                     >
                       <ImageTabs
                         id={panelsId}
                         square={compact}
+                        vertical={compact}
                         label={t("editor.panels")}
                         selectedIndex={panelOrder.indexOf(selectedPanel)}
                         onChange={(index) => {
@@ -357,8 +360,8 @@ export function EditorLayout({
                           setSelectedPanel(panelOrder[index]!);
                         }}
                         tabs={[
-                          { label: t("presets.title"), icon: LayoutGrid },
                           { label: t("editor.images"), icon: Images },
+                          { label: t("presets.title"), icon: LayoutGrid },
                           { label: t("editor.settings"), icon: Settings2 },
                         ]}
                       />
@@ -367,12 +370,12 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className={`relative isolate z-0 min-h-0 flex-1 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain ${selectedPanel === 1 ? "max-[901px]:scrollbar-gutter-stable" : ""} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
+                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain ${selectedPanel === 1 ? "max-[901px]:scrollbar-gutter-stable" : ""} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! [&_.settings-panel]:static! [&_.settings-panel]:block! [&_.settings-panel]:h-auto! [&_.settings-panel]:overflow-visible! [&_.settings-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
                 >
                   <div
                     role="tabpanel"
-                    id={`${panelsId}-panel-1`}
-                    aria-labelledby={`${panelsId}-tab-1`}
+                    id={`${panelsId}-panel-0`}
+                    aria-labelledby={`${panelsId}-tab-0`}
                     hidden={selectedPanel !== 0}
                     className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                   >
@@ -390,8 +393,8 @@ export function EditorLayout({
                   {presetsVisited.current && (
                     <div
                       role="tabpanel"
-                      id={`${panelsId}-panel-0`}
-                      aria-labelledby={`${panelsId}-tab-0`}
+                      id={`${panelsId}-panel-1`}
+                      aria-labelledby={`${panelsId}-tab-1`}
                       hidden={selectedPanel !== 2}
                       className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
                     >

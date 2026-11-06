@@ -20,14 +20,6 @@ const nativeTouchTest = scrollbarTest.extend({
   hasTouch: true,
 });
 
-test.beforeEach(async ({ page }) => {
-  await page.route("**/api/session", (route) =>
-    route.fulfill({
-      json: { user: null, providers: [], connections: [], pendingMerge: null },
-    }),
-  );
-});
-
 function sidebarToggle(page, expanded = false) {
   return page
     .getByRole("group", { name: "Editor panels", exact: true })
@@ -391,327 +383,6 @@ async function uploadCellImage(page, index = 0) {
   ).toBeVisible();
 }
 
-async function mockCommons(page, { width = 400, height = 600 } = {}) {
-  const image = await readFile(
-    path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
-  );
-  const requests = [];
-  let failDownload = false;
-  const result = (id, title, overrides = {}) => ({
-    pageid: id,
-    index: id,
-    title: `File:${title}.jpg`,
-    imageinfo: [
-      {
-        url: `https://upload.wikimedia.org/wikipedia/commons/test/${id}.jpg`,
-        thumburl: `https://thumb.wikimedia.org/wikipedia/commons/thumb/test/${id}.jpg/330px-thumb-${id}.jpg`,
-        descriptionurl: `https://commons.wikimedia.org/wiki/File:${title}.jpg`,
-        width,
-        height,
-        size: image.length,
-        mime: "image/jpeg",
-        extmetadata: {
-          Artist: { value: "<b>Fixture creator</b>" },
-          LicenseShortName: { value: "Public domain" },
-          Copyrighted: { value: "False" },
-          AttributionRequired: { value: "false" },
-          Restrictions: { value: "" },
-          Categories: {
-            value:
-              "Astronomy|Landscape photography|Paintings|Architecture|Historical photographs",
-          },
-          ...overrides,
-        },
-      },
-    ],
-  });
-  await page.route(
-    "https://commons.wikimedia.org/w/api.php?*",
-    async (route) => {
-      const url = new URL(route.request().url());
-      const query = url.searchParams.get("gsrsearch");
-      expect(query).toContain("filetype:bitmap");
-      const offset = Number(url.searchParams.get("gsroffset"));
-      const limit = Number(url.searchParams.get("gsrlimit"));
-      requests.push({ query, offset, limit });
-      if (query.startsWith("quota"))
-        return route.fulfill({
-          status: 429,
-          headers: { "Retry-After": "1" },
-          body: "{}",
-        });
-      if (query.startsWith("busy") || query.startsWith("maxlag"))
-        return route.fulfill({
-          json: {
-            error: {
-              code: query.startsWith("busy")
-                ? "cirrussearch-too-busy-error"
-                : "maxlag",
-              info: "Search is currently too busy. Please try again later.",
-            },
-          },
-        });
-      if (query.startsWith("servicefailure"))
-        return route.fulfill({ status: 503, body: "Service unavailable" });
-      if (query.startsWith("invalidcursor"))
-        return route.fulfill({
-          json: {
-            continue: { gsroffset: "12", continue: "-||" },
-            query: { pages: [result(1, "Earth")] },
-          },
-        });
-      if (query.startsWith("invalid"))
-        return route.fulfill({ json: { query: { pages: "bad response" } } });
-      if (query.startsWith("empty"))
-        return route.fulfill({ json: { query: { pages: [] } } });
-      if (query.startsWith("slow")) {
-        await new Promise((resolve) => page.once("commons-release", resolve));
-        try {
-          await route.fulfill({
-            json: { query: { pages: [result(99, "Stale")] } },
-          });
-        } catch {}
-        return;
-      }
-      const first = [
-        result(1, "Earth"),
-        result(3, "Copyrighted", {
-          LicenseShortName: { value: "CC BY-SA 4.0" },
-        }),
-        result(4, "Restricted", {
-          Restrictions: { value: "personality" },
-        }),
-        result(5, "Missing rights", { Copyrighted: { value: "" } }),
-      ];
-      const catalog = query.startsWith("historycontinuation")
-        ? [
-            ...first.slice(0, 2),
-            ...Array.from({ length: 9 }, (_, index) =>
-              result(index + 10, `Open ${index + 10}`),
-            ),
-          ]
-        : query.startsWith("shortcursor")
-          ? [
-              result(1, "Earth"),
-              result(2, "Moon"),
-              ...Array.from({ length: 70 }, (_, index) =>
-                result(index + 10, `Copyrighted ${index + 10}`, {
-                  Copyrighted: { value: "True" },
-                }),
-              ),
-            ]
-          : query.startsWith("scoped")
-            ? [
-                result(30, "Unrelated", { Categories: { value: "" } }),
-                result(31, "Neutral title", {
-                  Categories: { value: "Architecture" },
-                }),
-                result(32, "Forest", { Categories: { value: "Nature" } }),
-              ]
-            : query.startsWith("paged")
-              ? [
-                  ...first,
-                  ...Array.from({ length: 11 }, (_, index) =>
-                    result(index + 10, `Open ${index + 10}`),
-                  ),
-                  result(2, "Moon"),
-                ]
-              : query.startsWith("credited")
-                ? [
-                    result(80, "Credit file", {
-                      ObjectName: { value: "<span>Credited photo</span>" },
-                      Attribution: { value: "Credit Fixture Archive" },
-                      LicenseShortName: { value: "CC BY 4.0" },
-                      LicenseUrl: {
-                        value: "https://creativecommons.org/licenses/by/4.0",
-                      },
-                      Copyrighted: { value: "True" },
-                      AttributionRequired: { value: "true" },
-                    }),
-                  ]
-                : query.startsWith("moon")
-                  ? [result(2, "Moon")]
-                  : first;
-      const next = offset + limit;
-      const historyOnly = query.startsWith("pagedhistory") && limit < 10;
-      return route.fulfill({
-        json: {
-          ...(next < catalog.length && !historyOnly
-            ? { continue: { gsroffset: next, continue: "-||" } }
-            : {
-                continue: { iistart: "2024-07-31T01:29:44Z", continue: "||" },
-              }),
-          query: {
-            ...(query.startsWith("pagedhistory")
-              ? { searchinfo: { totalhits: catalog.length } }
-              : {}),
-            pages: catalog.slice(offset, next),
-          },
-        },
-      });
-    },
-  );
-  await page.route(/^https:\/\/(upload|thumb)\.wikimedia\.org\//, (route) =>
-    route.fulfill({
-      status:
-        failDownload && !route.request().url().includes("thumb-") ? 503 : 200,
-      contentType: "image/jpeg",
-      body: image,
-    }),
-  );
-  return {
-    requests,
-    failDownload: (value) => {
-      failDownload = value;
-    },
-  };
-}
-
-async function mockMet(page) {
-  const image = await readFile(
-    path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
-  );
-  const requests = [];
-  const detailRequests = [];
-  let failDownload = false;
-  const object = (id, patch = {}) => ({
-    objectID: id,
-    isPublicDomain: true,
-    title: id === 2 ? "Vase" : id >= 10 ? `Open ${id}` : "Iris",
-    artistDisplayName: "<b>Fixture curator</b>",
-    tags: [{ term: "Portraits" }],
-    rightsAndReproduction: "",
-    primaryImage: `https://images.metmuseum.org/CRDImages/ep/original/${id}.jpg`,
-    primaryImageSmall: `https://images.metmuseum.org/CRDImages/ep/web-large/${id}.jpg`,
-    objectURL: `https://www.metmuseum.org/art/collection/search/${id}`,
-    ...patch,
-  });
-  await page.route(
-    "https://collectionapi.metmuseum.org/public/collection/**",
-    async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname.endsWith("/search")) {
-        expect(url.pathname).toBe("/public/collection/v1.1/search");
-        expect(url.searchParams.get("hasImages")).toBe("true");
-        const limit = Number(url.searchParams.get("limit"));
-        expect(limit).toBeGreaterThan(0);
-        expect(limit).toBeLessThanOrEqual(12);
-        const query = url.searchParams.get("q");
-        const offset = Number(url.searchParams.get("offset"));
-        requests.push({
-          query,
-          offset,
-          limit,
-          medium: url.searchParams.get("medium"),
-        });
-        if (query === "quota")
-          return route.fulfill({
-            status: 429,
-            headers: { "Retry-After": "1" },
-            body: "{}",
-          });
-        if (query === "invalid")
-          return route.fulfill({ json: { total: 1, objectIDs: "invalid" } });
-        if (query === "empty")
-          return route.fulfill({ json: { total: 0, objectIDs: null } });
-        if (query === "slow") {
-          await new Promise((resolve) => page.once("met-release", resolve));
-          try {
-            await route.fulfill({ json: { total: 1, objectIDs: [99] } });
-          } catch {}
-          return;
-        }
-        const catalog =
-          query === "scoped"
-            ? [1, 10]
-            : query === "paged"
-              ? [
-                  1,
-                  3,
-                  4,
-                  5,
-                  6,
-                  7,
-                  8,
-                  ...Array.from({ length: 11 }, (_, index) => index + 10),
-                  2,
-                ]
-              : query === "painting"
-                ? [1, 3, 4, 5, 6, 7, 8]
-                : [
-                    { undersized: 10, unavailable: 11, adequate: 12 }[query] ??
-                      1,
-                  ];
-        return route.fulfill({
-          json: {
-            total: catalog.length,
-            objectIDs: catalog.slice(offset, offset + limit),
-          },
-        });
-      }
-      const id = Number(url.pathname.split("/").at(-1));
-      detailRequests.push(id);
-      const patches = {
-        10: { tags: [{ term: "Flowers" }] },
-        3: { isPublicDomain: false },
-        4: { rightsAndReproduction: "All rights reserved" },
-        5: { primaryImageSmall: "https://example.com/image.jpg" },
-        6: { primaryImage: "https://example.com/image.jpg" },
-        7: { objectURL: "https://example.com/source" },
-        8: { primaryImage: "" },
-      };
-      return route.fulfill({ json: object(id, patches[id]) });
-    },
-  );
-  await page.route("https://images.metmuseum.org/**", (route) =>
-    route.fulfill({
-      status:
-        failDownload && route.request().url().includes("/original/")
-          ? 503
-          : 200,
-      contentType: "image/jpeg",
-      body: image,
-    }),
-  );
-  return {
-    requests,
-    detailRequests,
-    failDownload: (value) => {
-      failDownload = value;
-    },
-  };
-}
-
-async function searchCommons(page, query, waitForResults = true) {
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  await online
-    .getByRole("searchbox", { name: "Search images", exact: true })
-    .fill(query);
-  if (waitForResults)
-    await expect(online).toHaveAttribute("aria-busy", "false");
-  return online;
-}
-
-async function resizedProviderFixture(page, width, height) {
-  const image = await readFile(
-    path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
-  );
-  const base64 = await page.evaluate(
-    async ({ source, width, height }) => {
-      const decoded = new Image();
-      decoded.src = `data:image/jpeg;base64,${source}`;
-      await decoded.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext("2d").drawImage(decoded, 0, 0, width, height);
-      return canvas.toDataURL("image/png").split(",")[1];
-    },
-    { source: image.toString("base64"), width, height },
-  );
-  return Buffer.from(base64, "base64");
-}
-
 for (const [mode, resizeTest] of [
   ["overlay", touchTest],
   ["native", scrollbarTest],
@@ -889,7 +560,6 @@ for (const [mode, rowTest] of [
   rowTest(
     `compact ${mode} panels reserve only native scrollbar space`,
     async ({ page }) => {
-      await mockCommons(page);
       await page.goto("./");
       await useComicExample(page);
       await setEditorViewport(page, { width: 390, height: 720 });
@@ -933,16 +603,7 @@ for (const [mode, rowTest] of [
           "[data-theme-tile]",
         );
         await openSidebarPanel(page, "Images");
-        await selectField(page, "sidebar-image-source", "imported");
         await checkRow(page.locator("#asset-library"), "[data-library-image]");
-        await selectField(page, "sidebar-image-source", "commons");
-        await expect(
-          page.getByRole("region", { name: "Online", exact: true }),
-        ).toHaveAttribute("aria-busy", "false");
-        await checkRow(
-          page.locator("[data-online-card-area]").locator(".."),
-          "[data-library-image]",
-        );
       }
       await openSidebarPanel(page, "Settings");
       await expect
@@ -964,1013 +625,125 @@ for (const [mode, rowTest] of [
   );
 }
 
-for (const [mode, density, viewport] of [
-  ["desktop", 1, { width: 1440, height: 1080 }],
-  ["mobile", 2, { width: 390, height: 844 }],
-]) {
-  test(`Commons ${mode} preview renditions cover all shapes without oversized requests`, async ({
-    browser,
-  }, testInfo) => {
-    const context = await browser.newContext({
-      viewport,
-      deviceScaleFactor: density,
-      isMobile: mode === "mobile",
-      hasTouch: mode === "mobile",
-    });
-    const page = await context.newPage();
-    try {
-      await mockCommons(page, { width: 6000, height: 3000 });
-      const thumbnailWidths = [];
-      const originals = [];
-      page.on("request", (request) => {
-        if (request.url().startsWith("https://upload.wikimedia.org/"))
-          originals.push(request.url());
-      });
-      await page.route(/^https:\/\/thumb\.wikimedia\.org\//, async (route) => {
-        const width = Number(
-          new URL(route.request().url()).pathname.match(/\/(\d+)px-/)[1],
-        );
-        thumbnailWidths.push(width);
-        await route.fulfill({
-          contentType: "image/png",
-          body: await resizedProviderFixture(page, width, width / 2),
-        });
-      });
-      await page.goto("./");
-      if (mode === "mobile") {
-        await page
-          .locator(".cell-image-button")
-          .first()
-          .tap({ position: { x: 5, y: 5 } });
-        await selectField(page, "picker-image-source", "commons");
-      } else await selectField(page, "sidebar-image-source", "commons");
-      const online = page.getByRole("region", { name: "Online", exact: true });
-      const image = online.locator("img");
-      const assertRendition = async () => {
-        const cardWidth = (
-          await online.locator("[data-library-image]").boundingBox()
-        ).width;
-        const required = Math.ceil(cardWidth * (4 / 3) * density * 2);
-        const expected = [120, 250, 330, 500, 960, 1280, 1920, 3840].find(
-          (width) => width >= required,
-        );
-        await expect(image).toHaveAttribute(
-          "src",
-          new RegExp(`/${expected}px-`),
-        );
-        await expect(image).toHaveJSProperty("naturalWidth", expected);
-        await expect(image).toHaveJSProperty("naturalHeight", expected / 2);
-      };
-      await assertRendition();
-      expect(thumbnailWidths).toHaveLength(1);
-      if (mode === "desktop") {
-        for (const shape of ["landscape", "square", "portrait"]) {
-          await selectField(page, "image-shape", shape);
-          await assertRendition();
-        }
-        expect(thumbnailWidths).toHaveLength(1);
-      } else {
-        await setEditorViewport(page, { width: 260, height: 844 });
-        await assertRendition();
-      }
-      expect(originals).toHaveLength(0);
-      expect((await localDatabase(page)).images).toHaveLength(0);
-      await page.screenshot({
-        path: testInfo.outputPath(`preview-sizing-${mode}.png`),
-      });
-      if (mode === "mobile") {
-        await showImageActions(online, true);
-        await online
-          .getByRole("button", { name: "Use Earth", exact: true })
-          .tap();
-      } else {
-        await online
-          .getByRole("button", { name: "Image options: Earth", exact: true })
-          .dragTo(page.locator(".cell-image-button").first());
-      }
-      await expect
-        .poll(async () => (await localDatabase(page)).document.assets.length)
-        .toBe(1);
-      expect(originals).toEqual([
-        "https://upload.wikimedia.org/wikipedia/commons/test/1.jpg",
-      ]);
-    } finally {
-      await context.close();
-    }
-  });
-}
-
-for (const provider of ["commons", "met"]) {
-  for (const mode of ["desktop", "mobile"]) {
-    const providerTest = mode === "mobile" ? touchTest : test;
-    providerTest(
-      `${provider} ${mode} reveals ready cards while other metadata and previews are still loading`,
-      async ({ page }, testInfo) => {
-        await (provider === "commons" ? mockCommons(page) : mockMet(page));
-        let releaseMetadata;
-        let releasePreview;
-        const metadata = new Promise((resolve) => {
-          releaseMetadata = resolve;
-        });
-        const preview = new Promise((resolve) => {
-          releasePreview = resolve;
-        });
-        await page.route(
-          provider === "commons"
-            ? "https://commons.wikimedia.org/w/api.php?*"
-            : "https://collectionapi.metmuseum.org/public/collection/**",
-          async (route) => {
-            const url = new URL(route.request().url());
-            if (
-              provider === "commons"
-                ? Number(url.searchParams.get("gsroffset")) > 0
-                : url.pathname.endsWith("/objects/11")
-            )
-              await metadata;
-            await route.fallback();
-          },
-        );
-        await page.route(
-          provider === "commons"
-            ? /^https:\/\/(upload|thumb)\.wikimedia\.org\//
-            : "https://images.metmuseum.org/**",
-          async (route) => {
-            if (
-              /\/1\.jpg(?:\/|$)/.test(new URL(route.request().url()).pathname)
-            )
-              await preview;
-            await route.fallback();
-          },
-        );
-        try {
-          if (mode === "mobile") {
-            await page.goto("./");
-            await page
-              .locator(".cell-image-button")
-              .first()
-              .tap({ position: { x: 5, y: 5 } });
-            await selectField(page, "picker-image-source", provider);
-            await searchCommons(page, "paged", false);
-          } else {
-            await page.goto(
-              `./?panel=images&source=${provider}&topic=all&q=paged`,
-            );
-          }
-          const online = page.getByRole("region", {
-            name: "Online",
-            exact: true,
-          });
-          const initial = provider === "commons" ? 7 : 2;
-          await expect(online.locator(".asset:visible")).toHaveCount(
-            initial - 1,
-          );
-          await expect(online).toHaveAttribute("aria-busy", "true");
-
-          await expect(
-            online.getByRole("button", { name: "Next results", exact: true }),
-          ).toBeDisabled();
-          await online
-            .locator(".library-heading:visible")
-            .first()
-            .fill("Ready caption");
-          await page.screenshot({
-            path: testInfo.outputPath(
-              `${provider}-${mode}-incremental-ready.png`,
-            ),
-          });
-          releaseMetadata();
-          await expect(online).toHaveAttribute("aria-busy", "false");
-          await expect(online.locator(".asset:visible")).toHaveCount(9);
-
-          releasePreview();
-          await expect(online.locator(".asset:visible")).toHaveCount(10);
-
-          await expect(
-            online.getByRole("textbox", {
-              name: "Library heading: Ready caption",
-              exact: true,
-            }),
-          ).toHaveValue("Ready caption");
-          expect((await localDatabase(page)).images).toHaveLength(0);
-        } finally {
-          releaseMetadata();
-          releasePreview();
-        }
-      },
-    );
-  }
-}
-
-test("Met preview variants upgrade only when necessary and release temporary originals", async ({
-  page,
-}) => {
-  const mock = await mockMet(page);
-  let height = 1500;
-  const originals = [];
-  page.on("request", (request) => {
-    if (
-      request
-        .url()
-        .startsWith("https://images.metmuseum.org/CRDImages/ep/original/")
-    )
-      originals.push(request.url());
-  });
-  await page.route(
-    "https://images.metmuseum.org/CRDImages/ep/web-large/**",
-    async (route) => {
-      await route.fulfill({
-        contentType: "image/png",
-        body: await resizedProviderFixture(page, 1000, height),
-      });
-    },
-  );
+touchTest("compact shelf keeps vertical tabs reachable beside all panels", async ({ page }) => {
   await page.goto("./");
-  await selectField(page, "sidebar-image-source", "met");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  const image = online.locator("img");
-  await expect(image).toHaveJSProperty("naturalHeight", 1500);
-  await expect(image).toHaveAttribute("src", /\/web-large\//);
-  expect(originals).toHaveLength(0);
-  height = 100;
-  await searchCommons(page, "undersized");
-  await expect(image).toHaveAttribute("src", /^blob:/);
-  await expect(image).toHaveJSProperty("naturalWidth", 1200);
-  const temporary = await image.getAttribute("src");
-  expect(originals).toHaveLength(1);
-  expect((await localDatabase(page)).images).toHaveLength(0);
-  mock.failDownload(true);
-  await searchCommons(page, "unavailable");
-  await expect.poll(() => originals.length).toBe(2);
-  await expect(image).toHaveAttribute("src", /\/web-large\//);
-  await expect(image).toHaveJSProperty("naturalHeight", 100);
-  expect(
-    await page.evaluate(async (url) => {
-      try {
-        await fetch(url);
-        return true;
-      } catch {
-        return false;
-      }
-    }, temporary),
-  ).toBe(false);
-  height = 1500;
-  mock.failDownload(false);
-  await searchCommons(page, "adequate");
-  await expect(image).toHaveJSProperty("naturalHeight", 1500);
-  expect(originals).toHaveLength(2);
-  expect((await localDatabase(page)).images).toHaveLength(0);
+  await useComicExample(page);
+  const sidebar = page.locator("[data-editor-sidebar]");
+  const tabs = sidebar.getByRole("tablist", { name: "Editor panels", exact: true });
+  const themes = tabs.getByRole("tab", { name: "Themes", exact: true });
+  const images = tabs.getByRole("tab", { name: "Images", exact: true });
+  const settings = tabs.getByRole("tab", { name: "Settings", exact: true });
+  for (const width of [260, 390, 780, 900]) {
+    await setEditorViewport(page, { width, height: 720 });
+    await expect(tabs).toHaveAttribute("aria-orientation", "vertical");
+    await expect(tabs.getByRole("tab").first()).toHaveAccessibleName("Images");
+    for (const tab of [themes, images, settings]) {
+      await expect(tab).toBeInViewport({ ratio: 1 });
+      const bounds = await tab.boundingBox();
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
+    await settings.focus();
+    await settings.press("ArrowUp");
+    await expect(themes).toBeFocused();
+    await themes.press("End");
+    await expect(settings).toBeFocused();
+    await settings.press("Home");
+    await expect(themes).toBeFocused();
+    await themes.press("Enter");
+    await expect(themes).toBeDisabled();
+    await expect(sidebar.getByRole("tabpanel", { name: "Themes", exact: true })).toBeVisible();
+    await expect.poll(() => sidebar.evaluate((element) => {
+      const tabs = element.querySelector("[role=tablist]").getBoundingClientRect();
+      const panels = element.querySelector("[data-sidebar-panels]").getBoundingClientRect();
+      return panels.left >= tabs.right && Math.abs(panels.top - tabs.top) < 1;
+    })).toBe(true);
+    const themeRow = sidebar.getByRole("region", { name: "Starting points", exact: true });
+    expect((await themeRow.boundingBox()).height).toBeGreaterThan(112);
+    await themeRow.locator("[data-theme-tile]").last().scrollIntoViewIfNeeded();
+    await expect(themeRow.locator("[data-theme-tile]").last()).toBeInViewport();
+    await expect(settings).toBeInViewport({ ratio: 1 });
+    await settings.click();
+    await page.locator("#background-value").fill("#112233");
+    await page.locator("#background-value").press("Enter");
+    const reset = page.getByRole("button", { name: "Reset grid settings", exact: true });
+    await reset.scrollIntoViewIfNeeded();
+    await expect(reset).toBeInViewport();
+    await expect(themes).toBeInViewport({ ratio: 1 });
+    await images.click();
+    await expect(page.locator("#asset-library")).toBeVisible();
+    expect((await page.locator("#asset-library").boundingBox()).height).toBeGreaterThan(112);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await setEditorViewport(page, { width: 901, height: 900 });
+  await expect(tabs).toHaveAttribute("aria-orientation", "horizontal");
+  await expect(tabs.getByRole("tab").first()).toHaveAccessibleName("Images");
+  await expect(images).toBeDisabled();
+  await settings.focus();
+  await settings.press("ArrowLeft");
+  await expect(themes).toBeFocused();
+  await themes.press("ArrowRight");
+  await expect(settings).toBeFocused();
+  await settings.press("Enter");
+  await expect(page.locator("#background-value")).toHaveValue("#112233");
 });
 
-for (const originalAvailable of [true, false]) {
-  test(`Met failed thumbnails ${originalAvailable ? "use a bounded original preview" : "show an error when the original also fails"}`, async ({
-    page,
-  }) => {
-    await mockMet(page);
-    const bytes = await readFile(
-      path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
-    );
-    let originalRequests = 0;
-    await page.route("https://images.metmuseum.org/**", async (route) => {
-      if (route.request().url().includes("/web-large/"))
-        return route.abort("failed");
-      originalRequests++;
-      return route.fulfill({
-        status: originalAvailable ? 200 : 503,
-        contentType: "image/jpeg",
-        body: bytes,
-      });
-    });
-    await page.goto("./");
-    await selectField(page, "sidebar-image-source", "met");
-    const online = page.getByRole("region", { name: "Online", exact: true });
-    if (originalAvailable) {
-      const image = online.locator(".asset img");
-      await expect(image).toHaveAttribute("src", /^blob:/);
-      await expect(image).toHaveJSProperty("naturalWidth", 1200);
-      await expect(
-        online.getByText(
-          "Image unavailable. Check your connection or choose another image.",
-          { exact: true },
-        ),
-      ).toHaveCount(0);
-    } else {
-      await expect(
-        online.getByText(
-          "Image unavailable. Check your connection or choose another image.",
-          { exact: true },
-        ),
-      ).toBeVisible();
-    }
-    await expect(online.locator("[data-online-image-loading]")).toHaveCount(0);
-    expect(originalRequests).toBe(1);
-    const saved = await localDatabase(page);
-    expect(saved.images).toHaveLength(0);
-    expect(saved.document.assets).toHaveLength(0);
-  });
-}
-
-async function showImageActions(container, touch = false) {
-  const image = container.locator("[data-library-thumbnail]").first();
-  if (touch) {
-    if ((await image.getAttribute("aria-expanded")) !== "true")
-      await image.tap();
-  } else await image.hover();
-}
-
-for (const [mode, sourceTest] of [
-  ["desktop", test],
-  ["mobile", touchTest],
-]) {
-  sourceTest(
-    `source rights ${mode} stays absent without selecting the card`,
-    async ({ page }, testInfo) => {
-      await mockCommons(page);
-      await page
-        .context()
-        .route("https://commons.wikimedia.org/wiki/**", (route) =>
-          route.fulfill({
-            contentType: "text/html",
-            body: "<title>Source fixture</title>",
-          }),
-        );
-      await page.goto("./");
-      if (mode === "desktop")
-        await selectField(page, "sidebar-image-source", "commons");
-      else {
-        await page
-          .locator(".cell-image-button")
-          .first()
-          .tap({ position: { x: 5, y: 5 } });
-        await selectField(page, "picker-image-source", "commons");
-      }
-      const online = page.getByRole("region", { name: "Online", exact: true });
-      const card = online.locator("[data-library-image]");
-      await expect(online.locator(".library-heading")).toHaveValue("Earth");
-      const source = online.getByRole("link", {
-        name: "Source and rights",
-        exact: true,
-      });
-      await expect(source).toHaveCount(0);
-      await showImageActions(online, mode === "mobile");
-      await expect(source).toHaveCount(0);
-
-      await page.screenshot({
-        path: testInfo.outputPath(`source-${mode}-inside-card.png`),
-        fullPage: true,
-      });
-      await expect(page.locator(".grid-cell img")).toHaveCount(0);
-      expect((await localDatabase(page)).images).toHaveLength(0);
-      if (mode === "mobile") {
-        await expect(
-          page.getByRole("dialog", { name: "Choose image", exact: true }),
-        ).toBeVisible();
-        await showImageActions(online, true);
-        await online
-          .getByRole("button", { name: "Use Earth", exact: true })
-          .tap();
-        await expect(
-          page.getByRole("dialog", { name: "Choose image", exact: true }),
-        ).toHaveCount(0);
-        await expect(page.locator(".grid-cell img")).toHaveCount(1);
-      } else {
-        await page.mouse.move(0, 0);
-        await expect(source).toHaveCount(0);
-      }
-    },
-  );
-}
-
-for (const [mode, providerTest] of [
-  ["desktop", test],
-  ["mobile", touchTest],
-]) {
-  providerTest(
-    `Met ${mode} shared browsing import crop export and reload`,
-    async ({ page }, testInfo) => {
-      const mock = await mockMet(page);
-      await page.goto("./");
-      if (mode === "desktop")
-        await selectField(page, "sidebar-image-source", "met");
-      else {
-        await page
-          .locator(".cell-image-button")
-          .first()
-          .tap({ position: { x: 5, y: 5 } });
-        await selectField(page, "picker-image-source", "met");
-      }
-      const online = page.getByRole("region", { name: "Online", exact: true });
-      const remote = online.locator("[data-library-thumbnail]");
-      const searchbox = online.getByRole("searchbox", {
-        name: "Search images",
-        exact: true,
-      });
-      await expect(remote).toHaveCount(1);
-      await expect(online.locator(".library-heading")).toHaveValue("Iris");
-      await expect(remote).toHaveJSProperty("draggable", mode === "desktop");
-      await expect(online.locator("img")).toHaveJSProperty(
-        "naturalWidth",
-        1200,
-      );
-      expect(
-        await page.evaluate(() =>
-          document.activeElement?.matches("input,textarea"),
-        ),
-      ).toBe(false);
-      const topics = online.getByRole("group").first();
-      await expect(topics.getByRole("button")).toHaveCount(6);
-      for (const name of [
-        "Paintings",
-        "Sculpture",
-        "Portraits",
-        "Prints",
-        "Ceramics",
-      ]) {
-        const button = topics.getByRole("button", { name, exact: true });
-        await expect(button).toHaveAttribute("title", name);
-      }
-      const searchBounds = await searchbox.boundingBox();
-      const topicBounds = await topics.boundingBox();
-      const cardBounds = await remote.boundingBox();
-      expect(topicBounds.y).toBeGreaterThanOrEqual(
-        searchBounds.y + searchBounds.height,
-      );
-      expect(cardBounds.y).toBeGreaterThanOrEqual(
-        topicBounds.y + topicBounds.height,
-      );
-      await page.screenshot({
-        path: testInfo.outputPath(`met-${mode}-browse.png`),
-      });
-      await topics
-        .getByRole("button", { name: "Ceramics", exact: true })
-        .click();
-      await expect(online).toHaveAttribute("aria-busy", "false");
-      expect(mock.requests.at(-1).query).toBe("ceramic");
-      await searchbox.fill("iri");
-      await searchbox.fill("iris");
-      await expect(online).toHaveAttribute("aria-busy", "false");
-      expect(mock.requests.at(-1).query).toBe("iris");
-      expect(mock.requests.some((request) => request.query === "iri")).toBe(
-        false,
-      );
-      await expect(
-        online.getByRole("button", { name: "Next results", exact: true }),
-      ).toBeDisabled();
-      await showImageActions(online, mode === "mobile");
-      await expect(
-        online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveCount(0);
-      const importImage = async () => {
-        if (mode === "mobile") {
-          await showImageActions(online, true);
-          await online
-            .getByRole("button", { name: "Use Iris", exact: true })
-            .tap();
-        } else {
-          await remote.dragTo(page.locator(".cell-image-button").first());
-        }
-      };
-      mock.failDownload(true);
-      await importImage();
-      await expect(
-        mode === "mobile"
-          ? online.getByRole("alert")
-          : page.locator("[data-sonner-toast]"),
-      ).toHaveText("Could not import this image. Try another result.");
-      await expect(page.locator(".grid-cell img")).toHaveCount(0);
-      mock.failDownload(false);
-      if (mode === "desktop") {
-        await remote.dragTo(page.locator(".cell-image-button").first());
-        await expect(page.locator(".grid-cell img")).toHaveCount(1);
-        await remote.dragTo(page.locator(".cell-image-button").nth(1));
-        await expect(page.locator(".grid-cell img")).toHaveCount(2);
-        await selectField(page, "sidebar-image-source", "imported");
-        await expect(page.locator("#asset-library .asset")).toHaveCount(1);
-        await showImageActions(page.locator("#asset-library"));
-        await expect(
-          page
-            .locator("#asset-library")
-            .getByRole("link", { name: "Source and rights" }),
-        ).toHaveCount(0);
-      } else {
-        await importImage();
-        await expect(
-          page.getByRole("dialog", { name: "Choose image", exact: true }),
-        ).toHaveCount(0);
-      }
-      const first = page.locator(".grid-cell").first();
-      await first.locator(".cell-image-button").click();
-      await first
-        .getByRole("button", { name: "Crop image", exact: true })
-        .click();
-      const crop = page.getByRole("dialog", {
-        name: "Crop image",
-        exact: true,
-      });
-      await crop
-        .getByRole("button", { name: "Apply crop", exact: true })
-        .click();
-      await selectExportField(page, "resolution", "150");
-      const download = await downloadBoard(page);
-      const bytes = await readFile(await download.path());
-      expect([...bytes.subarray(0, 8)]).toEqual([
-        137, 80, 78, 71, 13, 10, 26, 10,
-      ]);
-      await expect
-        .poll(
-          async () =>
-            (await localDatabase(page)).document.assets[0]?.provenance
-              ?.provider,
-        )
-        .toBe("met");
-      const saved = await localDatabase(page);
-      expect(saved.document.assets[0].provenance).toMatchObject({
-        provider: "met",
-        entityId: "1",
-        license: "CC0",
-        creator: "Fixture curator",
-      });
-      expect(saved.images).toHaveLength(0);
-      expect(saved.document.grid.cells[0].crop).toBeDefined();
-      expect(
-        await page.evaluate(() => localStorage.getItem("grids-settings-v1")),
-      ).not.toContain("metmuseum");
-      await page.reload();
-      await expect(page.locator(".grid-cell img")).toHaveCount(
-        mode === "desktop" ? 2 : 1,
-      );
-      await expect(page.locator(".cell-heading").first()).toHaveValue("Iris");
-      if (mode === "desktop") {
-        await selectField(page, "sidebar-image-source", "met");
-        await expect(remote).toBeVisible();
-      }
-      await page.screenshot({ path: testInfo.outputPath(`met-${mode}.png`) });
-    },
-  );
-}
-
-test("Met filters reject invalid pages and ignore stale results without affecting Commons", async ({
-  page,
-}) => {
-  const mock = await mockMet(page);
-  await mockCommons(page);
+touchTest("compact image shelf uses its width and keeps clear images reachable without losing placements", async ({ page }) => {
   await page.goto("./");
-  await selectField(page, "sidebar-image-source", "met");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  const search = online.getByRole("searchbox", {
-    name: "Search images",
-    exact: true,
-  });
-  await expect(online.locator(".library-heading")).toHaveValue("Iris");
-  await search.fill("slow");
-  await expect
-    .poll(() => mock.requests.some((request) => request.query === "slow"))
-    .toBe(true);
-  await search.fill("iris");
-  await expect(online.locator(".library-heading")).toHaveValue("Iris");
-  page.emit("met-release");
-  await search.fill("invalid");
-  await expect(online.getByRole("alert")).toHaveText(
-    "The Met returned an unexpected response.",
+  await page.locator("#upload").setInputFiles(
+    ["keep.svg", "unused.svg"].map((name) => ({
+      name,
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>'),
+    })),
   );
-  await search.fill("empty");
-  await expect(online).toHaveAttribute("aria-busy", "false");
-  await expect(online.locator(".asset")).toHaveCount(0);
-  await expect(online.getByRole("alert")).toHaveCount(0);
-  await search.fill("quota");
-  await expect(online.getByRole("alert")).toHaveText(
-    "The Met is rate limiting requests. Try again shortly.",
-  );
-  await selectField(page, "sidebar-image-source", "commons");
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  await expect(page.locator(".grid-cell img")).toHaveCount(0);
-});
-
-for (const [mode, providerTest] of [
-  ["desktop", test],
-  ["mobile", touchTest],
-]) {
-  providerTest(
-    `Commons ${mode} search imports locally with provenance placement crop export and reload`,
-    async ({ page }, testInfo) => {
-      const mock = await mockCommons(page);
-      await page.goto("./");
-      await expect(page.locator("#board-grid")).toBeVisible();
-      if (mode === "desktop") {
-        await openSidebarPanel(page, "Images");
-        await selectField(page, "sidebar-image-source", "commons");
-        await expect(page.locator("#asset-library")).toBeHidden();
-      } else {
-        await page
-          .locator(".cell-image-button")
-          .first()
-          .tap({ position: { x: 5, y: 5 } });
-        await expect(
-          page.getByRole("dialog", { name: "Choose image", exact: true }),
-        ).toBeVisible();
-        expect(
-          await page.evaluate(() => document.activeElement?.tagName),
-        ).not.toBe("INPUT");
-        await selectField(page, "picker-image-source", "commons");
-      }
-      const online = page.getByRole("region", { name: "Online", exact: true });
-      await expect(
-        online.locator(
-          "button[aria-haspopup='listbox']:not(#picker-image-source)",
-        ),
-      ).toHaveCount(0);
-      await expect(
-        page.locator(
-          mode === "desktop" ? "#sidebar-image-source" : "#picker-image-source",
-        ),
-      ).toHaveText("Wikimedia Commons");
-      const searchbox = online.getByRole("searchbox", {
-        name: "Search images",
-        exact: true,
-      });
-      await expect(searchbox).toHaveValue("");
-      await expect(online.locator("[data-library-image]")).toHaveCount(1);
-      await expect(online.locator("article")).toHaveCount(0);
-      await expect(
-        online.getByText("Public domain and CC0", { exact: true }),
-      ).toHaveCount(0);
-      await expect(online.locator("[data-library-thumbnail]")).toHaveJSProperty(
-        "draggable",
-        mode === "desktop",
-      );
-      await expect(
-        online.getByRole("button", { name: "Space", exact: true }),
-      ).toHaveAttribute("aria-pressed", "true");
-      expect(
-        mock.requests.some((request) =>
-          request.query.startsWith("NASA Earth space"),
-        ),
-      ).toBe(true);
-      await expect(searchbox).toHaveAttribute("placeholder", "Search images");
-      await expect(
-        online.getByText("Search images", { exact: true }),
-      ).toHaveCount(0);
-      await expect(
-        online.getByText(/Searches and image requests are sent/),
-      ).toHaveCount(0);
-      await expect(
-        online.getByRole("button", { name: "Search", exact: true }),
-      ).toHaveCount(0);
-      const topics = online.getByRole("group", {
-        name: "Explore",
-        exact: true,
-      });
-      for (const topic of await topics.getByRole("button").all()) {
-        await expect(topic).toHaveAccessibleName(/\S/);
-      }
-      await searchbox.click();
-      await expect(searchbox).toBeFocused();
-
-      await page.screenshot({
-        path: testInfo.outputPath(`commons-${mode}-browse.png`),
-      });
-      const beforeFilter = mock.requests.length;
-      await searchbox.fill("ear");
-      await searchCommons(page, "earth");
-      expect(mock.requests.slice(beforeFilter)).toHaveLength(1);
-      expect(mock.requests.at(-1).query).toMatch(/^earth/);
-      const afterFilter = mock.requests.length;
-      await searchCommons(page, "");
-      await expect(
-        online.getByRole("button", { name: "Space", exact: true }),
-      ).toHaveAttribute("aria-pressed", "true");
-      expect(mock.requests).toHaveLength(afterFilter);
-      await searchbox.fill("cancelled-filter");
-      await online.getByRole("button", { name: "Nature", exact: true }).click();
-      await expect(
-        online.getByRole("button", { name: "Nature", exact: true }),
-      ).toHaveAttribute("aria-pressed", "true");
-      await expect
-        .poll(() =>
-          mock.requests.some((request) =>
-            request.query.startsWith("cancelled-filter"),
-          ),
-        )
-        .toBe(true);
-      await expect(searchbox).toHaveValue("cancelled-filter");
-      await expect(searchbox).not.toBeFocused();
-      await expect(online.locator("[data-library-image]")).toHaveCount(1);
-      await searchCommons(page, "earth");
-      expect(
-        mock.requests.some((request) =>
-          request.query.startsWith("cancelled-filter"),
-        ),
-      ).toBe(true);
-      await expect(online.locator("[data-library-image]")).toHaveCount(1);
-      await showImageActions(online, mode === "mobile");
-      await expect(
-        online.getByRole("link", { name: "Source and rights" }),
-      ).toHaveCount(0);
-      await expect(online.locator("[data-library-image] img")).toHaveJSProperty(
-        "naturalWidth",
-        1200,
-      );
-      await expect(
-        online.getByRole("button", { name: "Next results", exact: true }),
-      ).toBeDisabled();
-      const importResult = async () => {
-        if (mode === "mobile") {
-          await showImageActions(online, true);
-          await online
-            .getByRole("button", { name: "Use Earth", exact: true })
-            .tap();
-        } else {
-          await online
-            .getByRole("button", { name: "Image options: Earth", exact: true })
-            .dragTo(page.locator(".cell-image-button").first());
-        }
-      };
-      mock.failDownload(true);
-      await importResult();
-      await expect(
-        mode === "mobile"
-          ? online.getByRole("alert")
-          : page.locator("[data-sonner-toast]"),
-      ).toHaveText("Could not import this image. Try another result.");
-      await expect(page.locator(".grid-cell img")).toHaveCount(0);
-      mock.failDownload(false);
-      await page.screenshot({
-        path: testInfo.outputPath(`commons-${mode}-results.png`),
-      });
-      await importResult();
-      if (mode === "desktop") {
-        await selectField(page, "sidebar-image-source", "imported");
-        await expect(
-          page.locator("#asset-library [data-library-image]"),
-        ).toHaveCount(1);
-        await expect(page.locator(".grid-cell img")).toHaveCount(1);
-        await showImageActions(page.locator("#asset-library"));
-        await expect(
-          page
-            .locator("#asset-library")
-            .getByRole("link", { name: "Source and rights" }),
-        ).toHaveCount(0);
-      } else
-        await expect(
-          page.getByRole("dialog", { name: "Choose image", exact: true }),
-        ).toHaveCount(0);
-      await expect(page.locator(".grid-cell img")).toHaveCount(1);
-      const first = page.locator(".grid-cell").first();
-      await first.locator(".cell-image-button").click();
-      await first
-        .getByRole("button", { name: "Crop image", exact: true })
-        .click();
-      const crop = page.getByRole("dialog", {
-        name: "Crop image",
-        exact: true,
-      });
-      await expect(crop).toBeVisible();
-      await crop
-        .getByRole("button", { name: "Apply crop", exact: true })
-        .click();
-      await expect(crop).toHaveCount(0);
-      await selectExportField(page, "resolution", "150");
-      const download = await downloadBoard(page);
-      const bytes = await readFile(await download.path());
-      expect([...bytes.subarray(0, 8)]).toEqual([
-        137, 80, 78, 71, 13, 10, 26, 10,
-      ]);
-      await expect
-        .poll(
-          async () =>
-            (await localDatabase(page)).document.assets[0]?.provenance
-              ?.entityId,
-        )
-        .toBe("1");
-      const saved = await localDatabase(page);
-      expect(saved.document.assets[0].provenance).toMatchObject({
-        provider: "commons",
-        creator: "Fixture creator",
-        license: "Public domain",
-      });
-      expect(saved.images).toHaveLength(0);
-      expect(saved.document.grid.cells[0].crop).toBeDefined();
-      const settings = await page.evaluate(() =>
-        localStorage.getItem("grids-settings-v1"),
-      );
-      expect(settings).not.toContain("wikimedia");
-      expect(settings).not.toContain("provenance");
-      await page.reload();
-      await expect(page.locator(".grid-cell img")).toHaveCount(1);
-      await expect(
-        page.locator(".grid-cell").first().locator(".cell-heading"),
-      ).toHaveValue("Earth");
-      expect(
-        (await localDatabase(page)).document.assets[0].provenance.entityId,
-      ).toBe("1");
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
-      expect(mock.requests.every((request) => request.offset === 0)).toBe(true);
-    },
-  );
-}
-
-test("Commons cards share imported settings and support native mouse and touch drops", async ({
-  browser,
-}, testInfo) => {
-  const context = await browser.newContext({
-    viewport: { width: 1440, height: 1080 },
-    hasTouch: true,
-    isMobile: true,
-  });
-  const page = await context.newPage();
-  try {
-    const mock = await mockCommons(page);
-    await page.goto("./");
-    await selectField(page, "sidebar-image-source", "commons");
-    const online = page.getByRole("region", { name: "Online", exact: true });
-    const remote = online.locator("[data-library-thumbnail]");
-    const cells = page.locator(".grid-cell");
-    await expect(remote).toHaveJSProperty("draggable", true);
-    await expect(online.locator("img")).toHaveJSProperty("naturalWidth", 1200);
-    let releaseDownload;
-    const downloadGate = new Promise((resolve) => {
-      releaseDownload = resolve;
-    });
-    const originalUrl =
-      "https://upload.wikimedia.org/wikipedia/commons/test/1.jpg";
-    await page.route(originalUrl, async (route) => {
-      await downloadGate;
-      await route.fallback();
-    });
-    await remote.dragTo(cells.nth(0).locator(".cell-image-button"), {
-      sourcePosition: { x: 5, y: 5 },
-    });
-    await expect(cells.nth(0)).toHaveAttribute("aria-busy", "true");
-    await expect(
-      cells.nth(0).getByRole("status", { name: "Importing..." }),
-    ).toBeVisible();
-    await expect(cells.nth(0).locator("img")).toHaveCount(0);
-    releaseDownload();
-    await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Earth");
-    await expect(cells.nth(0)).not.toHaveAttribute("aria-busy");
-    await expect(cells.nth(0).getByRole("status")).toHaveCount(0);
-    await page.unroute(originalUrl);
-    await expect
-      .poll(async () => (await localDatabase(page)).document.assets.length)
-      .toBe(1);
-
-    await openSidebarPanel(page, "Settings");
-    await selectField(page, "cell-font", "Boogaloo");
-    await page.locator("#cell-font-weight").press("End");
-    await page.locator("#cell-text-color-value").fill("#40b4aa");
-    await page.locator("#cell-text-color-value").press("Enter");
-    await page.locator("#cell-background-color-value").fill("#304050");
-    await page.locator("#cell-background-color-value").press("Enter");
-    await openSidebarPanel(page, "Images");
-    await page.evaluate(() => document.fonts.ready);
-    const metrics = (element) => {
-      const bounds = element.getBoundingClientRect();
-
-      const caption = getComputedStyle(
-        element.querySelector(".library-heading"),
-      );
-      const image = element
-        .querySelector("[data-card-image]")
-        .getBoundingClientRect();
-      return {
-        width: Math.round(bounds.width * 100) / 100,
-        height: Math.round(bounds.height * 100) / 100,
-        imageRatio: Math.round((image.width / image.height) * 100) / 100,
-        font: caption.fontFamily,
-        weight: caption.fontWeight,
-        size: caption.fontSize,
-        color: caption.color,
-        background: caption.backgroundColor,
-        captionTop: caption.top,
-        captionHeight: caption.height,
-        padding: caption.padding,
-      };
-    };
-    const dimensions = new Set();
-    for (const [shape, ratio] of [
-      ["portrait", 0.75],
-      ["landscape", 1.33],
-      ["square", 1],
-    ]) {
-      await selectField(page, "image-shape", shape);
-      for (const position of [
-        "above",
-        "below",
-        "overlay-top",
-        "overlay-bottom",
-      ]) {
-        await selectField(page, "caption-position", position);
-        await selectField(page, "sidebar-image-source", "imported");
-        const imported = page.locator("#asset-library .asset");
-        await expect(imported.locator("img")).toHaveJSProperty(
-          "naturalWidth",
-          1200,
-        );
-        await expect
-          .poll(async () => parseFloat((await imported.evaluate(metrics)).size))
-          .toBeGreaterThan(0);
-        const expected = await imported.evaluate(metrics);
-
-        expect(Math.abs(expected.imageRatio - ratio)).toBeLessThan(0.02);
-        expect(expected.font).toContain("Boogaloo");
-        expect(expected.weight).toBe("700");
-        expect(expected.color).toBe("rgb(64, 180, 170)");
-        await selectField(page, "sidebar-image-source", "commons");
-        await expect(remote).toBeVisible();
-        await expect
-          .poll(() => online.locator(".asset").evaluate(metrics))
-          .toEqual(expected);
-        dimensions.add(expected.height);
-      }
+  await expect(page.locator(".asset")).toHaveCount(2);
+  await chooseImage(page, "keep");
+  await page.locator(".cell-heading").first().fill("Keep my caption");
+  const library = page.locator("#asset-library");
+  const add = library.getByRole("button", { name: "Add images", exact: true });
+  const clear = library.getByRole("button", { name: "Clear images", exact: true });
+  for (const [width, shape, ratio] of [
+    [260, "portrait", 3 / 4],
+    [390, "landscape", 4 / 3],
+    [780, "square", 1],
+    [900, "portrait", 3 / 4],
+  ]) {
+    await setEditorViewport(page, { width, height: 720 });
+    await selectField(page, "image-shape", shape);
+    await library.evaluate((element) => { element.scrollLeft = 0; });
+    await expect(add).toBeInViewport({ ratio: 1 });
+    const uploadBounds = await add.boundingBox();
+    expect(uploadBounds.width).toBeCloseTo(uploadBounds.height, 1);
+    for (const label of await add.locator("[data-upload-label]").all()) {
+      expect(await label.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
     }
-    expect(dimensions.size).toBeGreaterThan(2);
-    await remote.dragTo(cells.nth(1).locator(".cell-image-button"), {
-      sourcePosition: { x: 5, y: 5 },
-    });
-    await expect(cells.nth(1).locator("img")).toHaveAttribute("alt", "Earth");
-    expect((await localDatabase(page)).images).toHaveLength(0);
-    await page.screenshot({
-      path: testInfo.outputPath("commons-shared-card-settings.png"),
-    });
-
-    await searchCommons(page, "moon");
-    await expect(online.locator(".library-heading")).toHaveValue("Moon");
-    mock.failDownload(true);
-    await remote.dragTo(cells.nth(2).locator(".cell-image-button"), {
-      sourcePosition: { x: 5, y: 5 },
-    });
-    await expect(page.locator("[data-sonner-toast]")).toContainText(
-      "Could not import this image",
-    );
-    await expect(cells.nth(2).locator("img")).toHaveCount(0);
-    await expect(cells.nth(2)).not.toHaveAttribute("aria-busy");
-    await expect(cells.nth(2).getByRole("status")).toHaveCount(0);
-    expect((await localDatabase(page)).images).toHaveLength(0);
-    mock.failDownload(false);
-    const session = await context.newCDPSession(page);
-    const touchDrop = async (cancel) => {
-      await remote.tap({ position: { x: 5, y: 5 } });
-      const handle = online.getByRole("button", {
-        name: "Drag image",
-        exact: true,
-      });
-      await expect(handle).toBeVisible();
-      const source = await handle.boundingBox();
-      const target = await cells
-        .nth(2)
-        .locator(".cell-image-button")
-        .boundingBox();
-      const start = {
-        x: source.x + source.width / 2,
-        y: source.y + source.height / 2,
-      };
-      const end = { x: target.x + 10, y: target.y + 10 };
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [{ ...start, id: 1 }],
-      });
-      for (let step = 1; step <= 8; step++)
-        await session.send("Input.dispatchTouchEvent", {
-          type: "touchMove",
-          touchPoints: [
-            {
-              x: start.x + ((end.x - start.x) * step) / 8,
-              y: start.y + ((end.y - start.y) * step) / 8,
-              id: 1,
-            },
-          ],
-        });
-      await expect(page.locator("[data-drag-floating]")).toBeVisible();
-
-      await session.send("Input.dispatchTouchEvent", {
-        type: cancel ? "touchCancel" : "touchEnd",
-        touchPoints: [],
-      });
-      await expect(page.locator("[data-drag-floating]")).toHaveCount(0);
-    };
-    await touchDrop(true);
-    await expect(cells.nth(2).locator("img")).toHaveCount(0);
-    expect((await localDatabase(page)).images).toHaveLength(0);
-    await touchDrop(false);
-    await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Moon");
-    await expect
-      .poll(async () => (await localDatabase(page)).document.assets.length)
-      .toBe(2);
-    await expect(online.locator(".library-heading")).toHaveValue("Moon");
-    await page.reload();
-    await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Moon");
-    expect(
-      (await localDatabase(page)).document.assets
-        .map((asset) => asset.provenance.entityId)
-        .sort(),
-    ).toEqual(["1", "2"]);
-    await session.detach();
-  } finally {
-    await context.close();
+    const imageBounds = await page.locator(".grid-cell").first().locator("[data-card-image]").boundingBox();
+    expect(Math.abs(imageBounds.width - imageBounds.height * ratio)).toBeLessThan(1);
+    const tabs = await page.getByRole("tablist", { name: "Editor panels", exact: true }).boundingBox();
+    const shelf = await library.boundingBox();
+    expect(shelf.x - (tabs.x + tabs.width)).toBeLessThan(16);
+    expect(shelf.width).toBeGreaterThanOrEqual(width - tabs.width - 16);
+    await clear.scrollIntoViewIfNeeded();
+    await expect(clear).toBeInViewport({ ratio: 1 });
+    await expect(clear).toHaveAttribute("title", "Clear images");
+    const bounds = await clear.boundingBox();
+    expect(bounds.width).toBe(44);
+    expect(bounds.height).toBe(44);
+    await expect(page.locator("[data-editor-sidebar]").getByRole("heading", { name: "My images", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+  await clear.tap();
+  await expect(clear).toHaveCount(0);
+  await expect(page.locator(".asset")).toHaveCount(0);
+  await expect(add).toBeFocused();
+  await expect(add).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue("Keep my caption");
+  await reloadWorkspace(page);
+  await expect(page.locator(".asset")).toHaveCount(0);
+  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await expect(page.locator(".cell-heading").first()).toHaveValue("Keep my caption");
 });
 
 for (const failure of ["malformed", "blocked"]) {
@@ -1997,7 +770,7 @@ for (const failure of ["malformed", "blocked"]) {
     }, failure);
     await page.goto("./?source=invalid&panel=invalid&offset=-1");
     await expect(page.locator("#board-grid")).toBeVisible();
-    await expect(page.locator("#sidebar-image-source")).toHaveText("My images");
+    await expect(page.locator("#asset-library")).toBeVisible();
     await openSidebarPanel(page, "Settings");
     await page.reload();
     await expect(
@@ -2007,733 +780,14 @@ for (const failure of ["malformed", "blocked"]) {
   });
 }
 
-for (const provider of ["commons", "met"]) {
-  test(`${provider} topic filters exclude unrelated metadata without changing search text`, async ({
-    page,
-  }) => {
-    await (provider === "commons" ? mockCommons(page) : mockMet(page));
-    await page.goto(
-      `./?source=${provider}&topic=${provider === "commons" ? "places" : "portraits"}&q=scoped`,
-    );
-    const online = page.getByRole("region", { name: "Online", exact: true });
-    const input = online.getByRole("searchbox", {
-      name: "Search images",
-      exact: true,
-    });
-    await expect(online.locator(".library-heading")).toHaveValue(
-      provider === "commons" ? "Neutral title" : "Iris",
-    );
-    await expect(input).toHaveValue("scoped");
-    if (provider === "commons") {
-      await online.getByRole("button", { name: "Nature", exact: true }).click();
-      await expect(online.locator(".library-heading")).toHaveValue("Forest");
-    }
-    await online.getByRole("button", { name: "All", exact: true }).click();
-    await expect(online.locator(".library-heading")).toHaveCount(
-      provider === "commons" ? 3 : 2,
-    );
-    await expect(input).toHaveValue("scoped");
-  });
-
-  for (const [mode, providerTest] of [
-    ["desktop", test],
-    ["mobile", touchTest],
-  ]) {
-    providerTest(
-      `${provider} ${mode} combines search with topic filters and All`,
-      async ({ page }, testInfo) => {
-        const mock = await (provider === "commons"
-          ? mockCommons(page)
-          : mockMet(page));
-        await page.goto("./");
-        const open = async () => {
-          if (mode === "mobile")
-            await page
-              .locator(".cell-image-button")
-              .first()
-              .tap({ position: { x: 5, y: 5 } });
-          await selectField(
-            page,
-            mode === "mobile" ? "picker-image-source" : "sidebar-image-source",
-            provider,
-          );
-        };
-        await open();
-        const online = page.getByRole("region", {
-          name: "Online",
-          exact: true,
-        });
-        const input = online.getByRole("searchbox", {
-          name: "Search images",
-          exact: true,
-        });
-        const firstTopic = provider === "commons" ? "Space" : "Paintings";
-        const secondTopic = provider === "commons" ? "Nature" : "Ceramics";
-        await searchCommons(page, "paged");
-        await expect(online.locator(".library-heading")).toHaveCount(10);
-        await expect(
-          online.getByRole("button", { name: firstTopic, exact: true }),
-        ).toBeDisabled();
-        await online
-          .getByRole("button", { name: "Next results", exact: true })
-          .click();
-        await expect(online.locator(".library-heading")).toHaveCount(3);
-        await expect(
-          online
-            .locator(".library-heading")
-            .nth(provider === "commons" ? 0 : 2),
-        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-        const beforeTopic = mock.requests.length;
-        await online
-          .getByRole("button", { name: secondTopic, exact: true })
-          .click();
-        await expect(input).toHaveValue("paged");
-        await expect(online.locator(".library-heading")).toHaveCount(10);
-        await expect(
-          online.getByRole("button", { name: "Previous results", exact: true }),
-        ).toBeDisabled();
-        expect(mock.requests.length).toBeGreaterThan(beforeTopic);
-        const scoped = mock.requests.at(-1);
-        if (provider === "commons")
-          expect(scoped.query).toBe(
-            "paged filetype:bitmap haslicense:unrestricted",
-          );
-        else expect(scoped.medium).toBe("Ceramics");
-        await page.reload();
-        if (mode === "mobile") {
-          await expect(page.getByRole("dialog")).toHaveCount(0);
-          await open();
-        }
-        await expect(input).toHaveValue("paged");
-        await expect(
-          online.getByRole("button", { name: secondTopic, exact: true }),
-        ).toBeDisabled();
-        await searchCommons(page, "");
-        await expect(
-          online.getByRole("button", { name: secondTopic, exact: true }),
-        ).toBeDisabled();
-        await searchCommons(page, "paged");
-        await expect(online.locator(".library-heading")).toHaveCount(10);
-        await online.getByRole("button", { name: "All", exact: true }).click();
-        await expect(input).toHaveValue("paged");
-        await expect(online.locator(".library-heading")).toHaveCount(10);
-        const unrestricted = mock.requests.at(-1);
-        if (provider === "commons")
-          expect(unrestricted.query).not.toContain("intitle:");
-        else expect(unrestricted.medium).toBeNull();
-        await input.fill("");
-        await expect(online).toHaveAttribute("aria-busy", "false");
-        await expect(
-          online.getByRole("button", { name: "All", exact: true }),
-        ).toBeDisabled();
-        await searchCommons(page, "paged");
-        await online
-          .getByRole("button", { name: "Next results", exact: true })
-          .click();
-        await expect(
-          online
-            .locator(".library-heading")
-            .nth(provider === "commons" ? 0 : 2),
-        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-        if (mode === "desktop") {
-          expect(new URL(page.url()).search).toBe("");
-          const preferences = await page.evaluate(() =>
-            JSON.parse(localStorage.getItem("grids-ui-v1")),
-          );
-          expect(preferences.librarySource).toBe(provider);
-          expect(preferences.browsing[`library:${provider}`].request).toEqual({
-            topic: null,
-            query: "paged",
-            offset: provider === "commons" ? 13 : 16,
-          });
-        }
-        await page.reload();
-        if (mode === "mobile") await open();
-        await expect(input).toHaveValue("paged");
-        await expect(
-          online.getByRole("button", { name: "All", exact: true }),
-        ).toBeDisabled();
-        await expect(
-          online
-            .locator(".library-heading")
-            .nth(provider === "commons" ? 0 : 2),
-        ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-        await input.scrollIntoViewIfNeeded();
-        await page.screenshot({
-          path: testInfo.outputPath(`${provider}-${mode}-combined-search.png`),
-        });
-      },
-    );
-  }
-
-  test(`${provider} imports a legacy provider URL into local preferences and cleans the address`, async ({
-    page,
-  }) => {
-    await (provider === "commons" ? mockCommons(page) : mockMet(page));
-    const offset = provider === "commons" ? 15 : 18;
-    await page.goto(
-      `./?panel=images&source=${provider}&q=paged&offset=${offset}`,
-    );
-    const online = page.getByRole("region", { name: "Online", exact: true });
-    await expect(online.locator(".library-heading")).toHaveValue(
-      provider === "commons" ? "Moon" : "Vase",
-    );
-    expect(new URL(page.url()).search).toBe("");
-    const preferences = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("grids-ui-v1")),
-    );
-    expect(preferences.librarySource).toBe(provider);
-    expect(preferences.browsing[`library:${provider}`].request).toMatchObject({
-      query: "paged",
-      offset,
-    });
-    await online
-      .getByRole("button", { name: "Previous results", exact: true })
-      .click();
-    await expect(online.locator(".library-heading")).toHaveCount(10);
-    await expect(
-      online.getByRole("button", { name: "Previous results", exact: true }),
-    ).toBeDisabled();
-  });
-
-  touchTest(
-    `${provider} remembers picker browsing without reopening dialogs on reload`,
-    async ({ page }) => {
-      await (provider === "commons" ? mockCommons(page) : mockMet(page));
-      await page.goto("./");
-      await page
-        .locator(".cell-image-button")
-        .first()
-        .tap({ position: { x: 5, y: 5 } });
-      await selectField(page, "picker-image-source", provider);
-      const online = await searchCommons(page, "paged");
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-      await online
-        .getByRole("button", { name: "Next results", exact: true })
-        .click();
-      await expect(
-        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
-      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-      expect(new URL(page.url()).search).toBe("");
-      await page.reload();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      await page
-        .locator(".cell-image-button")
-        .first()
-        .tap({ position: { x: 5, y: 5 } });
-      await expect(page.locator("#picker-image-source")).toHaveText(
-        provider === "commons" ? "Wikimedia Commons" : "The Met",
-      );
-      await expect(
-        online.getByRole("searchbox", { name: "Search images", exact: true }),
-      ).toHaveValue("paged");
-      await expect(
-        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
-      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-      expect(
-        await page.evaluate(() =>
-          document.activeElement?.matches("input,textarea"),
-        ),
-      ).toBe(false);
-      await online
-        .getByRole("button", { name: "Previous results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-    },
-  );
-
-  test(`${provider} remembers sidebar navigation across reload and browser history`, async ({
-    page,
-  }) => {
-    await mockCommons(page);
-    await mockMet(page);
-    await page.goto("./?extra=keep#anchor");
-    await selectField(page, "sidebar-image-source", provider);
-    const online = await searchCommons(page, "paged");
-    await expect(online.locator(".library-heading")).toHaveCount(10);
-    await online
-      .getByRole("button", { name: "Next results", exact: true })
-      .click();
-    const last = provider === "commons" ? "Open 20" : "Vase";
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    const cleanUrl = page.url();
-    expect(new URL(cleanUrl).search).toBe("?extra=keep");
-    const preferences = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("grids-ui-v1")),
-    );
-    expect(preferences.browsing[`library:${provider}`].request.offset).toBe(
-      provider === "commons" ? 13 : 16,
-    );
-    await page.goBack();
-    await expect(online.locator(".library-heading")).toHaveCount(10);
-    await expect(page).toHaveURL(cleanUrl);
-    await page.goForward();
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    await expect(page).toHaveURL(cleanUrl);
-    await openSidebarPanel(page, "Settings");
-    await page.reload();
-    await expect(
-      page.getByRole("tab", { name: "Settings", exact: true }),
-    ).toBeDisabled();
-    await openSidebarPanel(page, "Images");
-    await expect(page.locator("#sidebar-image-source")).toHaveText(
-      provider === "commons" ? "Wikimedia Commons" : "The Met",
-    );
-    await expect(
-      online.getByRole("searchbox", { name: "Search images", exact: true }),
-    ).toHaveValue("paged");
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    await online
-      .getByRole("button", { name: "Previous results", exact: true })
-      .click();
-    await expect(online.locator(".library-heading")).toHaveCount(10);
-    await online
-      .getByRole("button", { name: "Next results", exact: true })
-      .click();
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    await sidebarToggle(page, true).click();
-    await page.reload();
-    await expect(sidebarToggle(page, false)).toBeVisible();
-    await openSidebarPanel(page, "Images");
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    const url = new URL(page.url());
-    expect(url.searchParams.get("extra")).toBe("keep");
-    expect(url.hash).toBe("#anchor");
-    await selectField(
-      page,
-      "sidebar-image-source",
-      provider === "commons" ? "met" : "commons",
-    );
-    await selectField(page, "sidebar-image-source", provider);
-    await expect(online.locator(".library-heading").last()).toHaveValue(last);
-    const topic = provider === "commons" ? "Nature" : "Sculpture";
-    await online.getByRole("button", { name: topic, exact: true }).click();
-    await expect(online).toHaveAttribute("aria-busy", "false");
-    await page.reload();
-    await expect(
-      online.getByRole("button", { name: topic, exact: true }),
-    ).toBeDisabled();
-    await expect(
-      online.getByRole("searchbox", { name: "Search images", exact: true }),
-    ).toHaveValue("paged");
-    expect(new URL(page.url()).search).toBe("?extra=keep");
-    const saved = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("grids-ui-v1")),
-    );
-    expect(saved.browsing[`library:${provider}`].request).toMatchObject({
-      topic: topic.toLowerCase(),
-      offset: 0,
-    });
-  });
-
-  nativeTouchTest(
-    `${provider} caches pages across views and refreshes after one hour`,
-    async ({ page }) => {
-      const mock = await (provider === "commons"
-        ? mockCommons(page)
-        : mockMet(page));
-      await page.goto("./");
-      await selectField(page, "sidebar-image-source", provider);
-      const online = page.getByRole("region", { name: "Online", exact: true });
-      await expect(online.locator(".library-heading")).toHaveValue(
-        provider === "commons" ? "Earth" : "Iris",
-      );
-      await expect(online).toHaveAttribute("aria-busy", "false");
-      await searchCommons(page, "paged");
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-      await online
-        .getByRole("button", { name: "Next results", exact: true })
-        .click();
-      await expect(
-        online.locator(".library-heading").nth(provider === "commons" ? 0 : 2),
-      ).toHaveValue(provider === "commons" ? "Moon" : "Vase");
-      const visited = mock.requests.length;
-      await online
-        .getByRole("button", { name: "Previous results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-      expect(mock.requests).toHaveLength(visited);
-      await online.locator(".library-heading").first().fill("Local caption");
-      await searchCommons(page, "different");
-      const different = mock.requests.length;
-      await searchCommons(page, "paged");
-      await expect(online.locator(".library-heading").first()).toHaveValue(
-        provider === "commons" ? "Earth" : "Iris",
-      );
-      expect(mock.requests).toHaveLength(different);
-      await selectField(page, "sidebar-image-source", "imported");
-      await selectField(page, "sidebar-image-source", provider);
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-      await expect(online.locator(".library-heading").first()).toHaveValue(
-        provider === "commons" ? "Earth" : "Iris",
-      );
-      expect(mock.requests).toHaveLength(different);
-      if (provider === "met")
-        expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(1);
-      await page.locator(".cell-image-button").first().tap();
-      const picker = page.getByRole("dialog", {
-        name: "Choose image",
-        exact: true,
-      });
-      await selectField(page, "picker-image-source", provider);
-      const pickerOnline = picker.getByRole("region", {
-        name: "Online",
-        exact: true,
-      });
-      await expect(pickerOnline.locator(".library-heading")).toHaveValue(
-        provider === "commons" ? "Earth" : "Iris",
-      );
-      await pickerOnline
-        .getByRole("searchbox", { name: "Search images", exact: true })
-        .fill("paged");
-      await expect(pickerOnline.locator(".library-heading")).toHaveCount(10);
-      expect(mock.requests).toHaveLength(different);
-      const pickerPaged = mock.requests.length;
-      await page.clock.setFixedTime(new Date(Date.now() + 3600000 + 5000));
-      await pickerOnline
-        .getByRole("searchbox", { name: "Search images", exact: true })
-        .fill("different");
-      await expect(pickerOnline).toHaveAttribute("aria-busy", "false");
-      expect(mock.requests).toHaveLength(pickerPaged + 1);
-      if (provider === "met")
-        expect(mock.detailRequests.filter((id) => id === 1)).toHaveLength(2);
-    },
-  );
-
-  test(`${provider} fills eligible pages and keeps exact next and previous cursors`, async ({
-    page,
-  }) => {
-    const mock = await (provider === "commons"
-      ? mockCommons(page)
-      : mockMet(page));
-    await page.goto("./");
-    await selectField(page, "sidebar-image-source", provider);
-    const online = await searchCommons(page, "paged");
-    const headings = online.locator(".library-heading");
-    const titles = [
-      provider === "commons" ? "Earth" : "Iris",
-      ...Array.from({ length: 9 }, (_, index) => `Open ${index + 10}`),
-    ];
-    await expect
-      .poll(() =>
-        headings.evaluateAll((elements) =>
-          elements.map((element) => element.value),
-        ),
-      )
-      .toEqual(titles);
-    expect(
-      mock.requests
-        .filter((request) => request.query.startsWith("paged"))
-        .map(({ offset, limit }) => ({ offset, limit })),
-    ).toEqual([
-      { offset: 0, limit: 10 },
-      { offset: 10, limit: provider === "commons" ? 3 : 6 },
-    ]);
-    await online
-      .getByRole("button", { name: "Next results", exact: true })
-      .click();
-    await expect
-      .poll(() =>
-        headings.evaluateAll((elements) =>
-          elements.map((element) => element.value),
-        ),
-      )
-      .toEqual(
-        provider === "commons"
-          ? ["Moon", "Open 19", "Open 20"]
-          : ["Open 19", "Open 20", "Vase"],
-      );
-    expect(mock.requests.at(-1).offset).toBe(provider === "commons" ? 13 : 16);
-    await expect(
-      online.getByRole("button", { name: "Next results", exact: true }),
-    ).toBeDisabled();
-    await online
-      .getByRole("button", { name: "Previous results", exact: true })
-      .click();
-    await expect
-      .poll(() =>
-        headings.evaluateAll((elements) =>
-          elements.map((element) => element.value),
-        ),
-      )
-      .toEqual(titles);
-    await expect(
-      online.getByRole("button", { name: "Previous results", exact: true }),
-    ).toBeDisabled();
-  });
-}
-
-test("Commons disables Next on a short filtered page even with a continuation cursor", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto("./?panel=images&source=commons&topic=all&q=shortcursor");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  await expect(online.locator(".library-heading")).toHaveCount(2);
-  await expect(online).toHaveAttribute("aria-busy", "false");
-  expect(mock.requests).toHaveLength(5);
-  expect(mock.requests.at(-1).offset + mock.requests.at(-1).limit).toBeLessThan(
-    72,
-  );
-  await expect(
-    online.getByRole("button", { name: "Next results", exact: true }),
-  ).toBeDisabled();
-  await expect(online.getByRole("alert")).toHaveCount(0);
-});
-
-async function expectOnlineMessage(online, role) {
-  await expect(online.getByRole(role)).toBeVisible();
-}
-
-test("online browsing exposes loading, empty results and errors", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto("./?panel=images&source=commons&topic=all");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  await searchCommons(page, "slow", false);
-  await expect
-    .poll(() => mock.requests.some(({ query }) => query.startsWith("slow")))
-    .toBe(true);
-  await expect(online).toHaveAttribute("aria-busy", "true");
-  page.emit("commons-release");
-  await expect(online.locator(".library-heading")).toHaveValue("Stale");
-  await expect(online).toHaveAttribute("aria-busy", "false");
-  await searchCommons(page, "empty");
-  await expect(online.getByRole("status")).toBeVisible();
-  await searchCommons(page, "invalid");
-  await expect(online.getByRole("alert")).toBeVisible();
-});
-
-for (const [mode, pickerTest] of [
-  ["desktop", nativeTouchTest],
-  ["mobile", touchTest],
-]) {
-  pickerTest(
-    `image picker ${mode} handles loading, pagination, empty results and failures`,
-    async ({ page }, testInfo) => {
-      const mock = await mockCommons(page);
-      await page.goto("./");
-      await page.locator(".cell-image-button").first().tap();
-      const picker = page.getByRole("dialog", {
-        name: "Choose image",
-        exact: true,
-      });
-      const imported = picker.getByRole("region", {
-        name: "My images",
-        exact: true,
-      });
-      await expect(imported.locator("[data-upload-tile]")).toHaveCount(1);
-
-      await selectField(page, "picker-image-source", "commons");
-      const online = picker.getByRole("region", {
-        name: "Online",
-        exact: true,
-      });
-      const placeholders = online.locator("[data-image-placeholder]");
-      await expect(online.locator(".library-heading")).toHaveValue("Earth");
-
-      await online.getByRole("searchbox").fill("slow");
-      await expect
-        .poll(() => mock.requests.some(({ query }) => query.startsWith("slow")))
-        .toBe(true);
-
-      await page.screenshot({
-        path: testInfo.outputPath(`picker-${mode}-loading.png`),
-        fullPage: true,
-      });
-      page.emit("commons-release");
-      await expect(online).toHaveAttribute("aria-busy", "false");
-      await expect(online.locator(".library-heading")).toHaveValue("Stale");
-
-      for (const placeholder of await placeholders.all()) {
-        await expect(placeholder).toHaveAttribute("aria-hidden", "true");
-        await expect(
-          placeholder.locator("button, a, input, textarea"),
-        ).toHaveCount(0);
-      }
-      await online.getByRole("searchbox").fill("paged");
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-
-      await online
-        .getByRole("button", { name: "Next results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveCount(3);
-
-      await expect(
-        online.getByRole("button", { name: "Next results", exact: true }),
-      ).toBeDisabled();
-      await online
-        .getByRole("button", { name: "Previous results", exact: true })
-        .click();
-      await expect(online.locator(".library-heading")).toHaveCount(10);
-      await online.getByRole("searchbox").fill("empty");
-      await expect(online).toHaveAttribute("aria-busy", "false");
-
-      await expectOnlineMessage(online, "status");
-      await page.screenshot({
-        path: testInfo.outputPath(`picker-${mode}-empty.png`),
-        fullPage: true,
-      });
-      await online.getByRole("searchbox").fill("invalid");
-      await expect(online.getByRole("alert")).toBeVisible();
-
-      await expectOnlineMessage(online, "alert");
-    },
-  );
-}
-
-test("Commons paginates cached full pages when image-history continuation omits the search cursor", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto("./?panel=images&source=commons&topic=all&q=pagedhistory");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  const next = online.getByRole("button", {
-    name: "Next results",
-    exact: true,
-  });
-  const headings = online.locator(".library-heading");
-  await expect(headings).toHaveCount(10);
-  await expect(headings.last()).toHaveValue("Open 18");
-  await expect(next).toBeEnabled();
-  expect(mock.requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual(
-    [
-      { offset: 0, limit: 10 },
-      { offset: 10, limit: 3 },
-    ],
-  );
-  await next.click();
-  await expect(headings).toHaveCount(3);
-  await expect(headings.first()).toHaveValue("Moon");
-  await expect(headings.last()).toHaveValue("Open 20");
-  await expect(next).toBeDisabled();
-  expect(mock.requests.at(-1)).toMatchObject({ offset: 13, limit: 10 });
-  await online
-    .getByRole("button", { name: "Previous results", exact: true })
-    .click();
-  await expect(headings).toHaveCount(10);
-  await expect(next).toBeEnabled();
-  expect(mock.requests).toHaveLength(3);
-});
-
-test("Commons keeps collected images when the final batch has only image-history continuation", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto(
-    "./?panel=images&source=commons&topic=all&q=historycontinuation",
-  );
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  const headings = online.locator(".library-heading");
-  await expect(headings).toHaveCount(10);
-  await expect(headings.first()).toHaveValue("Earth");
-  await expect(headings.last()).toHaveValue("Open 18");
-  await expect(online.getByRole("alert")).toHaveCount(0);
-  await expect(
-    online.getByRole("button", { name: "Next results", exact: true }),
-  ).toBeDisabled();
-  expect(mock.requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual(
-    [
-      { offset: 0, limit: 10 },
-      { offset: 10, limit: 1 },
-    ],
-  );
-  await page.reload();
-  await expect(headings).toHaveCount(10);
-  await expect(online.getByRole("alert")).toHaveCount(0);
-  expect(mock.requests).toHaveLength(4);
-  await searchCommons(page, "invalidcursor");
-  await expect(online.getByRole("alert")).toHaveText(
-    "Wikimedia Commons returned an unexpected response.",
-  );
-});
-
-test("Commons reports busy search responses without claiming a provider outage", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto("./?source=commons&topic=space&q=busy");
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  await expect(online.getByRole("alert")).toHaveText(
-    "Wikimedia Commons search is busy. Try again shortly.",
-  );
-  expect(mock.requests).toHaveLength(1);
-  await searchCommons(page, "earth");
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  await searchCommons(page, "maxlag");
-  await expect(online.getByRole("alert")).toHaveText(
-    "Wikimedia Commons search is busy. Try again shortly.",
-  );
-  await searchCommons(page, "invalid");
-  await expect(online.getByRole("alert")).toHaveText(
-    "Wikimedia Commons returned an unexpected response.",
-  );
-  await searchCommons(page, "servicefailure");
-  await expect(online.getByRole("alert")).toHaveText(
-    "Could not load images from Wikimedia Commons. Try again.",
-  );
-  await searchCommons(page, "earth");
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  await expect(online.getByRole("alert")).toHaveCount(0);
-});
-
-test("Commons ignores stale searches and isolates empty malformed quota and offline failures", async ({
-  page,
-}) => {
-  const mock = await mockCommons(page);
-  await page.goto("./");
-  await openSidebarPanel(page, "Images");
-  await selectField(page, "sidebar-image-source", "commons");
-  const online = await searchCommons(page, "slow", false);
-  await expect
-    .poll(() =>
-      mock.requests.some((request) => request.query.startsWith("slow")),
-    )
-    .toBe(true);
-  await searchCommons(page, "earth");
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  page.emit("commons-release");
-  await expect(online.locator(".library-heading")).not.toHaveValue("Stale");
-  await searchCommons(page, "empty");
-  await expect(online.getByRole("status")).toHaveText(
-    "No eligible images found. Try another search.",
-  );
-  await searchCommons(page, "invalid");
-  await expect(online.getByRole("alert")).toHaveText(
-    "Wikimedia Commons returned an unexpected response.",
-  );
-  await searchCommons(page, "quota");
-  await expect(online.getByRole("alert")).toContainText("rate limiting");
-  const requestsBefore = mock.requests.length;
-  await searchCommons(page, "cooldown");
-  await expect(online.getByRole("alert")).toContainText("rate limiting");
-  expect(mock.requests).toHaveLength(requestsBefore);
-  await searchCommons(page, "earth");
-  await expect(online.locator(".library-heading")).toHaveValue("Earth");
-  await expect(online.getByRole("alert")).toHaveCount(0);
-  expect(mock.requests).toHaveLength(requestsBefore);
-  await page.context().setOffline(true);
-  await searchCommons(page, "offline");
-  await expect(online.getByRole("alert")).toHaveText(
-    "You are offline. Your saved images are still available.",
-  );
-  await page.context().setOffline(false);
-  await selectField(page, "sidebar-image-source", "imported");
-  await expect(page.locator("#asset-library")).toBeVisible();
-  await expect(page.locator("#upload")).toBeAttached();
-  await expect(page.locator(".grid-cell")).toHaveCount(9);
-});
-
 test("canvas padding keeps overflow inside its viewport on short and narrow screens", async ({
   page,
 }, testInfo) => {
   await setEditorViewport(page, { width: 1440, height: 1000 });
   await page.goto("./");
   await openSidebarPanel(page, "Settings");
-  for (const id of ["canvas-padding", "gap"]) {
-    await expect(page.locator(`#${id}`)).toHaveValue("50");
+  for (const [id, initial] of [["canvas-padding", "30"], ["gap", "20"]]) {
+    await expect(page.locator(`#${id}`)).toHaveValue(initial);
     await expect(page.locator(`#${id}`)).toHaveAttribute("max", "100");
     await page.locator(`#${id}`).fill("100");
   }
@@ -2824,7 +878,7 @@ test("canvas padding keeps overflow inside its viewport on short and narrow scre
   await expect(page.locator("#gap")).toHaveValue("100");
 });
 
-test("settings sliders use normalized percentages and midpoint defaults", async ({
+test("settings sliders use normalized percentages and refined dark defaults", async ({
   page,
 }) => {
   await page.goto("./");
@@ -2833,8 +887,13 @@ test("settings sliders use normalized percentages and midpoint defaults", async 
   await expect(sliders).toHaveCount(9);
   for (const slider of await sliders.all()) {
     const id = await slider.getAttribute("id");
-    const value =
-      id === "cell-font-size" ? "20" : id === "caption-opacity" ? "60" : "50";
+    const value = {
+      "cell-font-size": "20",
+      "caption-opacity": "75",
+      "corner-rounding": "25",
+      "canvas-padding": "30",
+      gap: "20",
+    }[id] ?? "50";
     await expect(slider).toHaveAttribute("min", "0");
     await expect(slider).toHaveAttribute("max", "100");
     await expect(slider).toHaveValue(value);
@@ -2924,7 +983,6 @@ test("corner rounding is shared by headings, cards, pickers and exports", async 
   page,
 }, testInfo) => {
   test.setTimeout(60_000);
-  await mockCommons(page);
   await page.goto("./");
   await uploadCellImage(page);
   await editHeading(page, "Rounded heading");
@@ -2936,7 +994,7 @@ test("corner rounding is shared by headings, cards, pickers and exports", async 
   const rounding = canvasStyle.getByRole("slider", {
     name: /^Corner rounding/,
   });
-  await expect(rounding).toHaveValue("50");
+  await expect(rounding).toHaveValue("25");
   async function checkRounding(cards, percent) {
     await expect(cards.first()).toBeVisible();
     for (const card of await cards.all()) {
@@ -3053,12 +1111,6 @@ test("corner rounding is shared by headings, cards, pickers and exports", async 
       name: "Choose image",
       exact: true,
     });
-    await selectField(page, "picker-image-source", "imported");
-    await checkRounding(picker.locator("[data-library-image] .image-card"), 12);
-    await selectField(page, "picker-image-source", "commons");
-    await expect(
-      picker.getByRole("region", { name: "Online", exact: true }),
-    ).toHaveAttribute("aria-busy", "false");
     await checkRounding(picker.locator("[data-library-image] .image-card"), 12);
     await page.screenshot({
       path: testInfo.outputPath(`shared-rounding-${width}.png`),
@@ -3167,9 +1219,9 @@ test("header actions open export and restore sidebar settings and focus", async 
   await page.goto("./");
   const header = page.locator("[data-canvas-header]");
   const sidebar = page.locator("[data-editor-sidebar]");
-  await header
-    .getByRole("button", { name: "Menu", exact: true })
-    .click({ trial: true });
+  await expect(
+    header.getByRole("button", { name: "Menu", exact: true }),
+  ).toHaveCount(0);
   await openSidebarPanel(page, "Settings");
   await page.locator("#background-value").fill("#112233");
   await page.locator("#background-value").press("Enter");
@@ -3269,11 +1321,8 @@ test("sidebar keyboard navigation skips selected tabs and preserves settings acr
   });
   await expect(canvasSettings).toBeFocused();
 
-  await expect(
-    canvasHeader
-      .getByRole("group", { name: "Editor panels", exact: true })
-      .locator(":scope > button"),
-  ).toHaveCount(3);
+  await expect(exportButton).toBeEnabled();
+  await expect(canvasSettings).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath("desktop-sidebar-closed.png"),
   });
@@ -3330,40 +1379,19 @@ test("sidebar controls remain reachable while scrolling images", async ({
   });
 });
 
-test("right sidebar switches images and settings with an image source dropdown", async ({
+test("right sidebar switches local images and settings without a provider picker", async ({
   page,
 }) => {
-  await mockCommons(page);
   await page.goto("./");
   const sidebar = page.locator("[data-editor-sidebar]");
   const images = sidebar.getByRole("tab", { name: "Images", exact: true });
   const settings = sidebar.getByRole("tab", { name: "Settings", exact: true });
   await expect(sidebar).toHaveCount(1);
   await expect(images).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#sidebar-image-source")).toBeVisible();
+  await expect(page.locator("#sidebar-image-source")).toHaveCount(0);
+  await expect(page.locator("#asset-library")).toBeVisible();
   await expect(page.locator("#background-value")).toBeHidden();
 
-  await page.locator("#sidebar-image-source").click();
-  await expect(page.getByRole("option")).toHaveText([
-    "My images",
-    "Wikimedia Commons",
-    "The Met",
-    "SMK",
-    "iNaturalist",
-    "Openverse",
-    "Rijksmuseum",
-    "Wellcome Collection",
-  ]);
-  await expect(
-    page.getByRole("option", { name: "My images", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("option", { name: "My images", exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("listbox").press("Escape");
   await page.locator("#upload").setInputFiles({
     name: "panel-image.svg",
     mimeType: "image/svg+xml",
@@ -3373,17 +1401,12 @@ test("right sidebar switches images and settings with an image source dropdown",
   });
   await expect(sidebar.locator(".asset")).toHaveCount(1);
 
-  await selectField(page, "sidebar-image-source", "commons");
-  await expect(
-    page.getByRole("region", { name: "Online", exact: true }),
-  ).toBeVisible();
   await expect(
     sidebar.locator("button[aria-haspopup='listbox']:visible"),
-  ).toHaveCount(1);
-  await selectField(page, "sidebar-image-source", "imported");
+  ).toHaveCount(0);
   await expect(sidebar.locator(".asset")).toBeVisible();
   await settings.click();
-  await expect(page.locator("#sidebar-image-source")).toBeHidden();
+  await expect(page.locator("#asset-library")).toBeHidden();
   await page.locator("#background-value").fill("#112233");
   await page.locator("#background-value").press("Enter");
   await images.click();
@@ -3407,7 +1430,10 @@ test("right sidebar switches images and settings with an image source dropdown",
     name: "Choose image",
     exact: true,
   });
-  await expect(picker.locator("#picker-image-source")).toBeVisible();
+  await expect(picker.locator("#picker-image-source")).toHaveCount(0);
+  await expect(
+    picker.getByRole("region", { name: "My images", exact: true }),
+  ).toBeVisible();
   await expect(picker.getByRole("tablist")).toHaveCount(0);
   await picker
     .getByRole("button", { name: "Close dialog", exact: true })
@@ -3848,7 +1874,10 @@ test("full grid reset confirms a clean slate and retains library images through 
     rows: 3,
     columns: 3,
     heading: "",
-    gap: 60,
+    gap: 24,
+    imageAspect: "square",
+    captionPlacement: "overlay",
+    captionAlignment: "bottom",
     overflow: [],
   });
   expect(
@@ -4207,7 +2236,7 @@ test("heading and card typography controls are independent across previews, expo
   await headingHex.press("Tab");
   await expect(page.locator(".cell-heading").first()).toHaveCSS(
     "color",
-    "rgb(244, 244, 239)",
+    "rgb(238, 241, 243)",
   );
   await selectField(page, "cell-font", "Boogaloo");
   await page.locator("#cell-font-size").fill("60");
@@ -4956,268 +2985,6 @@ test("imported captions preserve library capitalization in the canvas and export
     .locator(".grid-cell")
     .first()
     .screenshot({ path: testInfo.outputPath("padded-caption-narrow.png") });
-});
-
-for (const provider of [
-  "smk",
-  "inaturalist",
-  "openverse",
-  "rijksmuseum",
-  "wellcome",
-]) {
-  test(`${provider} searches without keys and imports durable references without image blobs`, async ({
-    page,
-  }) => {
-    const bytes = await readFile(
-      path.join(projectRoot, "tests/fixtures/assets/DC - Color Kid.jpg"),
-    );
-    const requests = [];
-    const id = "550e8400-e29b-41d4-a716-446655440000";
-    const routes = {
-      smk: {
-        api: "https://api.smk.dk/api/v1/art/search?*",
-        image: /^https:\/\/iip\.smk\.dk\//,
-        title: "Artwork",
-        license: "Public domain",
-        response: {
-          found: 1,
-          items: [
-            {
-              object_number: "KKS1",
-              titles: [{ title: "Artwork" }],
-              artist: ["Artist"],
-              frontend_url: "https://open.smk.dk/artwork/image/KKS1",
-              public_domain: true,
-              rights: "https://creativecommons.org/publicdomain/mark/1.0/",
-              image_iiif_id: "https://iip.smk.dk/iiif/jp2/1.jp2",
-              image_width: 800,
-              image_height: 600,
-            },
-          ],
-        },
-      },
-      inaturalist: {
-        api: "https://api.inaturalist.org/v1/observations?*",
-        image: /^https:\/\/inaturalist-open-data\.s3\.amazonaws\.com\//,
-        title: "Bird",
-        license: "CC0",
-        response: {
-          total_results: 1,
-          results: [
-            {
-              taxon: { name: "Bird", preferred_common_name: "Bird" },
-              photos: [
-                {
-                  id: 1,
-                  url: "https://inaturalist-open-data.s3.amazonaws.com/photos/1/square.jpg",
-                  license_code: "cc0",
-                  attribution: "Creator",
-                  original_dimensions: { width: 800, height: 600 },
-                },
-              ],
-            },
-          ],
-        },
-      },
-      openverse: {
-        api: "https://api.openverse.org/v1/images/?*",
-        image:
-          /^https:\/\/(api\.openverse\.org\/v1\/images\/[^/]+\/thumb\/|live\.staticflickr\.com\/)/,
-        title: "Photograph",
-        license: "CC0",
-        response: {
-          result_count: 1,
-          page_count: 1,
-          results: [
-            {
-              id,
-              title: "Photograph",
-              creator: "Photographer",
-              url: "https://live.staticflickr.com/1/photo.jpg",
-              foreign_landing_url: "https://www.flickr.com/photos/example/1",
-              license: "cc0",
-              license_version: "1.0",
-              license_url: "https://creativecommons.org/publicdomain/zero/1.0/",
-              width: 800,
-              height: 600,
-              filesize: bytes.length,
-              mature: false,
-            },
-          ],
-        },
-      },
-      rijksmuseum: {
-        api: "https://data.rijksmuseum.nl/search/collection?*",
-        image: /^https:\/\/iiif\.micr\.io\/test\/full\//,
-        title: "Artwork",
-        license: "Public domain",
-        response: {
-          partOf: { totalItems: 1 },
-          orderedItems: [{ id: "https://id.rijksmuseum.nl/123" }],
-        },
-      },
-      wellcome: {
-        api: "https://api.wellcomecollection.org/catalogue/v2/works?*",
-        image: /^https:\/\/iiif\.wellcomecollection\.org\/image\/V1\/full\//,
-        title: "Flowers",
-        license: "Public domain",
-        response: {
-          totalResults: 1,
-          results: [
-            {
-              id: "abcd1234",
-              title: "Flowers",
-              items: [
-                {
-                  locations: [
-                    {
-                      url: "https://iiif.wellcomecollection.org/image/V1/info.json",
-                      license: {
-                        id: "pdm",
-                        url: "https://creativecommons.org/share-your-work/public-domain/pdm/",
-                      },
-                      locationType: { id: "iiif-image" },
-                      accessConditions: [{ status: { id: "open" } }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    };
-    const fixture = routes[provider];
-    if (provider === "rijksmuseum") {
-      await page.route("https://data.rijksmuseum.nl/123", (route) =>
-        route.fulfill({
-          json: {
-            id: "https://id.rijksmuseum.nl/123",
-            identified_by: [{ type: "Name", content: "Artwork" }],
-            subject_of: [
-              {
-                digitally_carried_by: [
-                  {
-                    access_point: [
-                      {
-                        id: "https://iiif.micr.io/test/full/max/0/default.jpg",
-                      },
-                    ],
-                    referred_to_by: [
-                      {
-                        classified_as: [
-                          { id: "https://vocab.getty.edu/aat/300460240" },
-                        ],
-                        content:
-                          "https://creativecommons.org/publicdomain/mark/1.0/",
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        }),
-      );
-    }
-    for (const base of [
-      "https://iiif.micr.io/test",
-      "https://iiif.wellcomecollection.org/image/V1",
-    ])
-      await page.route(`${base}/info.json`, (route) =>
-        route.fulfill({ json: { id: base, width: 800, height: 600 } }),
-      );
-    await page.route(fixture.image, (route) =>
-      route.fulfill({ contentType: "image/jpeg", body: bytes }),
-    );
-    await page.route(fixture.api, (route) => {
-      requests.push(new URL(route.request().url()));
-      return route.fulfill({ json: fixture.response });
-    });
-    await page.goto("./");
-    await selectField(page, "sidebar-image-source", provider);
-    const online = page.getByRole("region", { name: "Online", exact: true });
-    await online
-      .getByRole("searchbox", { name: "Search images", exact: true })
-      .fill("Bird");
-    await expect(online).toHaveAttribute("aria-busy", "false");
-    await online
-      .getByRole("button", {
-        name: `Image options: ${fixture.title}`,
-        exact: true,
-      })
-      .dragTo(page.locator(".cell-image-button").first());
-    await selectField(page, "sidebar-image-source", "imported");
-    await expect(page.locator(".asset-name")).toHaveJSProperty(
-      "readOnly",
-      false,
-    );
-    await chooseImage(page, fixture.title);
-    await expect(
-      page.locator(".grid-cell").first().locator("img"),
-    ).toBeVisible();
-    await reloadWorkspace(page);
-    const saved = await localDatabase(page);
-    expect(saved.document.assets[0].provenance).toMatchObject({
-      provider,
-      license: fixture.license,
-    });
-    expect(saved.images).toEqual([]);
-    if (provider === "rijksmuseum" || provider === "wellcome") {
-      await page.locator("#export-grid-header").click();
-      await selectField(page, "resolution", "150");
-      const download = await downloadBoard(page);
-      const exported = await readFile(await download.path());
-      expect([...exported.subarray(0, 4)]).toEqual([137, 80, 78, 71]);
-    }
-    expect(requests.length).toBeGreaterThan(0);
-    for (const url of requests) {
-      for (const key of [
-        "api_key",
-        "apiKey",
-        "key",
-        "access_token",
-        "token",
-        "secret",
-      ])
-        expect(url.searchParams.has(key)).toBe(false);
-      if (provider === "openverse")
-        expect(url.searchParams.get("license")).toBe("cc0,pdm");
-      if (provider === "inaturalist")
-        expect(url.searchParams.get("photo_license")).toBe("cc0");
-    }
-  });
-}
-
-test("Commons excludes images requiring credit and keeps public-domain titles editable", async ({
-  page,
-}) => {
-  await mockCommons(page);
-  const searched = page.waitForResponse(
-    (response) =>
-      response.url().startsWith("https://commons.wikimedia.org/w/api.php") &&
-      new URL(response.url()).searchParams
-        .get("gsrsearch")
-        ?.startsWith("credited"),
-  );
-  await page.goto("./?source=commons&q=credited&topic=all");
-  await searched;
-  const online = page.getByRole("region", { name: "Online", exact: true });
-  await expect(online).toHaveAttribute("aria-busy", "false");
-  await expect(online.locator(".asset-name")).toHaveCount(0);
-  await online
-    .getByRole("searchbox", { name: "Search images", exact: true })
-    .fill("moon");
-  await online
-    .getByRole("button", { name: "Image options: Moon", exact: true })
-    .dragTo(page.locator(".cell-image-button").first());
-  await selectField(page, "sidebar-image-source", "imported");
-  await chooseImage(page, "Moon");
-  const caption = page.locator(".cell-heading").first();
-  await caption.fill("My editable heading");
-  await reloadWorkspace(page);
-  await expect(caption).toHaveValue("My editable heading");
-  await expect(page.locator("[data-image-credits]")).toHaveCount(0);
 });
 
 test("legacy credited images are removed persistently without losing local images or settings", async ({
@@ -6293,7 +4060,7 @@ test("independent spacing and canvas backgrounds match preview and export", asyn
       )
       .toBeLessThan(1);
   }
-  const expected = { gap: 10, padding: 10, heading: 10 };
+  const expected = { gap: 4, padding: 6, heading: 4 };
   await expect.poll(ratios).toEqual(expected);
   await checkCanvasPadding();
   for (const [id, key, value] of [
@@ -6512,7 +4279,7 @@ test("appearance settings preserve content and match exported ratios and caption
   await page.locator("#gap").fill("10");
   await page.locator("#canvas-padding").fill("10");
   await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
-    "Portrait",
+    "Square",
   );
   await expect(
     page.locator('#caption-position [aria-checked="true"]'),
@@ -6630,7 +4397,7 @@ test("appearance settings preserve content and match exported ratios and caption
         await expect(
           page.getByRole("button", { name: "Text overlay settings" }),
         ).toHaveCount(0);
-        expect(await pixels(imageHeight, placement)).toEqual([32, 35, 37, 255]);
+        expect(await pixels(imageHeight, placement)).toEqual([35, 39, 43, 255]);
         continue;
       }
       await expect(
@@ -7294,129 +5061,6 @@ test("touch cell overlays target the tapped image without autofocus", async ({
   await context.close();
 });
 
-test("image source dropdown fits narrow panels without category filters", async ({
-  page,
-}) => {
-  await setEditorViewport(page, { width: 960, height: 900 });
-  await page.goto("./");
-  await useComicExample(page, "marvel");
-  await page.locator("#upload").setInputFiles({
-    name: "imported.svg",
-    mimeType: "image/svg+xml",
-    buffer: Buffer.from(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#40b4aa"/></svg>',
-    ),
-  });
-  await expect(page.locator(".asset")).toHaveCount(9);
-  let source = page.locator("#sidebar-image-source");
-  await expect(source).toHaveText("My images");
-  await source.click();
-  await expect(
-    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("listbox").press("Escape");
-  const assertContained = async () => {
-    await expect
-      .poll(() =>
-        source.evaluate((element) => {
-          const panel = element.getBoundingClientRect();
-          return (
-            panel.left >= 0 &&
-            panel.right <= innerWidth &&
-            element.scrollWidth <= element.clientWidth
-          );
-        }),
-      )
-      .toBe(true);
-  };
-  await assertContained();
-  await source.click();
-  await expect(
-    page.getByRole("option", { name: "My images", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("listbox").press("Escape");
-  await expect(page.locator(".asset")).toHaveCount(9);
-  const document = await savedWorkspace(page);
-  document.assets.find((asset) => asset.category === "Imported").category =
-    "ExtraordinarilyLongImportedCategory";
-  await localDatabase(page, "write", document);
-  await page.reload();
-  await expect(source).toBeVisible();
-  await assertContained();
-  await setEditorViewport(page, { width: 390, height: 844 });
-  await beginCellUpload(page, 0);
-  const picker = page.getByRole("dialog", {
-    name: "Choose image",
-    exact: true,
-  });
-  source = picker.locator("#picker-image-source");
-  await assertContained();
-  const thumbnail = picker.locator(".asset [data-library-thumbnail]").first();
-  await thumbnail.hover({ position: { x: 5, y: 50 } });
-  const imageButton = picker.locator(".asset").first();
-
-  await page.mouse.move(1, 1);
-  await thumbnail.focus();
-  await thumbnail.press("Tab");
-  await imageButton.locator("textarea").press("Shift+Tab");
-  await expect(thumbnail).toBeFocused();
-
-  await thumbnail.press("Tab");
-  await imageButton.locator("textarea").press("Tab");
-  const keyboardFocus = picker.locator(".asset").nth(1);
-  await expect(keyboardFocus.locator("[data-library-thumbnail]")).toBeFocused();
-
-  const uploadFocus = picker.locator("[data-upload-tile]");
-  await page.mouse.move(1, 1);
-  await thumbnail.focus();
-  await page.evaluate(
-    () =>
-      new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
-      ),
-  );
-  await thumbnail.press("Shift+Tab");
-  await expect(uploadFocus).toBeFocused();
-
-  for (const width of [390, 714, 820]) {
-    await setEditorViewport(page, { width, height: 844 });
-    await assertContained();
-    await expect
-      .poll(() =>
-        picker.evaluate(
-          (element) => element.scrollWidth <= element.clientWidth,
-        ),
-      )
-      .toBe(true);
-  }
-  await picker
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
-  await setEditorViewport(page, { width: 1440, height: 1080 });
-  const desktopImage = page.locator("#asset-library .asset").first();
-  await expect(desktopImage.locator(".asset-name")).toBeVisible();
-  await desktopImage.locator(".asset-name").hover();
-
-  await page.mouse.move(1, 1);
-  await desktopImage.locator("[data-library-thumbnail]").focus();
-  await page.evaluate(
-    () =>
-      new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve)),
-      ),
-  );
-  await desktopImage.locator("[data-library-thumbnail]").press("Tab");
-  await desktopImage.locator("textarea").press("Tab");
-  const desktopFocus = page.locator("#asset-library .asset").nth(1);
-  await expect(desktopFocus.locator("[data-library-thumbnail]")).toBeFocused();
-
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-});
-
 test("image library has no demo header or loader on any host", async ({
   page,
 }) => {
@@ -7604,7 +5248,7 @@ test("My images has no filler cards and rejects GIF uploads and drops", async ({
   page,
 }) => {
   await page.goto("./");
-  await expect(page.locator("#sidebar-image-source")).toHaveText("My images");
+  await expect(page.locator("#asset-library")).toBeVisible();
 
   await expect(page.locator("#asset-library [data-upload-tile]")).toHaveCount(
     1,
@@ -7811,7 +5455,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   await page.locator(".cell-heading").first().fill("Keep this caption");
   await expect(page.locator(".library-heading").first()).toHaveValue("used");
   await openSidebarPanel(page, "Settings");
-  await page.locator("#gap").fill("20");
+  await page.locator("#gap").fill("40");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -7824,7 +5468,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   );
   await reset.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("20");
+  await expect(page.locator("#gap")).toHaveValue("40");
   await page
     .getByRole("button", { name: "Reset grid settings", exact: true })
     .click();
@@ -7832,7 +5476,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
     .getByRole("button", { name: "Reset settings", exact: true })
     .click();
   await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("50");
+  await expect(page.locator("#gap")).toHaveValue("20");
   await expect(page.locator(".asset")).toHaveCount(2);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
@@ -8792,7 +6436,7 @@ test("local media ownership revokes object URLs and rejects writes after disposa
   expect((await localDatabase(page)).document).toEqual(original);
 });
 
-test("single grid starts neutral and uploaded content persists", async ({
+test("single grid starts with refined dark defaults and uploaded content persists", async ({
   page,
 }, testInfo) => {
   const requests = [];
@@ -8806,7 +6450,7 @@ test("single grid starts neutral and uploaded content persists", async ({
   await expect(
     page.getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("#sidebar-image-source")).toBeVisible();
+  await expect(page.locator("#asset-library")).toBeVisible();
   await expect(
     page.locator("#add-board, #board-tabs, #export-all"),
   ).toHaveCount(0);
@@ -8853,7 +6497,7 @@ test("single grid starts neutral and uploaded content persists", async ({
       bitmap.close();
       return size;
     }, bytes),
-  ).toEqual({ width: 510, height: 660 });
+  ).toEqual({ width: 480, height: 480 });
   await page.locator("#replace-upload").setInputFiles({
     name: "personal.svg",
     mimeType: "image/svg+xml",
@@ -9427,7 +7071,7 @@ test("guest reset restores settings without deleting images or removed placement
     page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
-  await expect(page.locator("#gap")).toHaveValue("50");
+  await expect(page.locator("#gap")).toHaveValue("20");
   await expect(page.locator(".asset")).toHaveCount(1);
   const reset = await savedWorkspace(page);
   expect(reset.exportSettings).toEqual({
@@ -9444,7 +7088,7 @@ test("guest reset restores settings without deleting images or removed placement
     cellFont: "Manrope",
     rows: 3,
     columns: 3,
-    gap: 60,
+    gap: 24,
     background: "#17191b",
   });
   expect(
@@ -10394,12 +8038,10 @@ test("image picker keeps uploads reachable and separates deletion from placement
     exact: true,
   });
   const panel = picker.locator('[id^="headlessui-dialog-panel"]');
-  await expect(picker.locator("#picker-image-source")).toHaveText("My images");
-  await picker.locator("#picker-image-source").click();
+  await expect(picker.locator("#picker-image-source")).toHaveCount(0);
   await expect(
-    page.getByRole("option", { name: "Wikimedia Commons", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("listbox").press("Escape");
+    picker.getByRole("region", { name: "My images", exact: true }),
+  ).toBeVisible();
   await expect(picker.getByRole("tab", { name: /Choose|Library/ })).toHaveCount(
     0,
   );

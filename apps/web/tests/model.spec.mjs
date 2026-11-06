@@ -40,6 +40,58 @@ test.beforeAll(async () => {
   ]);
 });
 
+test("refined dark defaults keep captions readable without restyling saved grids or starter themes", () => {
+  const workspace = model.makeWorkspace();
+  expect(workspace.grid).toMatchObject({
+    rows: 3,
+    columns: 3,
+    imageAspect: "square",
+    captionPlacement: "overlay",
+    captionAlignment: "bottom",
+    captionOverlayOpacity: 75,
+    captionOverlayColor: "#111315",
+    cornerRadius: 6.25,
+    gap: 24,
+    canvasPadding: 36,
+    background: "#17191b",
+    headingBackgroundColor: "#17191b",
+    headingTextColor: "#eef1f3",
+    cellBackgroundColor: "#23272b",
+    cellTextColor: "#eef1f3",
+  });
+  const luminance = (color) => {
+    const channels = color.match(/[0-9a-f]{2}/gi).map((part) => {
+      const value = parseInt(part, 16) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  };
+  for (const [text, background] of [
+    [workspace.grid.cellTextColor, workspace.grid.cellBackgroundColor],
+    [workspace.grid.headingTextColor, workspace.grid.headingBackgroundColor],
+  ]) {
+    expect((luminance(text) + 0.05) / (luminance(background) + 0.05)).toBeGreaterThanOrEqual(7);
+  }
+  const opacity = workspace.grid.captionOverlayOpacity / 100;
+  const overlayOnWhite = `#${workspace.grid.captionOverlayColor.slice(1).match(/../g).map((part) =>
+    Math.round(parseInt(part, 16) * opacity + 255 * (1 - opacity)).toString(16).padStart(2, "0"),
+  ).join("")}`;
+  expect((luminance(workspace.grid.cellTextColor) + 0.05) / (luminance(overlayOnWhite) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  const legacy = JSON.parse(JSON.stringify(localWorkspace()));
+  expect(model.workspaceSchema.parse(legacy)).toEqual(legacy);
+  const reset = model.resetWorkspace(legacy);
+  expect(model.getEditorSettings(reset).style).toEqual(model.getEditorSettings(workspace).style);
+  expect(reset.assets).toBe(legacy.assets);
+  expect(presets.starterPresets.find((preset) => preset.id === "starter:botanical").settings.style).toMatchObject({
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    cornerRadius: 12.5,
+    captionOverlayOpacity: 60,
+    captionOverlayColor: "#244b3a",
+    background: "#18382b",
+  });
+});
+
 test("preset starters adapt to current layouts and sample previews stay separate from content", () => {
   expect(presets.starterPresets).toHaveLength(24);
   expect(new Set(presets.starterPresets.map((preset) => preset.id)).size).toBe(24);
@@ -1269,6 +1321,19 @@ test("translations render valid ICU messages, plurals and interpolated values", 
 
 function localWorkspace() {
   const workspace = model.makeWorkspace();
+  Object.assign(workspace.grid, {
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    captionOverlayOpacity: 60,
+    captionOverlayColor: undefined,
+    cornerRadius: 12.5,
+    gap: 60,
+    canvasPadding: 60,
+    headingBackgroundColor: undefined,
+    headingTextColor: undefined,
+    cellBackgroundColor: undefined,
+    cellTextColor: undefined,
+  });
   const asset = {
     id: crypto.randomUUID(),
     category: "Imported",
@@ -1350,8 +1415,8 @@ test("independent typography settings validate, roundtrip and reset without chan
   expect(reset.grid.headingFontSize).toBe(21);
   expect(reset.grid.headingPadding).toBe(30);
   expect(reset.grid.cellFontSize).toBe(12);
-  expect(reset.grid.headingTextColor).toBeUndefined();
-  expect(reset.grid.cellTextColor).toBeUndefined();
+  expect(reset.grid.headingTextColor).toBe("#eef1f3");
+  expect(reset.grid.cellTextColor).toBe("#eef1f3");
   expect(reset.assets).toBe(workspace.assets);
   expect(
     reset.grid.overflow.find(
@@ -1635,14 +1700,14 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   ).toBe(false);
   const defaults = model.getEditorSettings(model.makeWorkspace()).style;
   expect(defaults).toMatchObject({
-    imageAspect: "portrait",
+    imageAspect: "square",
     captionPlacement: "overlay",
     captionAlignment: "bottom",
   });
   expect(model.cellGeometry(defaults, 600)).toMatchObject({
-    imageHeight: 800,
-    captionTop: 658,
-    height: 800,
+    imageHeight: 600,
+    captionTop: 458,
+    height: 600,
   });
   const reset = model.resetWorkspace(workspace);
   expect(model.getEditorSettings(reset).style).toEqual(defaults);
@@ -1704,17 +1769,13 @@ test("independent spacing and background settings roundtrip and reset", () => {
   }
   const reset = model.resetWorkspace(restored);
   expect(model.gridSpacing(reset.grid, 600)).toEqual({
-    gap: 60,
-    headingGap: 60,
-    padding: 60,
+    gap: 24,
+    headingGap: 24,
+    padding: 36,
   });
-  for (const field of [
-    "canvasBackgroundColor",
-    "headingBackgroundColor",
-    "cellBackgroundColor",
-  ]) {
-    expect(reset.grid[field]).toBeUndefined();
-  }
+  expect(reset.grid.canvasBackgroundColor).toBeUndefined();
+  expect(reset.grid.headingBackgroundColor).toBe("#17191b");
+  expect(reset.grid.cellBackgroundColor).toBe("#23272b");
 });
 
 test("settings boundary extracts only allowlisted configuration and detached values", () => {
@@ -1890,7 +1951,7 @@ test("settings boundary applies configuration while preserving local content and
   expect(workspace).toEqual(original);
   defaults.style.gap = 40;
   defaults.exportSettings.quality = 50;
-  expect(applied.grid.gap).toBe(60);
+  expect(applied.grid.gap).toBe(24);
   expect(applied.exportSettings.quality).toBe(95);
 });
 

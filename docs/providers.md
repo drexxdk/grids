@@ -1,5 +1,7 @@
 # Image Provider Compatibility
 
+The editor now shows users' own images only and has no provider picker or online search. The implementation details below describe retained legacy provider code and reference compatibility, not currently available editor features. Existing supported references and theme sample images remain loadable.
+
 ## Credentials Checklist
 
 See [.env.example](../.env.example) for blank credentials and registration links for all credentialed image-provider candidates in the roadmap, plus a separate optional sign-in section. Keyless providers are listed without unnecessary credentials. Copy it to a local `.env`; real environment files are Git-ignored, while the example remains tracked.

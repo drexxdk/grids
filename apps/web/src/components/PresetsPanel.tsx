@@ -64,7 +64,7 @@ export function PresetsPanel({
     >
       <section
         aria-label={t("presets.starters")}
-        className="flex min-w-0 flex-col gap-5 max-[901px]:h-28 max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:pl-3"
+        className="flex min-w-0 flex-col gap-5 max-[901px]:h-(--shelf-content-height) max-[901px]:flex-row max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:pl-3"
       >
         {starterGroups.map((group) => (
           <section

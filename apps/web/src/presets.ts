@@ -18,7 +18,25 @@ type Starter = {
   style: Partial<EditorSettings["style"]> & Pick<EditorSettings["style"], "background">;
   samples?: SampleSet;
 };
-const defaults = getEditorSettings(makeWorkspace());
+const defaultWorkspace = makeWorkspace();
+// Keep existing starter designs independent of the new-grid default.
+const defaults = getEditorSettings({
+  ...defaultWorkspace,
+  grid: {
+    ...defaultWorkspace.grid,
+    cornerRadius: 12.5,
+    imageAspect: "portrait",
+    captionPlacement: "overlay",
+    captionOverlayOpacity: 60,
+    captionOverlayColor: undefined,
+    gap: 60,
+    canvasPadding: 60,
+    headingBackgroundColor: undefined,
+    headingTextColor: undefined,
+    cellBackgroundColor: undefined,
+    cellTextColor: undefined,
+  },
+});
 const starters: Starter[] = [
   { id: "gallery", style: { background: "#f5f1e8", cellBackgroundColor: "#fffdf8", gap: 24, canvasPadding: 48, titlesVisible: false, headingTextColor: "#252923", cornerRadius: 0 } },
   { id: "botanical", style: { background: "#18382b", cellBackgroundColor: "#244b3a", gap: 24, canvasPadding: 36, titlesVisible: false, headingTextColor: "#f0e9ce" } },

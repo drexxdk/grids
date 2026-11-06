@@ -39,6 +39,17 @@ export function makeComicFixture(
   const marvel = publisher === "marvel";
   const grid = {
     ...makeBoard(marvel ? "Marvel Characters" : "DC Characters"),
+    imageAspect: "portrait" as const,
+    captionPlacement: "overlay" as const,
+    captionOverlayOpacity: 60,
+    captionOverlayColor: undefined,
+    cornerRadius: 12.5,
+    gap: 60,
+    canvasPadding: 60,
+    headingBackgroundColor: undefined,
+    headingTextColor: undefined,
+    cellBackgroundColor: undefined,
+    cellTextColor: undefined,
     rows: 2,
     columns: 2,
     headingFont: "Bangers",

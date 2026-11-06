@@ -32,10 +32,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallbackDenylist: [
-          /^\/api(?:\/|$)/,
-          /\/(?:terms|privacy|support)(?:\.html)?\/?$/,
-        ],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         globPatterns: ["**/*.{html,js,css,woff2,png,svg}"],
         dontCacheBustURLsMatching: /-[A-Za-z0-9_-]{8}\.(?:js|css)$/,
         cleanupOutdatedCaches: true,

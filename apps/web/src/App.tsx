@@ -1,7 +1,6 @@
 import { t } from "./i18n";
 import {
   captionMaxLength,
-  providerImageMaxPixels,
   imageUploadAccept,
 } from "./config";
 import {
@@ -43,14 +42,6 @@ import {
   Toggle,
 } from "./components/ui/controls";
 import { Modal } from "./components/ui/Modal";
-import { AccountDialog } from "./components/AccountDialog";
-import { AccountHeader } from "./components/AccountHeader";
-import { LoginDialog } from "./components/LoginDialog";
-import {
-  InformationDialog,
-  readInformationPage,
-} from "./components/InformationDialog";
-import { useAccountSession } from "./browser/account";
 import { GridResizer, GridResizeControls } from "./components/GridResizer";
 import {
   GridCell,
@@ -72,14 +63,7 @@ import {
   LibraryImagePlaceholder,
 } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
-import { ImageSourceSelect } from "./components/ui/ImageTabs";
-import { OnlineImages } from "./components/OnlineImages";
 import { useEditorState } from "./browser/navigation";
-import {
-  downloadProviderImage,
-  imageProviders,
-  type ProviderImage,
-} from "./providers";
 import {
   fontOptions,
   fontWeightOptions,
@@ -351,101 +335,8 @@ export default function App() {
   );
   const [headingEditing, setHeadingEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const account = useAccountSession();
-  type AccountView = "login" | "account" | "information";
-  const readAccountView = (): AccountView | null => {
-    if (readInformationPage(new URL(location.href)) !== null)
-      return "information";
-    const view: unknown = history.state?.gridsAccountView;
-    return view === "login" || view === "account" ? view : null;
-  };
-  const [accountView, setAccountView] = useState<AccountView | null>(
-    readAccountView,
-  );
-  useEffect(() => {
-    if (accountView) setPresetPreview(null);
-  }, [accountView]);
-  useEffect(() => {
-    const url = new URL(location.href);
-    if (accountView !== "information") url.searchParams.delete("info");
-    history.replaceState(
-      { ...history.state, gridsAccountView: accountView },
-      "",
-      url,
-    );
-  }, [accountView]);
-  useEffect(() => {
-    const restore = () => setAccountView(readAccountView());
-    window.addEventListener("popstate", restore);
-    return () => window.removeEventListener("popstate", restore);
-  }, []);
-  const queuedAccountView = useRef<AccountView | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
-  const signOutInFlight = useRef(false);
-  const accountButton = useRef<HTMLButtonElement>(null);
-  function openAccountView(view: AccountView) {
-    setPresetPreview(null);
-    if (accountView && accountView !== view) {
-      queuedAccountView.current = view;
-      setAccountView(null);
-    } else {
-      setAccountView(view);
-    }
-    void account.refresh().catch(() => undefined);
-  }
-  function accountViewExited() {
-    const next = queuedAccountView.current;
-    queuedAccountView.current = null;
-    if (next) requestAnimationFrame(() => setAccountView(next));
-  }
-  async function signOutAccount() {
-    if (signOutInFlight.current) return;
-    signOutInFlight.current = true;
-    setSigningOut(true);
-    try {
-      await account.signOut();
-      setAccountView(null);
-      toast.success(t("account.signedOut"));
-    } catch (reason) {
-      toast.error(
-        reason instanceof Error ? reason.message : t("account.offline"),
-      );
-    } finally {
-      signOutInFlight.current = false;
-      setSigningOut(false);
-    }
-  }
-  useEffect(() => {
-    const url = new URL(location.href);
-    const auth = url.searchParams.get("auth");
-    if (!auth || !["failed", "linked", "merge", "link-conflict"].includes(auth))
-      return;
-    if (auth === "failed") toast.error(t("account.failedLogin"));
-    if (auth === "linked") toast.success(t("account.providerLinked"));
-    if (auth === "link-conflict") toast.error(t("account.providerConflict"));
-    url.searchParams.delete("auth");
-    history.replaceState(history.state, "", url);
-    setAccountView(auth === "failed" ? "login" : "account");
-  }, []);
-  useEffect(() => {
-    if (account.loading || !account.session) return;
-    if (!account.session.user && accountView === "account")
-      setAccountView(null);
-    if (account.session.user && accountView === "login") {
-      queuedAccountView.current = "account";
-      setAccountView(null);
-    }
-  }, [account.loading, account.session, accountView]);
   const exportButton = useRef<HTMLButtonElement>(null);
   const [imageTarget, setImageTarget] = useState<string | null>(null);
-  const [librarySource, setLibrarySource] = useEditorState("librarySource");
-  const [pickerSource, setPickerSource] = useEditorState("pickerSource");
-  const libraryProvider = imageProviders.find(
-    (provider) => provider.id === librarySource,
-  );
-  const pickerProvider = imageProviders.find(
-    (provider) => provider.id === pickerSource,
-  );
   const closeImagePicker = () => {
     setImageTarget(null);
   };
@@ -499,9 +390,6 @@ export default function App() {
     loadingCards: number;
   } | null>(null);
   const [saveStatus, setSaveStatus] = useState("Saved locally");
-  const [pendingProviderDrops, setPendingProviderDrops] = useState<
-    Record<string, number>
-  >({});
   const { format, resolution, quality } = workspace.exportSettings;
   const patchExport = (patch: Partial<ExportSettings>) =>
     dispatchDocument({ type: "export/patch", patch });
@@ -871,7 +759,6 @@ export default function App() {
     if (!batch.length) return;
     const chooseImportedImage = batch.length > 1 && targetCellId !== null;
     if (chooseImportedImage) {
-      setPickerSource("imported");
       setImageTarget(targetCellId);
     }
     setImportProgress((current) => ({
@@ -950,64 +837,6 @@ export default function App() {
       );
     }
   };
-  const importProviderImage = async (
-    image: ProviderImage,
-    signal: AbortSignal,
-    targetCellId: string | null = null,
-  ) => {
-    const store = localStore.current;
-    if (!store) throw new Error("Storage is unavailable");
-    const targetGridId = board.id;
-    const existing = activeAssets.find(
-      (asset) =>
-        asset.provenance?.provider === image.provider &&
-        asset.provenance.entityId === image.id,
-    );
-    if (existing) {
-      if (targetCellId) placeAsset(existing.id, targetCellId);
-      return;
-    }
-    const { blob, provenance } = await downloadProviderImage(image, signal);
-    let asset: Asset | null = null;
-    try {
-      signal.throwIfAborted();
-      if (localStore.current !== store) throw new Error("Storage changed");
-      asset = store.createAsset(blob, image.title);
-      asset.provenance = provenance;
-      const decoded = await loadImage(asset.src);
-      if (decoded.naturalWidth * decoded.naturalHeight > providerImageMaxPixels)
-        throw new Error("Image dimensions are too large");
-      signal.throwIfAborted();
-      if (localStore.current !== store) throw new Error("Storage changed");
-      dispatchDocument({
-        type: "assets/import",
-        gridId: targetGridId,
-        cellId: targetCellId,
-        assets: [asset],
-      });
-    } catch (error) {
-      if (asset) store.releaseAsset(asset.id);
-      throw error;
-    }
-  };
-  const importDroppedImage = (image: ProviderImage, targetCellId: string) => {
-    setPendingProviderDrops((current) => ({
-      ...current,
-      [targetCellId]: (current[targetCellId] ?? 0) + 1,
-    }));
-    void importProviderImage(image, new AbortController().signal, targetCellId)
-      .catch(() => {
-        toast.error(t("library.search.failed"));
-      })
-      .finally(() => {
-        setPendingProviderDrops((current) => {
-          const next = { ...current };
-          if (next[targetCellId] > 1) next[targetCellId] -= 1;
-          else delete next[targetCellId];
-          return next;
-        });
-      });
-  };
   const touchDrag = (
     source: CardDragSource,
     visual: CardDragVisual,
@@ -1022,9 +851,6 @@ export default function App() {
     const validTarget = board.cells.some((cell) => cell.id === targetId);
     if (finished || cancelled) {
       setCardDrag(null);
-      if (!cancelled && validTarget && source.kind === "provider") {
-        importDroppedImage(source.image, targetId!);
-      }
       if (!cancelled && validTarget && source.kind === "asset") {
         placeAsset(source.assetId, targetId!);
         if (imageTarget) closeImagePicker();
@@ -1059,10 +885,6 @@ export default function App() {
     event.preventDefault();
     setCardDrag(null);
     event.currentTarget.classList.remove("drag-over");
-    if (cardDrag?.source.kind === "provider") {
-      importDroppedImage(cardDrag.source.image, board.cells[index].id);
-      return;
-    }
     const assetId =
       event.dataTransfer.getData("application/x-gridroom-asset") ||
       (cardDrag?.source.kind === "asset" ? cardDrag.source.assetId : "");
@@ -1176,13 +998,6 @@ export default function App() {
       </main>
     );
   }
-  const pickerSourceControl = (
-    <ImageSourceSelect
-      id="picker-image-source"
-      value={pickerSource}
-      onChange={setPickerSource}
-    />
-  );
   const resetGridControl = (
     <Button
       ref={resetGridButton}
@@ -1196,34 +1011,6 @@ export default function App() {
   );
   return (
     <>
-      <InformationDialog
-        open={accountView === "information"}
-        onClose={() => setAccountView(null)}
-        onExited={accountViewExited}
-        returnFocus={accountButton}
-      />
-      <AccountDialog
-        open={accountView === "account"}
-        onClose={() => setAccountView(null)}
-        onExited={accountViewExited}
-        returnFocus={accountButton}
-        session={account.session}
-        loading={account.loading}
-        error={account.error}
-        onRefresh={account.refresh}
-      />
-      <LoginDialog
-        open={accountView === "login"}
-        onClose={() => setAccountView(null)}
-        onExited={accountViewExited}
-        returnFocus={accountButton}
-        session={account.session}
-        loading={account.loading}
-        error={account.error}
-        onRetry={() => {
-          void account.refresh().catch(() => undefined);
-        }}
-      />
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
         <EditorLayout
           previewing={presetPreview !== null}
@@ -1307,24 +1094,10 @@ export default function App() {
                   {t("export.title")}
                 </span>
               </Button>
-              <AccountHeader
-                session={account.session}
-                loading={account.loading}
-                error={account.error}
-                busy={signingOut}
-                disabled={conflict || importProgress !== null}
-                buttonRef={accountButton}
-                onLogin={() => openAccountView("login")}
-                onAccount={() => openAccountView("account")}
-                onInformation={() => openAccountView("information")}
-                onSignOut={() => {
-                  void signOutAccount();
-                }}
-              />
             </>
           }
         >
-          {(drawerToggle, toolsExpanded) => (
+          {(_drawerToggle, toolsExpanded) => (
             <aside
               className={`asset-panel max-[901px]:p-0! min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
               aria-label={t("library.dropZone")}
@@ -1363,40 +1136,15 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:grid max-[901px]:h-28 max-[901px]:grid-cols-[10rem_minmax(0,1fr)] max-[901px]:grid-rows-[auto_auto] max-[901px]:content-center max-[901px]:gap-x-2 max-[901px]:gap-y-2 max-[901px]:pt-0 max-[901px]:pb-0 max-[901px]:pr-0 max-[901px]:pl-3"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:block"
               >
-                <div className="mb-4 flex items-center justify-between gap-2 max-[901px]:col-start-1 max-[901px]:row-start-1 max-[901px]:mb-0 max-[901px]:pt-2 max-[901px]:[&_.field-label]:sr-only!">
-                  <div className="min-w-0 flex-1">
-                    <ImageSourceSelect
-                      id="sidebar-image-source"
-                      value={librarySource}
-                      onChange={setLibrarySource}
-                    />
-                  </div>
-                  {drawerToggle}
-                </div>
-                {libraryProvider && (
-                  <OnlineImages
-                    key={libraryProvider.id}
-                    compactRow
-                    provider={libraryProvider}
-                    gridStyle={board}
-                    captionRows={captionRows}
-                    moving={cardDrag !== null}
-                    dragSource={cardDrag?.source}
-                    onMoveStart={(source, visual) =>
-                      setCardDrag({ source, visual, targetId: null })
-                    }
-                    onTouchDrag={touchDrag}
-                  />
-                )}
                 <div
                   id="asset-library"
-                  className={`asset-library max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:h-28 max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:px-1 max-[901px]:scrollbar-safe-row! max-[901px]:after:w-3 max-[901px]:after:content-[''] ${librarySource !== "imported" ? "hidden!" : ""}`}
-                  hidden={librarySource !== "imported"}
+                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:px-3 max-[901px]:scrollbar-safe-row! max-[901px]:after:w-3 max-[901px]:after:content-['']"
                 >
                   <UploadTile
                     ref={addImagesButton}
+                    squareOnShelf
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
@@ -1447,6 +1195,23 @@ export default function App() {
                       />
                     ),
                   )}
+                  {toolsExpanded && activeAssets.length > 0 && (
+                    <div className="col-span-full mt-6 border-0 border-t border-solid border-(--line) pt-6 max-[901px]:contents">
+                      <Button
+                        aria-label={t("library.clearAll")}
+                        title={t("library.clearAll")}
+                        className="min-h-11 w-full max-[901px]:size-11! max-[901px]:shrink-0 max-[901px]:self-center max-[901px]:gap-0 max-[901px]:p-0"
+                        onClick={() =>
+                          deleteImages(activeAssets.map((asset) => asset.id))
+                        }
+                      >
+                        <Trash2 aria-hidden="true" />
+                        <span className="max-[901px]:sr-only">
+                          {t("library.clearAll")}
+                        </span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <input
                   id="upload"
@@ -1456,21 +1221,6 @@ export default function App() {
                   hidden
                   onChange={(event) => upload(event)}
                 />
-                {librarySource === "imported" &&
-                  toolsExpanded &&
-                  activeAssets.length > 0 && (
-                    <div className="border-0 border-t border-solid border-(--line) mt-6 pt-6 max-[901px]:contents">
-                      <Button
-                        className="min-h-11 w-full max-[901px]:col-start-1 max-[901px]:row-start-2"
-                        onClick={() =>
-                          deleteImages(activeAssets.map((asset) => asset.id))
-                        }
-                      >
-                        <Trash2 aria-hidden="true" />
-                        {t("library.clearAll")}
-                      </Button>
-                    </div>
-                  )}
               </div>
             </aside>
           )}
@@ -1603,7 +1353,6 @@ export default function App() {
                               gridId={board.id}
                               gridStyle={board}
                               captionRows={captionRows}
-                              importing={Boolean(pendingProviderDrops[item.id])}
                               moving={cardDrag !== null}
                               dragSource={isSource}
                               dragAffected={
@@ -2231,26 +1980,9 @@ export default function App() {
             } as CSSProperties
           }
         >
-          {!pickerProvider && <div className="mb-4">{pickerSourceControl}</div>}
-          {pickerProvider && (
-            <OnlineImages
-              key={pickerProvider.id}
-              provider={pickerProvider}
-              gridStyle={board}
-              captionRows={captionRows}
-              selectionOnly
-              searchActions={pickerSourceControl}
-              gridClassName={pickerGridClassName}
-              onImport={async (image, signal) => {
-                await importProviderImage(image, signal, imageTarget);
-                closeImagePicker();
-              }}
-            />
-          )}
           <div
             role="region"
             aria-label={t("library.source.imported")}
-            hidden={pickerSource !== "imported"}
           >
             <div className={pickerGridClassName}>
               <UploadTile

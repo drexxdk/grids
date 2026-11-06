@@ -9,6 +9,7 @@ export function UploadTile({
   progress,
   gridStyle,
   captionRows,
+  squareOnShelf = false,
   className = "self-start w-full",
   onClick,
   onDropFiles,
@@ -17,6 +18,7 @@ export function UploadTile({
   progress: { completed: number; total: number } | null;
   gridStyle: GridStyle;
   captionRows: number;
+  squareOnShelf?: boolean;
   className?: string;
   onClick: () => void;
   onDropFiles: (files: FileList) => void;
@@ -26,7 +28,7 @@ export function UploadTile({
   const [hovered, setHovered] = useState(false);
   return (
     <div
-      className={`min-w-0 max-[901px]:shrink-0 ${className}`}
+      className={`min-w-0 max-[901px]:shrink-0 ${squareOnShelf ? "max-[901px]:aspect-square!" : ""} ${className}`}
       style={{ aspectRatio: `600 / ${geometry.height}` }}
     >
       <button
@@ -36,11 +38,12 @@ export function UploadTile({
         aria-label={t("common.actions.addImages", { count: 2 })}
         disabled={progress !== null}
         title={t("common.actions.addOrDropImages", { count: 2 })}
-        className={`image-card @container relative size-full border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100!`}
+        className={`image-card @container relative size-full border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:[&_[data-upload-label]]:text-xs" : ""}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,
             "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
+            "--upload-corner-radius": `${gridStyle.cornerRadius ?? 12.5}%`,
             borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
             backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
             color: isLightCanvasColor(
