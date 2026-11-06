@@ -523,6 +523,7 @@ export default function App() {
   const [captionRows, setCaptionRows] = useState(1);
   const [previewFrame, setPreviewFrame] = useState<HTMLDivElement | null>(null);
   const [canvasOverflow, setCanvasOverflow] = useState({ width: 0, height: 0 });
+  const pendingResizeScroll = useRef({ rows: false, columns: false });
   const [previewSize, setPreviewSize] = useState<{
     width: number;
     frameHeight: number;
@@ -534,7 +535,6 @@ export default function App() {
     gap: number;
     padding: number;
     headingGap: number;
-    tight: boolean;
   } | null>(null);
   useLayoutEffect(() => {
     const frame = previewFrame;
@@ -558,8 +558,7 @@ export default function App() {
           toolbarHeight -
           1,
       );
-      // When space is tight the controls are not reserved; the workspace scrolls to them.
-      // Judge height as if the horizontal scrollbar is shown, so it appearing cannot flip tightness.
+      // Keep the height budget stable when the native horizontal scrollbar appears.
       const scroller = container.parentElement;
       const nativeBar =
         parseFloat(
@@ -572,10 +571,8 @@ export default function App() {
           (scroller.offsetHeight - scroller.clientHeight) -
           nativeBar
         : workspaceHeight;
-      const tight = workspaceWidth < 560 || stableHeight < 400;
-      // Tight: the canvas drops its right/bottom padding, so the board runs flush to that edge.
-      const availableWidth = workspaceWidth + (tight ? 12 : -104);
-      const availableHeight = stableHeight + (tight ? 12 : -52);
+      const availableWidth = workspaceWidth + 12;
+      const availableHeight = stableHeight + 12;
       const { gap: gapRatio, padding: paddingRatio } = gridSpacing(board, 1);
       const headingGapRatio = board.headingVisible ? gapRatio : 0;
       const widthRatio =
@@ -629,9 +626,8 @@ export default function App() {
         ),
       );
       const next = {
-        width: viewportWidth + (tight ? 64 : 104),
-        frameHeight: height + cellWidth * headingAreaRatio + (tight ? 64 : 52),
-        tight,
+        width: viewportWidth + 64,
+        frameHeight: height + cellWidth * headingAreaRatio + 64,
         previewWidth: viewportWidth,
         rowOffset: -scrollbarWidth / 2,
         height,
@@ -643,7 +639,6 @@ export default function App() {
       };
       setPreviewSize((previous) =>
         previous &&
-        previous.tight === next.tight &&
         Math.abs(previous.width - next.width) < 0.01 &&
         Math.abs(previous.frameHeight - next.frameHeight) < 0.01 &&
         Math.abs(previous.previewWidth - next.previewWidth) < 0.01 &&
@@ -686,6 +681,29 @@ export default function App() {
     displayAssets,
     captionRows,
   ]);
+  useLayoutEffect(() => {
+    if (
+      !pendingResizeScroll.current.rows &&
+      !pendingResizeScroll.current.columns
+    )
+      return;
+    let animationFrame = requestAnimationFrame(() => {
+      animationFrame = requestAnimationFrame(() => {
+        const scroller = previewFrame?.closest<HTMLElement>(
+          "[data-workspace-scroll]",
+        );
+        const pending = pendingResizeScroll.current;
+        pendingResizeScroll.current = { rows: false, columns: false };
+        if (scroller) {
+          scroller.scrollTo({
+            top: pending.rows ? scroller.scrollHeight : scroller.scrollTop,
+            left: pending.columns ? scroller.scrollWidth : scroller.scrollLeft,
+          });
+        }
+      });
+    });
+    return () => cancelAnimationFrame(animationFrame);
+  }, [board.id, board.rows, board.columns, previewFrame]);
   useLayoutEffect(() => {
     let active = true;
     const update = () => {
@@ -840,6 +858,7 @@ export default function App() {
     if (value === board[key]) return;
     const rows = key === "rows" ? value : board.rows;
     const columns = key === "columns" ? value : board.columns;
+    pendingResizeScroll.current[key] = true;
     dispatchDocument(createResizeCommand(board.id, rows, columns));
   };
   const importFiles = async (
@@ -1481,7 +1500,7 @@ export default function App() {
               >
                 <div
                   inert={presetPreview !== null}
-                  className={`canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! ${previewSize?.tight ? "pr-0! pb-0!" : ""}`}
+                  className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! pr-0! pb-0!"
                 >
                   <GridResizer
                     ref={setPreviewFrame}
@@ -1503,7 +1522,7 @@ export default function App() {
                       />
                     }
                     cornerAction={resetGridControl}
-                    leadingSpace={!previewSize?.tight}
+                    leadingSpace={false}
                     viewportHeight={previewSize?.height}
                     previewWidth={previewSize?.previewWidth}
                     onOverflowChange={setCanvasOverflow}

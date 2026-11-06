@@ -712,6 +712,176 @@ async function resizedProviderFixture(page, width, height) {
   return Buffer.from(base64, "base64");
 }
 
+for (const [mode, resizeTest] of [
+  ["overlay", touchTest],
+  ["native", scrollbarTest],
+]) {
+  resizeTest(
+    `changing dimensions scrolls to the new ${mode} canvas edge`,
+    async ({ page }) => {
+      await page.goto("./");
+      await useComicExample(page);
+      await setEditorViewport(page, { width: 260, height: 560 });
+      const initial = await savedWorkspace(page);
+      const scroller = page.locator("[data-workspace-scroll]");
+      let rows = initial.grid.rows;
+      let columns = initial.grid.columns;
+      for (const action of ["Add", "Remove"]) {
+        for (const dimension of ["row", "column"]) {
+          const button = page.getByRole("button", {
+            name: `${action} ${dimension}`,
+            exact: true,
+          });
+          await button.focus();
+          await scroller.evaluate(
+            (element, isRow) =>
+              element.scrollTo(isRow ? 30 : 0, isRow ? 0 : 40),
+            dimension === "row",
+          );
+          const otherAxis = dimension === "row" ? "scrollLeft" : "scrollTop";
+          const originalPosition = await scroller.evaluate(
+            (element, axis) => element[axis],
+            otherAxis,
+          );
+          expect(originalPosition).toBeGreaterThan(0);
+          await button.press("Enter");
+          const change = action === "Add" ? 1 : -1;
+          if (dimension === "row") rows += change;
+          else columns += change;
+          await expect(page.locator(".grid-cell")).toHaveCount(rows * columns);
+          if (dimension === "row") {
+            await expect
+              .poll(() =>
+                scroller.evaluate(
+                  (element) =>
+                    Math.abs(
+                      element.scrollHeight -
+                        element.clientHeight -
+                        element.scrollTop,
+                    ) <= 1,
+                ),
+              )
+              .toBe(true);
+          } else {
+            await expect
+              .poll(() =>
+                scroller.evaluate((element) => {
+                  const viewport = element
+                    .querySelector("[data-canvas-viewport]")
+                    .getBoundingClientRect();
+                  const cells = element.querySelectorAll(".grid-cell");
+                  const last = cells[cells.length - 1].getBoundingClientRect();
+                  return (
+                    element.scrollLeft > 0 && last.right <= viewport.right + 1
+                  );
+                }),
+              )
+              .toBe(true);
+            await expect(button).toBeInViewport({ ratio: 1 });
+          }
+          expect(
+            await scroller.evaluate(
+              (element, axis) => element[axis],
+              otherAxis,
+            ),
+          ).toBe(originalPosition);
+        }
+      }
+    },
+  );
+}
+
+for (const [mode, controlsTest] of [
+  ["overlay", touchTest],
+  ["native", nativeTouchTest],
+  ["desktop", scrollbarTest],
+]) {
+  controlsTest(
+    `${mode} canvas controls remain reachable by scrolling`,
+    async ({ page }) => {
+      await page.goto("./");
+      await useComicExample(page);
+      const viewports =
+        mode === "desktop"
+          ? [
+              { width: 1440, height: 1000 },
+              { width: 960, height: 600 },
+              { width: 1440, height: 360 },
+            ]
+          : [
+              { width: 526, height: 662 },
+              { width: 390, height: 360 },
+              { width: 320, height: 568 },
+            ];
+      for (const viewport of viewports) {
+        await setEditorViewport(page, viewport);
+        await openSidebarPanel(page, "Settings");
+        for (const shape of ["portrait", "landscape", "square"]) {
+          await selectField(page, "image-shape", shape);
+          const scroller = page.locator("[data-workspace-scroll]");
+          await scroller.evaluate((element) => element.scrollTo(0, 0));
+          if (viewport.height === 360) {
+            await expect
+              .poll(() =>
+                scroller.evaluate(
+                  (element) =>
+                    element
+                      .querySelector('[aria-label="Row controls"]')
+                      .getBoundingClientRect().bottom >
+                    element.getBoundingClientRect().bottom,
+                ),
+              )
+              .toBe(true);
+          }
+          await scroller.evaluate((element) =>
+            element.scrollTo(0, element.scrollHeight),
+          );
+          await expect
+            .poll(() =>
+              page.evaluate(() => {
+                const workspace = document
+                  .querySelector("[data-workspace-scroll]")
+                  .getBoundingClientRect();
+                const rows = document
+                  .querySelector('[aria-label="Row controls"]')
+                  .getBoundingClientRect();
+                const reset = document
+                  .querySelector('[aria-label="Reset grid"]')
+                  .getBoundingClientRect();
+                const frame = document
+                  .querySelector("[data-resize-frame]")
+                  .getBoundingClientRect();
+                const content = document
+                  .querySelector("[data-preview-content]")
+                  .getBoundingClientRect();
+                return {
+                  controlsReachable:
+                    rows.top >= workspace.top &&
+                    rows.bottom <= workspace.bottom + 1,
+                  controlsAboveTabs:
+                    Math.max(rows.bottom, reset.bottom) <= workspace.bottom,
+                  noLeadingButtonSpace:
+                    Math.abs(content.left - frame.left) <= 1,
+                };
+              }),
+            )
+            .toEqual({
+              controlsReachable: true,
+              controlsAboveTabs: true,
+              noLeadingButtonSpace: true,
+            });
+          await expect(
+            page.getByRole("button", { name: "Add row", exact: true }),
+          ).toBeInViewport({ ratio: 1 });
+          await expect(
+            page.getByRole("button", { name: "Remove row", exact: true }),
+          ).toBeInViewport({ ratio: 1 });
+        }
+      }
+    },
+  );
+}
+
 for (const [mode, rowTest] of [
   ["mobile", touchTest],
   ["classic", scrollbarTest],
