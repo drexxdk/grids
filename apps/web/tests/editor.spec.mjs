@@ -712,6 +712,88 @@ async function resizedProviderFixture(page, width, height) {
   return Buffer.from(base64, "base64");
 }
 
+for (const [mode, rowTest] of [
+  ["mobile", touchTest],
+  ["classic", scrollbarTest],
+]) {
+  rowTest(
+    `compact ${mode} panels reserve only native scrollbar space`,
+    async ({ page }) => {
+      await mockCommons(page);
+      await page.goto("./");
+      await useComicExample(page);
+      await setEditorViewport(page, { width: 390, height: 720 });
+      const checkRow = async (row, cardSelector) => {
+        await expect(row).toBeVisible();
+        await expect
+          .poll(() =>
+            row.evaluate((element, selector) => {
+              const style = getComputedStyle(element);
+              const bounds = element.getBoundingClientRect();
+              const card = element
+                .querySelector(selector)
+                .getBoundingClientRect();
+              return {
+                top: parseFloat(style.paddingTop),
+                bottom: parseFloat(style.paddingBottom),
+                scrollbar: style.scrollbarWidth,
+                scrollbarTakesSpace:
+                  element.offsetHeight > element.clientHeight,
+                cardFills:
+                  Math.abs(card.top - bounds.top - 8) <= 1 &&
+                  Math.abs(
+                    card.bottom - bounds.top - element.clientHeight + 8,
+                  ) <= 1,
+              };
+            }, cardSelector),
+          )
+          .toEqual({
+            top: 8,
+            bottom: 8,
+            scrollbar: "auto",
+            scrollbarTakesSpace: mode === "classic",
+            cardFills: true,
+          });
+      };
+      for (const shape of ["portrait", "landscape", "square"]) {
+        await selectField(page, "image-shape", shape);
+        await openSidebarPanel(page, "Themes");
+        await checkRow(
+          page.getByRole("region", { name: "Starting points", exact: true }),
+          "[data-theme-tile]",
+        );
+        await openSidebarPanel(page, "Images");
+        await selectField(page, "sidebar-image-source", "imported");
+        await checkRow(page.locator("#asset-library"), "[data-library-image]");
+        await selectField(page, "sidebar-image-source", "commons");
+        await expect(
+          page.getByRole("region", { name: "Online", exact: true }),
+        ).toHaveAttribute("aria-busy", "false");
+        await checkRow(
+          page.locator("[data-online-card-area]").locator(".."),
+          "[data-library-image]",
+        );
+      }
+      await openSidebarPanel(page, "Settings");
+      await expect
+        .poll(() =>
+          page.locator("[data-sidebar-panels]").evaluate((element) => ({
+            padding: getComputedStyle(element).paddingRight,
+            scrollbar: getComputedStyle(element).scrollbarWidth,
+            scrollable: element.scrollHeight > element.clientHeight,
+            scrollbarTakesSpace: element.offsetWidth > element.clientWidth,
+          })),
+        )
+        .toEqual({
+          padding: "0px",
+          scrollbar: "auto",
+          scrollable: true,
+          scrollbarTakesSpace: mode === "classic",
+        });
+    },
+  );
+}
+
 for (const [mode, density, viewport] of [
   ["desktop", 1, { width: 1440, height: 1080 }],
   ["mobile", 2, { width: 390, height: 844 }],

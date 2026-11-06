@@ -4,9 +4,7 @@
 
 @utility scrollbar-safe-row {
   padding-top: 0.5rem;
-  padding-bottom: calc(
-    0.5rem + max(0px, 1rem - var(--native-scrollbar-width, 0px))
-  );
+  padding-bottom: 0.5rem;
 }
 
 @layer components {
