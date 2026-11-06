@@ -739,10 +739,16 @@ export const createResetCommand = (): DocumentCommand => ({
   defaults: makeWorkspace(),
 });
 
-export const createResetGridCommand = (): DocumentCommand => ({
-  type: "grid/reset-all",
-  defaults: makeWorkspace(),
-});
+export const createResetGridCommand = (): DocumentCommand => {
+  const defaults = makeWorkspace();
+  return {
+    type: "grid/reset-all",
+    defaults: {
+      ...defaults,
+      grid: { ...resizeBoard(defaults.grid, 2, 2), overflow: [] },
+    },
+  };
+};
 
 function mergeAssets(existing: Asset[], incoming: Asset[]): Asset[] {
   const ids = new Set(existing.map((asset) => asset.id));
@@ -942,11 +948,7 @@ export function documentReducer(
     case "grid/reset":
       return resetWorkspace(workspace, command.defaults);
     case "grid/reset-all":
-      return {
-        ...workspace,
-        grid: command.defaults.grid,
-        exportSettings: command.defaults.exportSettings,
-      };
+      return command.defaults;
     case "assets/import": {
       const assets = mergeAssets(workspace.assets, command.assets);
       const destination =

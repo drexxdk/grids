@@ -154,10 +154,10 @@
     "closeSidebar": "Close sidebar",
     "showSidebar": "Show sidebar",
     "reset": {
-      "title": "Reset grid",
-      "tooltip": "Start a new empty grid",
-      "prompt": "Reset the layout and styling, and remove all grid headings, images and crops?",
-      "retention": "Images in My images are kept. This cannot be undone."
+      "title": "Reset grid and images",
+      "tooltip": "Clear the grid and all your images",
+      "prompt": "Start a new empty 3x3 grid with default settings and delete all your images, including images in removed cells?",
+      "retention": "All headings, captions, crops and uploaded images will be removed from this browser. This cannot be undone."
     },
     "region": "Grid editor",
     "headingLabel": "Grid heading",

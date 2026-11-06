@@ -156,6 +156,7 @@ async function openSidebarPanel(page, name) {
     await expect(sidebar).toHaveCount(0);
     await sidebarToggle(page, false).click();
   }
+  await expect(sidebar).toHaveCount(1);
   await expect(sidebar).toBeVisible();
   const tab = sidebar.getByRole("tab", { name, exact: true });
   if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
@@ -516,9 +517,6 @@ for (const [mode, controlsTest] of [
                 const rows = document
                   .querySelector('[aria-label="Row controls"]')
                   .getBoundingClientRect();
-                const reset = document
-                  .querySelector('[aria-label="Reset grid"]')
-                  .getBoundingClientRect();
                 const frame = document
                   .querySelector("[data-resize-frame]")
                   .getBoundingClientRect();
@@ -530,7 +528,7 @@ for (const [mode, controlsTest] of [
                     rows.top >= workspace.top &&
                     rows.bottom <= workspace.bottom + 1,
                   controlsAboveTabs:
-                    Math.max(rows.bottom, reset.bottom) <= workspace.bottom,
+                    rows.bottom <= workspace.bottom,
                   noLeadingButtonSpace:
                     Math.abs(content.left - frame.left) <= 1,
                 };
@@ -666,9 +664,10 @@ touchTest("compact shelf keeps vertical tabs reachable beside all panels", async
     await settings.click();
     await page.locator("#background-value").fill("#112233");
     await page.locator("#background-value").press("Enter");
-    const reset = page.getByRole("button", { name: "Reset grid settings", exact: true });
-    await reset.scrollIntoViewIfNeeded();
-    await expect(reset).toBeInViewport();
+    const cardStyle = page.getByRole("group", { name: "Card style", exact: true });
+    const showTitles = cardStyle.getByRole("switch", { name: "Show titles", exact: true });
+    await showTitles.scrollIntoViewIfNeeded();
+    await expect(showTitles).toBeInViewport();
     await expect(themes).toBeInViewport({ ratio: 1 });
     await images.click();
     await expect(page.locator("#asset-library")).toBeVisible();
@@ -688,7 +687,7 @@ touchTest("compact shelf keeps vertical tabs reachable beside all panels", async
   await expect(page.locator("#background-value")).toHaveValue("#112233");
 });
 
-touchTest("compact image shelf uses its width and keeps clear images reachable without losing placements", async ({ page }) => {
+touchTest("compact image shelf keeps square uploads readable without changing placements", async ({ page }) => {
   await page.goto("./");
   await page.locator("#upload").setInputFiles(
     ["keep.svg", "unused.svg"].map((name) => ({
@@ -702,7 +701,6 @@ touchTest("compact image shelf uses its width and keeps clear images reachable w
   await page.locator(".cell-heading").first().fill("Keep my caption");
   const library = page.locator("#asset-library");
   const add = library.getByRole("button", { name: "Add images", exact: true });
-  const clear = library.getByRole("button", { name: "Clear images", exact: true });
   for (const [width, shape, ratio] of [
     [260, "portrait", 3 / 4],
     [390, "landscape", 4 / 3],
@@ -724,24 +722,16 @@ touchTest("compact image shelf uses its width and keeps clear images reachable w
     const shelf = await library.boundingBox();
     expect(shelf.x - (tabs.x + tabs.width)).toBeLessThan(16);
     expect(shelf.width).toBeGreaterThanOrEqual(width - tabs.width - 16);
-    await clear.scrollIntoViewIfNeeded();
-    await expect(clear).toBeInViewport({ ratio: 1 });
-    await expect(clear).toHaveAttribute("title", "Clear images");
-    const bounds = await clear.boundingBox();
-    expect(bounds.width).toBe(44);
-    expect(bounds.height).toBe(44);
+    await expect(library.getByRole("button", { name: /Reset|Clear images/ })).toHaveCount(0);
     await expect(page.locator("[data-editor-sidebar]").getByRole("heading", { name: "My images", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
-  await clear.tap();
-  await expect(clear).toHaveCount(0);
-  await expect(page.locator(".asset")).toHaveCount(0);
-  await expect(add).toBeFocused();
-  await expect(add).toBeInViewport({ ratio: 1 });
+  await setEditorViewport(page, { width: 901, height: 900 });
+  await expect(library.locator(":scope > :first-child").getByRole("button", { name: "Add images", exact: true })).toBeVisible();
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue("Keep my caption");
   await reloadWorkspace(page);
-  await expect(page.locator(".asset")).toHaveCount(0);
+  await expect(page.locator(".asset")).toHaveCount(2);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue("Keep my caption");
 });
@@ -1419,7 +1409,7 @@ test("right sidebar switches local images and settings without a provider picker
     el.scrollTop = el.scrollHeight;
   });
   await expect(
-    page.getByRole("button", { name: "Reset grid settings", exact: true }),
+    page.getByRole("group", { name: "Card style", exact: true }),
   ).toBeVisible();
   expect(await page.evaluate(() => scrollY)).toBe(0);
   await images.click();
@@ -1472,7 +1462,7 @@ test("responsive grid resizing keeps controls reachable and preserves cell conte
         "Remove row",
         "Add column",
         "Remove column",
-        "Reset grid",
+        "Reset grid and images",
       ]) {
         const button = page.getByRole("button", { name, exact: true });
         await button.scrollIntoViewIfNeeded();
@@ -1619,7 +1609,7 @@ nativeTouchTest(
       page.locator(".board-export-heading"),
       page.getByRole("group", { name: "Row controls", exact: true }),
       page.getByRole("group", { name: "Column controls", exact: true }),
-      page.getByRole("button", { name: "Reset grid", exact: true }),
+      page.getByRole("button", { name: "Reset grid and images", exact: true }),
     ];
     for (const width of [960, 390]) {
       await setEditorViewport(page, { width, height: 600 });
@@ -1765,114 +1755,138 @@ nativeTouchTest(
   },
 );
 
-test("full grid reset confirms a clean slate and retains library images through reload", async ({
+test("theme cards stay square and render fixed 2x2 samples independently of grid dimensions", async ({ page }) => {
+  const colors = {
+    V0047265: "#ff0000",
+    V0043473: "#00ff00",
+    V0046796: "#0000ff",
+    V0046797: "#ffff00",
+    V0046568: "#ff00ff",
+    V0017153: "#00ffff",
+  };
+  await page.route(/^https:\/\/iiif\.(wellcomecollection\.org|micr\.io)\//, (route) => {
+    const color = Object.entries(colors).find(([id]) => route.request().url().includes(id))?.[1] ?? "#ffffff";
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path fill="${color}" d="M0 0h100v100H0z"/></svg>`,
+    });
+  });
+  await page.goto("./");
+  await openSidebarPanel(page, "Themes");
+  const contact = page.getByRole("button", { name: "Preview Contact sheet", exact: true });
+  const thumbnail = contact.locator("[data-theme-thumbnail]");
+  await contact.scrollIntoViewIfNeeded();
+  await expect(thumbnail).toHaveAttribute("data-thumbnail-state", "ready");
+  const src = await thumbnail.locator("img").getAttribute("src");
+  const pixels = await thumbnail.locator("img").evaluate(async (image) => {
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    return [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].map(([x, y]) =>
+      [...context.getImageData(Math.floor(x * canvas.width), Math.floor(y * canvas.height), 1, 1).data],
+    );
+  });
+  expect(pixels).toEqual([
+    [255, 0, 0, 255], [0, 255, 0, 255],
+    [0, 0, 255, 255], [255, 255, 0, 255],
+  ]);
+  for (const [rows, columns] of [[1, 4], [4, 1]]) {
+    const current = (await savedWorkspace(page)).grid;
+    for (const [dimension, target, previous] of [
+      ["row", rows, current.rows], ["column", columns, current.columns],
+    ]) {
+      for (let step = 0; step < Math.abs(target - previous); step++) {
+        await page.getByRole("button", {
+          name: `${target > previous ? "Add" : "Remove"} ${dimension}`,
+          exact: true,
+        }).click();
+      }
+    }
+    await expect(thumbnail.locator("img")).toHaveAttribute("src", src);
+  }
+  for (const width of [1440, 901, 900, 390, 260]) {
+    await setEditorViewport(page, { width, height: 720 });
+    await openSidebarPanel(page, "Themes");
+    const sizes = await page.locator("[data-theme-tile]").evaluateAll((cards) =>
+      cards.map((card) => {
+        const { width, height } = card.getBoundingClientRect();
+        return Math.abs(width - height);
+      }),
+    );
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(1);
+  }
+  await contact.scrollIntoViewIfNeeded();
+  await contact.click();
+  await expect(page.locator(".grid-cell")).toHaveCount(4);
+  await page.getByRole("button", { name: "Apply settings", exact: true }).click();
+  expect((await savedWorkspace(page)).grid).toMatchObject({ rows: 4, columns: 1 });
+});
+
+test("header reset confirms clearing the grid and all images at every screen size", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
   await useComicExample(page);
+  const firstTitle = await page.locator(".library-heading").first().inputValue();
+  await page.getByRole("button", { name: `Image options: ${firstTitle}`, exact: true }).hover();
+  await page.getByRole("button", { name: `Delete ${firstTitle}`, exact: true }).click();
   await editHeading(page, "Reset this heading");
   await openSidebarPanel(page, "Settings");
   await page.locator("#gap").fill("20");
   await page.getByRole("button", { name: "Remove row", exact: true }).click();
   const before = await savedWorkspace(page);
   const blobs = (await localDatabase(page)).images;
-  const trigger = page.getByRole("button", { name: "Reset grid", exact: true });
-  const dialog = page.getByRole("dialog", { name: "Reset grid", exact: true });
-  for (const width of [260, 390, 1440]) {
+  expect(before.assets.some((asset) => asset.libraryHidden)).toBe(true);
+  expect(before.grid.overflow.length).toBeGreaterThan(0);
+  const sources = await page.locator(".grid-cell img").evaluateAll((images) => images.map((image) => image.src));
+  const trigger = page.getByRole("button", { name: "Reset grid and images", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Reset grid and images", exact: true });
+  for (const width of [260, 390, 900, 901, 1440]) {
     await setEditorViewport(page, { width, height: 900 });
     await openSidebarPanel(page, "Settings");
-    const settingsReset = page.getByRole("button", {
+    await expect(page.getByRole("button", {
       name: "Reset grid settings",
       exact: true,
-    });
-    await settingsReset.scrollIntoViewIfNeeded();
-    await expect(settingsReset).toBeVisible();
-    await expect(
-      page
-        .locator(".settings-panel")
-        .getByRole("button", { name: "Reset grid", exact: true }),
-    ).toHaveCount(0);
-    await closeSidebarPanel(page);
-    await expect(trigger).toBeVisible();
-    await expect(trigger).toHaveAttribute("title", "Reset grid");
-
-    expect(await trigger.textContent()).toBe("");
-    const gridBounds = await trigger.boundingBox();
-
-    const controlsOwner = page.locator(
-      (await page
-        .locator("[data-canvas-header]")
-        .getByRole("button", { name: "Add row", exact: true })
-        .count())
-        ? "[data-canvas-header]"
-        : "[data-resize-frame]",
-    );
-    await expect(
-      controlsOwner.getByRole("button", { name: "Reset grid", exact: true }),
-    ).toBeVisible();
-    const ownerBounds = await controlsOwner.boundingBox();
-    expect(gridBounds.x).toBeGreaterThanOrEqual(ownerBounds.x);
-    expect(gridBounds.x + gridBounds.width).toBeLessThanOrEqual(
-      ownerBounds.x + ownerBounds.width,
-    );
-    expect(gridBounds.y).toBeGreaterThanOrEqual(ownerBounds.y);
-    expect(gridBounds.y + gridBounds.height).toBeLessThanOrEqual(
-      ownerBounds.y + ownerBounds.height,
-    );
-    for (const label of [
-      "Add row",
-      "Remove row",
-      "Add column",
-      "Remove column",
-    ]) {
-      const controls = await controlsOwner
-        .getByRole("button", { name: label, exact: true })
-        .boundingBox();
-      const button = controlsOwner.getByRole("button", {
-        name: label,
-        exact: true,
-      });
-      await page.mouse.move(0, 0);
-      await expect(button.locator("svg")).toHaveCount(1);
-      expect(await button.textContent()).toBe("");
-      const colors = await button.evaluate((element) => {
-        const style = getComputedStyle(element);
-        const reset = getComputedStyle(
-          document.querySelector('button[aria-label="Reset grid"]'),
-        );
-        return {
-          actual: [style.backgroundColor, style.color, style.borderColor],
-          reset: [reset.backgroundColor, reset.color, reset.borderColor],
-        };
-      });
-      expect(colors.actual).toEqual(colors.reset);
-      expect(
-        gridBounds.x < controls.x + controls.width &&
-          gridBounds.x + gridBounds.width > controls.x &&
-          gridBounds.y < controls.y + controls.height &&
-          gridBounds.y + gridBounds.height > controls.y,
-      ).toBe(false);
-    }
+    })).toHaveCount(0);
+    await expect(trigger).toHaveCount(1);
+    await expect(trigger).toBeInViewport({ ratio: 1 });
+    await expect(trigger).toHaveAttribute("title", "Clear the grid and all your images");
+    const header = page.locator("[data-canvas-header]");
+    await expect(header.getByRole("button", { name: "Reset grid and images", exact: true })).toBeVisible();
+    const bounds = await trigger.boundingBox();
+    const exportBounds = await page.locator("#export-grid-header").boundingBox();
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(exportBounds.x);
+    expect(bounds.y).toBe(exportBounds.y);
+    await expect(page.getByRole("button", { name: "Clear images", exact: true })).toHaveCount(0);
     await page.screenshot({
-      path: testInfo.outputPath(`canvas-reset-${width}.png`),
+      path: testInfo.outputPath(`header-reset-${width}.png`),
     });
     await trigger.click();
-    await expect(dialog).toContainText("Images in My images are kept.");
+    await expect(dialog).toContainText("delete all your images, including images in removed cells");
+    await expect(dialog).toContainText("This cannot be undone.");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     expect((await localDatabase(page)).document).toEqual(before);
+    expect((await localDatabase(page)).images).toEqual(blobs);
   }
   await trigger.click();
-  await dialog.getByRole("button", { name: "Reset grid", exact: true }).click();
+  await dialog.getByRole("button", { name: "Reset grid and images", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(async () => (await localDatabase(page)).document?.grid.id)
     .not.toBe(before.grid.id);
   const reset = await savedWorkspace(page);
   expect(reset.grid).toMatchObject({
-    rows: 3,
-    columns: 3,
+    rows: 2,
+    columns: 2,
     heading: "",
     gap: 24,
     imageAspect: "square",
@@ -1885,12 +1899,23 @@ test("full grid reset confirms a clean slate and retains library images through 
       (cell) => !cell.assetId && !cell.title && !cell.crop,
     ),
   ).toBe(true);
-  expect(reset.assets).toEqual(before.assets);
-  expect((await localDatabase(page)).images).toEqual(blobs);
+  expect(reset.assets).toEqual([]);
+  expect((await localDatabase(page)).images).toEqual([]);
+  for (const src of sources) {
+    expect(await page.evaluate(async (src) => {
+      try {
+        await fetch(src);
+        return false;
+      } catch {
+        return true;
+      }
+    }, src)).toBe(true);
+  }
+  await expect(trigger).toBeFocused();
   await reloadWorkspace(page);
   expect((await savedWorkspace(page)).grid).toEqual(reset.grid);
   await openSidebarPanel(page, "Images");
-  await expect(page.locator(".asset")).toHaveCount(before.assets.length);
+  await expect(page.locator(".asset")).toHaveCount(0);
   await expect(page.locator(".grid-cell img")).toHaveCount(0);
 });
 
@@ -3867,11 +3892,11 @@ test("failures show readable, dismissible notifications without success noise", 
   const notices = page.locator("[data-sonner-toast]");
   await expect(notices).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true })
     .click();
   await page
-    .getByRole("dialog", { name: "Reset grid settings", exact: true })
-    .getByRole("button", { name: "Reset settings", exact: true })
+    .getByRole("dialog", { name: "Reset grid and images", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(notices).toHaveCount(0);
@@ -5171,6 +5196,8 @@ touchTest(
     await expect(progress).toContainText("0 / 6");
     await expect(loading).toHaveCount(6);
     await expect(add).toBeDisabled();
+    const reset = page.locator('[data-canvas-header] button[aria-label="Reset grid and images"]');
+    await expect(reset).toBeDisabled();
 
     await expect(library).toHaveAttribute("aria-busy", "true");
     await openSidebarPanel(page, "Settings");
@@ -5181,6 +5208,7 @@ touchTest(
       path: testInfo.outputPath("import-progress-desktop.png"),
     });
     for (const completed of [0, 1, 2, 3, 4, 5]) {
+      await expect(reset).toBeDisabled();
       await expect(progress).toContainText(`${completed} / 6`);
       await expect(loading).toHaveCount(6 - completed);
       await expect(
@@ -5225,6 +5253,7 @@ touchTest(
     await expect(progress).toHaveCount(0);
 
     await expect(add).toBeEnabled();
+    await expect(reset).toBeEnabled();
     await page
       .getByRole("dialog", { name: "Choose image", exact: true })
       .getByRole("button", { name: "Close dialog", exact: true })
@@ -5416,7 +5445,7 @@ test("empty cells and image library accept direct uploads and file drops", async
   });
 });
 
-test("reset and library deletion retain canvas images without confirmation", async ({
+test("individual library deletion retains canvas images without confirmation", async ({
   page,
 }, testInfo) => {
   await page.goto("./");
@@ -5456,27 +5485,7 @@ test("reset and library deletion retain canvas images without confirmation", asy
   await expect(page.locator(".library-heading").first()).toHaveValue("used");
   await openSidebarPanel(page, "Settings");
   await page.locator("#gap").fill("40");
-  await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
-    .click();
-  const reset = page.getByRole("dialog", {
-    name: "Reset grid settings",
-    exact: true,
-  });
-  await expect(reset).toContainText(
-    "Library images, cell captions and placements are kept.",
-  );
-  await reset.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(reset).toHaveCount(0);
   await expect(page.locator("#gap")).toHaveValue("40");
-  await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
-    .click();
-  await reset
-    .getByRole("button", { name: "Reset settings", exact: true })
-    .click();
-  await expect(reset).toHaveCount(0);
-  await expect(page.locator("#gap")).toHaveValue("20");
   await expect(page.locator(".asset")).toHaveCount(2);
   await expect(page.locator(".grid-cell img")).toHaveCount(1);
   await expect(page.locator(".cell-heading").first()).toHaveValue(
@@ -5536,7 +5545,10 @@ test("reset and library deletion retain canvas images without confirmation", asy
     ),
   });
   await expect(page.locator(".asset")).toHaveCount(2);
-  await page.getByRole("button", { name: "Clear images", exact: true }).click();
+  for (const title of ["unused", "spare"]) {
+    await page.getByRole("button", { name: `Image options: ${title}`, exact: true }).hover();
+    await page.getByRole("button", { name: `Delete ${title}`, exact: true }).click();
+  }
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(
@@ -5634,7 +5646,8 @@ test("touch library taps reveal delete and upload remains the first tile", async
   await page.getByRole("button", { name: "Delete first", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Clear images", exact: true }).tap();
+  await page.getByRole("button", { name: "Image options: second", exact: true }).tap();
+  await page.getByRole("button", { name: "Delete second", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
     .poll(async () => (await localDatabase(page)).document?.assets.length)
@@ -5863,7 +5876,10 @@ test("unused-image deletion protects removed cells and revokes only unreferenced
     .nth(2)
     .locator("img")
     .getAttribute("src");
-  await page.getByRole("button", { name: "Clear images", exact: true }).click();
+  for (const title of ["used", "archived", "unused"]) {
+    await page.getByRole("button", { name: `Image options: ${title}`, exact: true }).hover();
+    await page.getByRole("button", { name: `Delete ${title}`, exact: true }).click();
+  }
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
@@ -5900,7 +5916,7 @@ test("unused-image deletion protects removed cells and revokes only unreferenced
   });
 });
 
-test("failed unused-image deletion preserves stored metadata and blobs until the retry commits", async ({
+test("failed full reset preserves stored metadata and blobs until the retry commits", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -5926,7 +5942,9 @@ test("failed unused-image deletion preserves stored metadata and blobs until the
   await page.evaluate(() => {
     window.failPurgeSave = true;
   });
-  await page.getByRole("button", { name: "Clear images", exact: true }).click();
+  await page.getByRole("button", { name: "Reset grid and images", exact: true }).click();
+  await page.getByRole("dialog", { name: "Reset grid and images", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Save failed");
   const failed = await localDatabase(page);
   expect(failed.document).toEqual(original);
@@ -7000,10 +7018,10 @@ touchTest("touch dialogs do not autofocus text inputs", async ({ page }) => {
   );
   await page.getByRole("tab", { name: "Settings", exact: true }).tap();
   await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true })
     .tap();
   const reset = page.getByRole("dialog", {
-    name: "Reset grid settings",
+    name: "Reset grid and images",
     exact: true,
   });
   await expect(reset).toBeVisible();
@@ -7018,7 +7036,7 @@ touchTest("touch dialogs do not autofocus text inputs", async ({ page }) => {
   await expect(reset).toHaveCount(0);
 });
 
-test("guest reset restores settings without deleting images or removed placements", async ({
+test("guest reset clears images and removed placements and restores default settings", async ({
   page,
 }, testInfo) => {
   const errors = [];
@@ -7056,38 +7074,39 @@ test("guest reset restores settings without deleting images or removed placement
     quality: 70,
   });
   await page
-    .getByRole("button", { name: "Reset grid settings", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
-    name: "Reset grid settings",
+    name: "Reset grid and images",
     exact: true,
   });
   await dialog
-    .getByRole("button", { name: "Reset settings", exact: true })
+    .getByRole("button", { name: "Reset grid and images", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".grid-cell")).toHaveCount(9);
+  await expect(page.locator(".grid-cell")).toHaveCount(4);
   await expect(
     page.getByRole("button", { name: /^Edit grid heading: / }),
   ).toHaveText("Add heading");
   await expect(page.locator("#heading-font")).toHaveText("Manrope");
   await expect(page.locator("#gap")).toHaveValue("20");
-  await expect(page.locator(".asset")).toHaveCount(1);
+  await expect(page.locator(".asset")).toHaveCount(0);
   const reset = await savedWorkspace(page);
   expect(reset.exportSettings).toEqual({
     format: "image/png",
     resolution: 300,
     quality: 95,
   });
-  expect(reset.assets).toEqual(original.assets);
+  expect(reset.assets).toEqual([]);
+  expect((await localDatabase(page)).images).toEqual([]);
   expect(reset.grid).toMatchObject({
     name: "Grid",
     publisher: "none",
     heading: "",
     headingFont: "Manrope",
     cellFont: "Manrope",
-    rows: 3,
-    columns: 3,
+    rows: 2,
+    columns: 2,
     gap: 24,
     background: "#17191b",
   });
@@ -7095,14 +7114,16 @@ test("guest reset restores settings without deleting images or removed placement
     reset.grid.overflow.some(
       (entry) => entry.cell.title === "Keep my custom caption",
     ),
-  ).toBe(true);
+  ).toBe(false);
   await reloadWorkspace(page);
-  await page.getByRole("button", { name: "Add row", exact: true }).click();
-  await page.getByRole("button", { name: "Add column", exact: true }).click();
+  for (let step = 0; step < 2; step++) {
+    await page.getByRole("button", { name: "Add row", exact: true }).click();
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+  }
   await expect(page.locator(".cell-heading").nth(15)).toHaveValue(
-    "Keep my custom caption",
+    "",
   );
-  await expect(page.locator(".grid-cell img")).toHaveCount(1);
+  await expect(page.locator(".grid-cell img")).toHaveCount(0);
   await setEditorViewport(page, { width: 390, height: 844 });
   await page.screenshot({
     path: testInfo.outputPath("reset-grid-mobile.png"),
@@ -7267,9 +7288,7 @@ test("long title overlays reach the bottom and titles can be hidden without losi
     await setEditorViewport(page, { width, height: 1080 });
     await openSidebarPanel(page, "Settings");
     await cardSettings.scrollIntoViewIfNeeded();
-    await page
-      .getByRole("button", { name: "Reset grid settings", exact: true })
-      .scrollIntoViewIfNeeded();
+    await toggle.scrollIntoViewIfNeeded();
     await page.screenshot({
       path: testInfo.outputPath(`titles-disabled-spacing-${width}.png`),
     });
@@ -8093,7 +8112,7 @@ test("image picker keeps uploads reachable and separates deletion from placement
 });
 
 touchTest(
-  "mobile picker has clear all images without deletion mode and preserves canvas images",
+  "mobile picker keeps individual image selection without bulk-clear controls",
   async ({ page }, testInfo) => {
     await page.goto("./");
     const openPicker = async () => {
@@ -8159,21 +8178,14 @@ touchTest(
       page.locator(".grid-cell").first().locator("img"),
     ).toHaveAttribute("alt", "Picker 2");
     await openPicker();
-    const remove = picker.getByRole("button", {
+    await expect(picker.getByRole("button", {
       name: "Clear images",
       exact: true,
-    });
-    const target = await remove.boundingBox();
-    expect(target.width).toBeGreaterThanOrEqual(44);
-    expect(target.height).toBeGreaterThanOrEqual(44);
+    })).toHaveCount(0);
     await page.screenshot({
-      path: testInfo.outputPath("picker-clear-all-mobile.png"),
+      path: testInfo.outputPath("picker-library-mobile.png"),
     });
-    await remove.tap();
-    await expect(
-      page.getByRole("dialog", { name: "Delete images", exact: true }),
-    ).toHaveCount(0);
-    await expect(picker.getByRole("img")).toHaveCount(0);
+    await expect(picker.getByRole("img")).toHaveCount(3);
     await expect(picker.getByText("No images yet.")).toHaveCount(0);
     await expect(picker.locator("[data-upload-tile]")).toBeVisible();
     await expect(

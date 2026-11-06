@@ -11,32 +11,26 @@ type Thumbnail =
 export function ThemeThumbnail({
   theme,
   name,
-  rows,
-  columns,
 }: {
   theme: (typeof starterPresets)[number];
   name: string;
-  rows: number;
-  columns: number;
 }) {
   const element = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   const [thumbnail, setThumbnail] = useState<Thumbnail | null>(null);
-  const previewRows = Math.min(3, rows);
-  const previewColumns = Math.min(3, columns);
   const preview = useMemo(
     () =>
       presetPreviewWorkspace(
         { ...theme, name },
         {
-          rows: previewRows,
-          columns: previewColumns,
+          rows: 2,
+          columns: 2,
         },
       ),
-    [theme, name, previewRows, previewColumns],
+    [theme, name],
   );
-  const size = Math.floor(512 / Math.max(previewRows, previewColumns));
-  const key = `${theme.id}:${name}:${previewRows}:${previewColumns}`;
+  const size = 256;
+  const key = `${theme.id}:${name}`;
   const current = thumbnail?.key === key ? thumbnail : null;
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -95,7 +89,7 @@ export function ThemeThumbnail({
       aria-label={t("presets.thumbnailNamed", { value1: name })}
       role="img"
       style={{ backgroundColor: theme.settings.style.background }}
-      className="relative flex aspect-8/5 min-h-11 w-full items-center justify-center overflow-hidden"
+      className="relative flex aspect-square min-h-11 w-full items-center justify-center overflow-hidden"
     >
       {current?.url ? (
         <img

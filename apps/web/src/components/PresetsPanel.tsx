@@ -100,7 +100,7 @@ export function PresetsPanel({
                     data-applied={applied ? "" : undefined}
                     data-selected={selected ? "" : undefined}
                     data-theme-tile
-                    className="image-card group/theme @container relative flex min-w-0 flex-col max-[901px]:h-full max-[901px]:w-32 max-[901px]:shrink-0 rounded-lg border border-solid border-(--line) bg-(--bg) data-selected:border-(--accent) [--card-frame-color:transparent] [--card-frame-opacity:0.6] data-selected:bg-(--selected) has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]"
+                    className="image-card group/theme @container relative flex aspect-square min-w-0 flex-col max-[901px]:h-full max-[901px]:w-auto max-[901px]:shrink-0 rounded-lg border border-solid border-(--line) bg-(--bg) data-selected:border-(--accent) [--card-frame-color:transparent] [--card-frame-opacity:0.6] data-selected:bg-(--selected) has-[button:enabled:hover]:[--card-frame-color:var(--accent)] has-[button:focus-visible]:[--card-frame-color:var(--accent)]"
                   >
                     <button
                       type="button"
@@ -118,15 +118,13 @@ export function PresetsPanel({
                       aria-pressed={previewId === choice.id}
                       data-applied={applied ? "" : undefined}
                       data-customized={modified ? "" : undefined}
-                      className="block min-h-11 w-full shrink-0 overflow-hidden rounded-[calc(var(--radius-lg)-1px)] border-0 bg-transparent p-0! outline-none! disabled:opacity-50 max-[901px]:h-full max-[901px]:**:data-theme-thumbnail:h-full"
+                      className="block min-h-11 w-full shrink-0 overflow-hidden rounded-[calc(var(--radius-lg)-1px)] border-0 bg-transparent p-0! outline-none! disabled:opacity-50"
                       style={{ color: starter.settings.style.headingTextColor }}
                       onClick={() => onPreview(choice)}
                     >
                       <ThemeThumbnail
                         theme={starter}
                         name={original.name}
-                        rows={currentSettings.layout.rows}
-                        columns={currentSettings.layout.columns}
                       />
                     </button>
                     {applied && modified && (

@@ -2057,13 +2057,15 @@ test("document resize and reset commands replay stable IDs and preserve newer ed
   expect(model.workspaceSchema.safeParse(restored).success).toBe(true);
 });
 
-test("full grid reset clears content and overflow while retaining library media and stable defaults", () => {
+test("full reset clears content, overflow and all library media with stable defaults", () => {
   const workspace = localWorkspace();
   workspace.grid = model.resizeBoard(workspace.grid, 2, 2);
   const previous = structuredClone(workspace);
   const command = model.createResetGridCommand();
   const reset = model.documentReducer(workspace, command);
   expect(reset.grid).toEqual(command.defaults.grid);
+  expect(reset.grid).toMatchObject({ rows: 2, columns: 2 });
+  expect(reset.grid.cells).toHaveLength(4);
   expect(reset.grid.id).not.toBe(workspace.grid.id);
   expect(
     reset.grid.cells.every(
@@ -2071,7 +2073,7 @@ test("full grid reset clears content and overflow while retaining library media 
     ),
   ).toBe(true);
   expect(reset.grid.overflow).toEqual([]);
-  expect(reset.assets).toBe(workspace.assets);
+  expect(reset.assets).toEqual([]);
   expect(reset.exportSettings).toEqual(command.defaults.exportSettings);
   expect(model.documentReducer(workspace, command)).toEqual(reset);
   expect(workspace).toEqual(previous);
@@ -2084,7 +2086,7 @@ test("full grid reset clears content and overflow while retaining library media 
       { ...workspace.assets[0], id: crypto.randomUUID(), title: "Late import" },
     ],
   });
-  expect(imported.assets).toHaveLength(2);
+  expect(imported.assets).toHaveLength(1);
   expect(imported.grid).toBe(reset.grid);
 });
 

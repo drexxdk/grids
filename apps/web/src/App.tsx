@@ -20,7 +20,6 @@ import {
   PanelsTopLeft,
   Download,
   ImagePlus,
-  Trash2,
   RefreshCw,
   RotateCcw,
   RectangleVertical,
@@ -72,7 +71,6 @@ import {
   resolveFontWeight,
   gridLimit,
   makeWorkspace,
-  createResetCommand,
   createResetGridCommand,
   createResizeCommand,
   documentReducer,
@@ -395,8 +393,6 @@ export default function App() {
     dispatchDocument({ type: "export/patch", patch });
   const [exporting, setExporting] = useState(false);
   const replaceUpload = useRef<HTMLInputElement>(null);
-  const resetButton = useRef<HTMLButtonElement>(null);
-  const [resetOpen, setResetOpen] = useState(false);
   const resetGridButton = useRef<HTMLButtonElement>(null);
   const [resetGridOpen, setResetGridOpen] = useState(false);
   const board = previewWorkspace?.grid ?? workspace.grid;
@@ -975,17 +971,15 @@ export default function App() {
     await importFiles(input.files, target);
     input.value = "";
   };
-  const resetDefaults = () => {
-    setAppliedPreset(null);
-    dispatchDocument(createResetCommand());
-    setImageTarget(null);
-    setResetOpen(false);
-  };
   const resetGrid = () => {
+    localStore.current?.scheduleImageDeletion(
+      workspace.assets.map((asset) => asset.id),
+    );
     setAppliedPreset(null);
     dispatchDocument(createResetGridCommand());
     setHeadingEditing(false);
     setImageTarget(null);
+    setCardDrag(null);
     setResetGridOpen(false);
     previewFrame
       ?.closest("[data-workspace-scroll]")
@@ -998,17 +992,6 @@ export default function App() {
       </main>
     );
   }
-  const resetGridControl = (
-    <Button
-      ref={resetGridButton}
-      variant="icon"
-      aria-label={t("editor.reset.title")}
-      title={t("editor.reset.title")}
-      onClick={() => setResetGridOpen(true)}
-    >
-      <RotateCcw aria-hidden="true" className="size-5!" />
-    </Button>
-  );
   return (
     <>
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
@@ -1080,6 +1063,19 @@ export default function App() {
           actions={
             <>
               <Button
+                ref={resetGridButton}
+                variant="icon"
+                aria-haspopup="dialog"
+                aria-label={t("editor.reset.title")}
+                title={t("editor.reset.tooltip")}
+                disabled={
+                  importProgress !== null || exporting || presetPreview !== null
+                }
+                onClick={() => setResetGridOpen(true)}
+              >
+                <RotateCcw aria-hidden="true" className="size-5!" />
+              </Button>
+              <Button
                 id="export-grid-header"
                 ref={exportButton}
                 aria-haspopup="dialog"
@@ -1097,7 +1093,7 @@ export default function App() {
             </>
           }
         >
-          {(_drawerToggle, toolsExpanded) => (
+          {() => (
             <aside
               className={`asset-panel max-[901px]:p-0! min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
               aria-label={t("library.dropZone")}
@@ -1195,23 +1191,6 @@ export default function App() {
                       />
                     ),
                   )}
-                  {toolsExpanded && activeAssets.length > 0 && (
-                    <div className="col-span-full mt-6 border-0 border-t border-solid border-(--line) pt-6 max-[901px]:contents">
-                      <Button
-                        aria-label={t("library.clearAll")}
-                        title={t("library.clearAll")}
-                        className="min-h-11 w-full max-[901px]:size-11! max-[901px]:shrink-0 max-[901px]:self-center max-[901px]:gap-0 max-[901px]:p-0"
-                        onClick={() =>
-                          deleteImages(activeAssets.map((asset) => asset.id))
-                        }
-                      >
-                        <Trash2 aria-hidden="true" />
-                        <span className="max-[901px]:sr-only">
-                          {t("library.clearAll")}
-                        </span>
-                      </Button>
-                    </div>
-                  )}
                 </div>
                 <input
                   id="upload"
@@ -1271,7 +1250,6 @@ export default function App() {
                         onResize={resize}
                       />
                     }
-                    cornerAction={resetGridControl}
                     leadingSpace={false}
                     viewportHeight={previewSize?.height}
                     previewWidth={previewSize?.previewWidth}
@@ -1815,17 +1793,6 @@ export default function App() {
                       </>
                     )}
                   </fieldset>
-                  <div className="shrink-0 border-0 border-t border-solid border-(--line) pt-6">
-                    <Button
-                      ref={resetButton}
-                      className="min-h-11 w-full"
-                      title={t("settings.reset.tooltip")}
-                      onClick={() => setResetOpen(true)}
-                    >
-                      <PanelsTopLeft aria-hidden="true" />
-                      {t("settings.reset.title")}
-                    </Button>
-                  </div>
                 </div>
               </div>
             </aside>
@@ -2045,17 +2012,6 @@ export default function App() {
                 if (singleImage) closeImagePicker();
               }}
             />
-            {activeAssets.length > 0 && (
-              <Button
-                className="mt-2 min-h-11 w-full"
-                onClick={() =>
-                  deleteImages(activeAssets.map((asset) => asset.id))
-                }
-              >
-                <Trash2 aria-hidden="true" />
-                {t("library.clearAll")}
-              </Button>
-            )}
           </div>
         </div>
       </Modal>
@@ -2083,24 +2039,6 @@ export default function App() {
         </div>
       </Modal>
       <Modal
-        open={resetOpen}
-        onClose={() => setResetOpen(false)}
-        title={t("settings.reset.title")}
-        returnFocus={resetButton}
-      >
-        <p>{t("settings.reset.prompt")}</p>
-        <p>{t("settings.reset.retention")}</p>
-        <div className="mt-4 mb-4 flex justify-end gap-2">
-          <Button onClick={() => setResetOpen(false)}>
-            {t("common.actions.cancel")}
-          </Button>
-          <Button variant="primary" onClick={resetDefaults}>
-            <PanelsTopLeft aria-hidden="true" />
-            {t("settings.reset.confirm")}
-          </Button>
-        </div>
-      </Modal>
-      <Modal
         open={resetGridOpen}
         onClose={() => setResetGridOpen(false)}
         title={t("editor.reset.title")}
@@ -2112,7 +2050,11 @@ export default function App() {
           <Button onClick={() => setResetGridOpen(false)}>
             {t("common.actions.cancel")}
           </Button>
-          <Button variant="primary" onClick={resetGrid}>
+          <Button
+            variant="danger"
+            disabled={importProgress !== null}
+            onClick={resetGrid}
+          >
             <RotateCcw aria-hidden="true" />
             {t("editor.reset.title")}
           </Button>
