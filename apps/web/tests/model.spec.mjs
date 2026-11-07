@@ -312,6 +312,25 @@ test("preset palettes theme headings, card surfaces and captions with readable c
 
 test("editor navigation migrates legacy URLs and restores browser-local history", () => {
   const defaults = navigation.parseEditorState({});
+  expect(navigation.parseEditorState({ selectedPanel: 3 }).selectedPanel).toBe(
+    3,
+  );
+  expect(
+    navigation.readNavigation(
+      defaults,
+      new URL("https://example.com/grids/?panel=reset"),
+    ).selectedPanel,
+  ).toBe(3);
+  expect(
+    navigation.readNavigation(
+      defaults,
+      new URL("https://example.com/grids/"),
+      true,
+      {
+        gridsNavigation: { selectedPanel: 3, source: "imported" },
+      },
+    ).selectedPanel,
+  ).toBe(3);
   expect(
     navigation.readNavigation(
       defaults,

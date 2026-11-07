@@ -28,7 +28,7 @@ const browsingSchema = z.object({
   history: z.array(offsetSchema).max(navigationHistoryLimit),
 });
 const stateSchema = z.object({
-  selectedPanel: z.union([z.literal(0), z.literal(2)]).default(0),
+  selectedPanel: z.union([z.literal(0), z.literal(2), z.literal(3)]).default(0),
   sidebarOpen: z.boolean().default(true),
   librarySource: sourceSchema.default("imported"),
   pickerSource: sourceSchema.default("imported"),
@@ -111,7 +111,11 @@ export function readNavigation(
   const next = {
     ...state,
     selectedPanel:
-      panel === "design" || panel === "themes" ? (2 as const) : (0 as const),
+      panel === "reset"
+        ? (3 as const)
+        : panel === "design" || panel === "themes"
+          ? (2 as const)
+          : (0 as const),
     librarySource: source,
   };
   const provider = imageProviders.find((item) => item.id === source);

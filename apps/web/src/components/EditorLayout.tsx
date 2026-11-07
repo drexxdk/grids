@@ -4,12 +4,14 @@ import {
   PanelRightClose,
   PanelRightOpen,
   PanelsTopLeft,
+  RotateCcw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useRef,
@@ -33,10 +35,16 @@ export function EditorLayout({
   actions,
   canvasControls,
   status,
+  resetPanel,
+  onResetOpen,
+  resetDisabled = false,
 }: {
   actions: ReactNode;
   canvasControls: ReactNode;
   status?: ReactNode;
+  resetPanel?: ReactNode;
+  onResetOpen?: () => void;
+  resetDisabled?: boolean;
   children: [
     (toggle: ReactNode, expanded: boolean) => ReactNode,
     (actions: ReactNode) => ReactNode,
@@ -52,7 +60,11 @@ export function EditorLayout({
   );
   const [sidebarOpen, setSidebarOpen] = useEditorState("sidebarOpen");
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
-  const panelOrder = [0, 2] as const;
+  const resetOpened = useEffectEvent(() => onResetOpen?.());
+  useLayoutEffect(() => {
+    if (selectedPanel === 3) resetOpened();
+  }, [selectedPanel]);
+  const panelOrder = [0, 2, 3] as const;
   const panelsId = useId();
   const [sidebarPanels, setSidebarPanels] = useState<HTMLDivElement | null>(
     null,
@@ -371,6 +383,13 @@ export function EditorLayout({
                         tabs={[
                           { label: t("editor.images"), icon: Images },
                           { label: t("presets.title"), icon: LayoutGrid },
+                          {
+                            label: t("editor.reset.title"),
+                            title: t("editor.reset.tooltip"),
+                            icon: RotateCcw,
+                            iconOnly: true,
+                            disabled: resetDisabled,
+                          },
                         ]}
                       />
                     </div>
@@ -401,6 +420,15 @@ export function EditorLayout({
                       {themes()}
                     </div>
                   }
+                  <div
+                    role="tabpanel"
+                    id={`${panelsId}-panel-2`}
+                    aria-labelledby={`${panelsId}-tab-2`}
+                    hidden={selectedPanel !== 3}
+                    className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
+                  >
+                    {resetPanel}
+                  </div>
                 </div>
               </aside>
             </MotionDiv>

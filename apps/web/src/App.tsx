@@ -292,8 +292,6 @@ export default function App() {
     dispatchDocument({ type: "export/patch", patch });
   const [exporting, setExporting] = useState(false);
   const replaceUpload = useRef<HTMLInputElement>(null);
-  const resetGridButton = useRef<HTMLButtonElement>(null);
-  const [resetGridOpen, setResetGridOpen] = useState(false);
   const [resetSelection, setResetSelection] = useState<ResetSelection>({
     canvas: false,
     theme: false,
@@ -728,6 +726,16 @@ export default function App() {
     await importFiles(input.files, target);
     input.value = "";
   };
+  const clearResetSelection = () => {
+    setResetSelection({
+      canvas: false,
+      theme: false,
+      defaultTheme: false,
+      images: false,
+      placements: false,
+    });
+    setResetThemeTarget("current");
+  };
   const resetGrid = () => {
     if (!resetSelected || importProgress !== null) return;
     const command = createResetGridCommand(resetSelection);
@@ -745,7 +753,7 @@ export default function App() {
     setHeadingEditing(false);
     setImageTarget(null);
     setCardDrag(null);
-    setResetGridOpen(false);
+    clearResetSelection();
     previewFrame
       ?.closest("[data-workspace-scroll]")
       ?.scrollTo({ top: 0, left: 0 });
@@ -762,6 +770,9 @@ export default function App() {
       <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
         <EditorLayout
           canvasControls={null}
+          resetPanel={renderResetPanel()}
+          onResetOpen={clearResetSelection}
+          resetDisabled={importProgress !== null || exporting}
           status={
             <span
               id="save-status"
@@ -785,27 +796,6 @@ export default function App() {
           }
           actions={
             <>
-              <Button
-                ref={resetGridButton}
-                variant="icon"
-                aria-haspopup="dialog"
-                aria-label={t("editor.reset.title")}
-                title={t("editor.reset.tooltip")}
-                disabled={importProgress !== null || exporting}
-                onClick={() => {
-                  setResetSelection({
-                    canvas: false,
-                    theme: false,
-                    defaultTheme: false,
-                    images: false,
-                    placements: false,
-                  });
-                  setResetThemeTarget("current");
-                  setResetGridOpen(true);
-                }}
-              >
-                <RotateCcw aria-hidden="true" className="size-5!" />
-              </Button>
               <Button
                 id="export-grid-header"
                 ref={exportButton}
@@ -1537,12 +1527,12 @@ export default function App() {
           </Button>
         </div>
       </Modal>
-      <Modal
-        open={resetGridOpen}
-        onClose={() => setResetGridOpen(false)}
-        title={t("editor.reset.title")}
-        returnFocus={resetGridButton}
-      >
+    </>
+  );
+
+  function renderResetPanel() {
+    return (
+      <section aria-label={t("editor.reset.title")}>
         <div className="flex flex-col gap-4">
           <fieldset className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0 max-[360px]:grid-cols-1">
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
@@ -1655,12 +1645,9 @@ export default function App() {
                 : t("editor.reset.retention")}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => setResetGridOpen(false)}>
-              {t("common.actions.cancel")}
-            </Button>
             <Button
               variant="danger"
-              disabled={!resetSelected || importProgress !== null}
+              disabled={!resetSelected || importProgress !== null || exporting}
               onClick={resetGrid}
             >
               <RotateCcw aria-hidden="true" />
@@ -1668,7 +1655,7 @@ export default function App() {
             </Button>
           </div>
         </div>
-      </Modal>
-    </>
-  );
+      </section>
+    );
+  }
 }

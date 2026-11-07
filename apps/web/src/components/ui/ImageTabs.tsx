@@ -21,6 +21,7 @@ export function ImageTabs({
     disabled?: boolean;
     title?: string;
     icon?: LucideIcon;
+    iconOnly?: boolean;
   }[];
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -32,8 +33,18 @@ export function ImageTabs({
     // Per-tab chrome beyond the label: padding 16 + border 2 + icon 20 + gap 8.
     const update = () => {
       const spans = list.querySelectorAll<HTMLElement>("[role=tab] > span");
-      const widest = Math.max(...[...spans].map((span) => span.scrollWidth));
-      setIconsOnly(widest + 46 > list.clientWidth / tabs.length);
+      const widest = Math.max(
+        0,
+        ...[...spans]
+          .filter((_, index) => !tabs[index]?.iconOnly)
+          .map((span) => span.scrollWidth),
+      );
+      const iconTabs = tabs.filter((tab) => tab.iconOnly).length;
+      const labelTabs = tabs.length - iconTabs;
+      setIconsOnly(
+        labelTabs > 0 &&
+          widest + 46 > (list.clientWidth - iconTabs * 44) / labelTabs,
+      );
     };
     update();
     const observer = new ResizeObserver(update);
@@ -46,6 +57,15 @@ export function ImageTabs({
       role="tablist"
       aria-orientation={vertical ? "vertical" : "horizontal"}
       aria-label={label}
+      style={
+        !vertical && tabs.some((tab) => tab.iconOnly)
+          ? {
+              gridTemplateColumns: tabs
+                .map((tab) => (tab.iconOnly ? "44px" : "minmax(0, 1fr)"))
+                .join(" "),
+            }
+          : undefined
+      }
       className={`isolate grid ${vertical ? `h-full w-11 grid-cols-1 ${tabs.length === 3 ? "grid-rows-3" : "grid-rows-2"} [&>button]:h-auto! [&>button+button]:-mt-px` : `w-full ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"} [&>button]:h-11! [&>button+button]:-ml-px`} gap-0 ${square ? "rounded-none" : "rounded-md"} bg-(--bg) [&>button]:relative [&>button]:min-w-0 [&>button]:w-auto! [&>button]:flex-row! [&>button]:gap-2! [&>button]:rounded-none! [&>button]:border [&>button]:border-solid [&>button]:border-(--line) [&>button]:bg-(--bg)! [&>button]:px-2! [&>button]:py-2! ${square ? "[&>button:first-child]:rounded-l-none! [&>button:last-child]:rounded-r-none!" : "[&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!"} [&>button[data-selected]]:bg-(--selected)! [&>button:enabled:hover]:z-10 [&>button:enabled:hover]:control-hover! [&>button:focus-visible]:z-20 [&_svg]:size-5! [&_svg]:shrink-0 ${vertical || iconsOnly ? "[&>button>span]:sr-only" : "[&>button>span]:not-sr-only"} [&>button>span]:min-w-0 [&>button>span]:text-center [&>button>span]:text-xs [&>button>span]:leading-4 [&>button>span]:font-normal [&>button>span]:whitespace-nowrap`}
     >
       {tabs.map((tab, index) => (
@@ -88,7 +108,9 @@ export function ImageTabs({
           className="flex min-h-11 items-center justify-center border-0 bg-transparent text-(--muted) data-selected:bg-(--selected) data-selected:text-(--accent) focus-visible:outline-2 focus-visible:outline-(--accent) focus-visible:-outline-offset-2! disabled:cursor-default! disabled:opacity-50 data-selected:disabled:opacity-100!"
         >
           {tab.icon && <tab.icon aria-hidden="true" />}
-          <span>{tab.label}</span>
+          <span className={tab.iconOnly ? "sr-only!" : undefined}>
+            {tab.label}
+          </span>
         </button>
       ))}
     </div>
