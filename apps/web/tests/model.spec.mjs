@@ -110,6 +110,31 @@ test("refined dark defaults keep captions readable without restyling saved grids
   });
 });
 
+test("color theme identity roundtrips settings and resets without losing modified colors", () => {
+  const workspace = model.makeWorkspace();
+  expect(workspace.grid.colorTheme).toBe("Ink");
+  workspace.grid.colorTheme = "Forest";
+  workspace.grid.background = "#334455";
+  const settings = model.getEditorSettings(workspace);
+  expect(settings.style.colorTheme).toBe("Forest");
+  const restored = model.applyEditorSettings(model.makeWorkspace(), settings);
+  expect(restored.grid.colorTheme).toBe("Forest");
+  expect(restored.grid.background).toBe("#334455");
+  expect(model.workspaceSchema.parse(workspace).grid.colorTheme).toBe("Forest");
+  expect(
+    model.editorSettingsSchema.safeParse({
+      ...settings,
+      style: { ...settings.style, colorTheme: "unknown" },
+    }).success,
+  ).toBe(false);
+  const reset = model.documentReducer(
+    workspace,
+    model.createResetGridCommand({ canvas: false, theme: true, images: false }),
+  );
+  expect(reset.grid.colorTheme).toBe("Ink");
+  expect(reset.grid.background).toBe("#17191b");
+});
+
 test("preset starters adapt to current layouts and sample previews stay separate from content", () => {
   expect(presets.starterPresets).toHaveLength(24);
   expect(new Set(presets.starterPresets.map((preset) => preset.id)).size).toBe(

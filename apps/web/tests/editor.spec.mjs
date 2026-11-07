@@ -2097,6 +2097,75 @@ touchTest(
   },
 );
 
+test("design identifies reset and modified color themes across navigation and reload", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await openSidebarPanel(page, "Design");
+  const builder = page.locator("[data-theme-builder]");
+  const colors = builder.getByRole("button", { name: /^1 Colors/ });
+  const ink = builder.getByRole("radio", { name: "Ink", exact: true });
+  await expect(colors).toHaveText("1ColorsInk");
+  await expect(ink).toBeChecked();
+  await expect(ink).toBeDisabled();
+  await builder.getByRole("radio", { name: "Forest", exact: true }).click();
+  await expect(colors).toHaveText("1ColorsForest");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  const reset = page.getByRole("dialog", { name: "Reset", exact: true });
+  await reset.getByRole("checkbox", { name: "All", exact: true }).check();
+  await reset
+    .getByRole("button", { name: "Reset selected", exact: true })
+    .click();
+  await expect(reset).toHaveCount(0);
+  await openSidebarPanel(page, "Design");
+  await expect(colors).toHaveText("1ColorsInk");
+  await expect(ink).toBeChecked();
+  const customize = builder.locator("summary");
+  await expect(customize).toHaveText("Customize Colors");
+  const hierarchy = await customize.evaluate((element) => {
+    const parent = element.closest("fieldset");
+    const details = element.closest("details");
+    return {
+      inset:
+        element.getBoundingClientRect().left -
+        parent.getBoundingClientRect().left,
+      rail: parseFloat(getComputedStyle(details).borderLeftWidth),
+      background: getComputedStyle(element).backgroundColor,
+    };
+  });
+  expect(hierarchy.inset).toBeGreaterThanOrEqual(14);
+  expect(hierarchy.rail).toBe(2);
+  expect(hierarchy.background).not.toBe("rgba(0, 0, 0, 0)");
+  await customize.click();
+  const background = page.getByRole("textbox", {
+    name: "Background hex value",
+    exact: true,
+  });
+  await background.fill("#334455");
+  await background.press("Tab");
+  await expect(colors).toHaveText("1ColorsInk · Modified");
+  await expect(ink).not.toBeChecked();
+  await expect(ink).toBeEnabled();
+  await openSidebarPanel(page, "Images");
+  await openSidebarPanel(page, "Design");
+  await expect(colors).toHaveText("1ColorsInk · Modified");
+  await reloadWorkspace(page);
+  await expect(colors).toHaveText("1ColorsInk · Modified");
+  expect((await savedWorkspace(page)).grid.colorTheme).toBe("Ink");
+  await ink.click();
+  await expect(colors).toHaveText("1ColorsInk");
+  await expect(ink).toBeChecked();
+  for (const width of [1440, 390, 260]) {
+    await setEditorViewport(page, { width, height: 844 });
+    await openSidebarPanel(page, "Design");
+    await expect(colors).toHaveText("1ColorsInk");
+    await page.screenshot({
+      path: testInfo.outputPath(`design-applied-${width}.png`),
+      fullPage: true,
+    });
+  }
+});
+
 test("theme builder composes independent choices and detailed values without replacing content", async ({
   page,
 }, testInfo) => {
@@ -2136,13 +2205,16 @@ test("theme builder composes independent choices and detailed values without rep
   expect((await savedWorkspace(page)).grid.imageAspect).toBe(
     original.grid.imageAspect,
   );
-  await builder.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    builder.getByRole("button", { name: "Next", exact: true }),
+  ).toHaveCount(0);
+  await builder.getByRole("button", { name: /2 Layout/ }).click();
   await expect(builder.getByRole("button", { name: /2 Layout/ })).toBeFocused();
   await builder.getByRole("radio", { name: "Landscape", exact: true }).click();
   await selectField(page, "builder-spacing", "compact");
   await builder.locator("summary").click();
   await page.locator("#gap").fill("25");
-  await builder.getByRole("button", { name: "Next", exact: true }).click();
+  await builder.getByRole("button", { name: /3 Canvas heading/ }).click();
   await selectField(page, "heading-font", "Bangers");
   await builder
     .getByRole("switch", { name: "Show heading", exact: true })
@@ -2152,7 +2224,7 @@ test("theme builder composes independent choices and detailed values without rep
     .getByRole("switch", { name: "Show heading", exact: true })
     .click();
   await expect(page.locator(".board-export-heading")).toBeVisible();
-  await builder.getByRole("button", { name: "Next", exact: true }).click();
+  await builder.getByRole("button", { name: /4 Card headings/ }).click();
   await builder
     .getByRole("radio", { name: "Below image", exact: true })
     .click();
@@ -2176,7 +2248,7 @@ test("theme builder composes independent choices and detailed values without rep
     .getByRole("textbox", { name: "Background hex value", exact: true })
     .press("Tab");
   await expect(
-    builder.getByRole("button", { name: /1 Colors Custom/ }),
+    builder.getByRole("button", { name: /1 Colors Rose · Modified/ }),
   ).toBeVisible();
   await expect
     .poll(async () => (await localDatabase(page)).document.grid)
@@ -2200,6 +2272,9 @@ test("theme builder composes independent choices and detailed values without rep
   expect(composed.exportSettings).toEqual(original.exportSettings);
   await reloadWorkspace(page);
   expect((await savedWorkspace(page)).grid).toEqual(composed.grid);
+  await expect(
+    builder.getByRole("button", { name: /1 Colors Rose · Modified/ }),
+  ).toBeVisible();
   const preferences = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("grids-ui-v1")),
   );

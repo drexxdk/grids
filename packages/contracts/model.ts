@@ -224,6 +224,7 @@ export function headingGeometry(style: GridStyle, width: number, rows = 1) {
   return { padding, contentHeight, height: contentHeight + padding * 2 };
 }
 export interface GridStyle {
+  colorTheme?: "Snow" | "Ink" | "Forest" | "Ocean" | "Rose" | "Sun";
   publisher: Publisher;
   headingVisible: boolean;
   headingFont: string;
@@ -423,6 +424,7 @@ export const makeCell = (asset: Asset | null = null): Cell => ({
 export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   id: crypto.randomUUID(),
   name,
+  colorTheme: "Ink",
   publisher: "none",
   heading: "",
   headingVisible: true,
@@ -510,6 +512,9 @@ const layoutSchema = z.strictObject({
   columns: z.number().int().min(1).max(gridLimit),
 });
 const styleSchema = z.strictObject({
+  colorTheme: z
+    .enum(["Snow", "Ink", "Forest", "Ocean", "Rose", "Sun"])
+    .optional(),
   publisher: z.enum(["none", "dc", "marvel"]),
   headingVisible: z.boolean(),
   headingFont: z.enum(["Manrope", "Bangers", "Boogaloo", "Bebas Neue"]),
@@ -589,6 +594,7 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
     version: 1,
     layout: { rows: grid.rows, columns: grid.columns },
     style: {
+      ...(grid.colorTheme !== undefined ? { colorTheme: grid.colorTheme } : {}),
       publisher: grid.publisher,
       headingVisible: grid.headingVisible,
       headingFont: grid.headingFont,
@@ -670,6 +676,7 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
 function applyGridStyle(grid: Board, style: GridStyle): Board {
   return {
     ...grid,
+    colorTheme: style.colorTheme,
     imageAspect: style.imageAspect,
     cornerRadius: style.cornerRadius,
     titlesVisible: style.titlesVisible,

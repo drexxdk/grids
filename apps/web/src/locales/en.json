@@ -13,6 +13,7 @@
     "heading": "Canvas heading",
     "captions": "Card headings",
     "custom": "Custom",
+    "modifiedNamed": "{value1} · Modified",
     "off": "Off",
     "spacing": "Spacing",
     "flush": "Seamless",
@@ -24,11 +25,11 @@
     "borderThickness": "Border thickness",
     "typography": "Typography",
     "customize": "Customize",
+    "customizeNamed": "Customize {value1}",
     "headingBackground": "Heading background",
     "headingText": "Heading text",
     "cardBackground": "Card background",
-    "cardText": "Card text",
-    "next": "Next"
+    "cardText": "Card text"
   },
   "presets": {
     "title": "Design",

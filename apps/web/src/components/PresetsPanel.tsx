@@ -10,12 +10,11 @@ import {
   PanelTopDashed,
   PanelBottomDashed,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Radio, RadioGroup } from "@headlessui/react";
 import { fontOptions, resolveFontWeight, type Board } from "../model";
 import { t } from "../i18n";
 import {
-  Button,
   ChoiceButton,
   ColorField,
   IconRadioField,
@@ -35,9 +34,9 @@ const palettes = [
   {
     name: "Ink",
     background: "#17191b",
-    surface: "#25282b",
+    surface: "#23272b",
     text: "#eef1f3",
-    overlay: "#17191b",
+    overlay: "#111315",
   },
   {
     name: "Forest",
@@ -81,21 +80,28 @@ export function ThemeBuilder({
   children: [ReactNode, ReactNode, ReactNode, ReactNode];
 }) {
   const [step, setStep] = useState(0);
-  const stepButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const selectedPalette = palettes.find(
     (palette) =>
-      board.background === palette.background &&
-      board.cellBackgroundColor === palette.surface &&
-      board.headingBackgroundColor === palette.background &&
-      board.headingTextColor === palette.text &&
-      board.cellTextColor === palette.text &&
-      board.captionOverlayColor === palette.overlay,
+      board.background.toLowerCase() === palette.background &&
+      board.cellBackgroundColor?.toLowerCase() === palette.surface &&
+      board.headingBackgroundColor?.toLowerCase() === palette.background &&
+      board.headingTextColor?.toLowerCase() === palette.text &&
+      board.cellTextColor?.toLowerCase() === palette.text &&
+      board.captionOverlayColor?.toLowerCase() === palette.overlay,
   );
+  const appliedPalette =
+    selectedPalette ??
+    palettes.find((palette) => palette.name === board.colorTheme);
+  const colorsModified = !selectedPalette;
   const steps = [
     {
       title: t("builder.colors"),
-      summary: selectedPalette
-        ? t(`builder.palettes.${selectedPalette.name}`)
+      summary: appliedPalette
+        ? colorsModified
+          ? t("builder.modifiedNamed", {
+              value1: t(`builder.palettes.${appliedPalette.name}`),
+            })
+          : t(`builder.palettes.${appliedPalette.name}`)
         : t("builder.custom"),
     },
     {
@@ -125,9 +131,6 @@ export function ThemeBuilder({
         >
           <h3 className="m-0 text-sm">
             <button
-              ref={(element) => {
-                stepButtons.current[index] = element;
-              }}
               type="button"
               aria-expanded={step === index}
               aria-controls={`theme-step-${index}`}
@@ -165,6 +168,7 @@ export function ThemeBuilder({
                     const palette = palettes.find((item) => item.name === name);
                     if (palette)
                       onChange({
+                        colorTheme: palette.name,
                         background: palette.background,
                         headingBackgroundColor: palette.background,
                         headingTextColor: palette.text,
@@ -410,10 +414,15 @@ export function ThemeBuilder({
               {(index < 2 ||
                 (index === 2 && board.headingVisible) ||
                 (index === 3 && board.titlesVisible !== false)) && (
-                <details key={index} className="group/details min-w-0">
-                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-(--muted) hover:text-(--text) [&::-webkit-details-marker]:hidden">
+                <details
+                  key={index}
+                  className="group/details min-w-0 border-0 border-l-2 border-solid border-(--line) pl-3"
+                >
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm bg-(--bg) px-3 text-xs text-(--muted) hover:text-(--text) group-open/details:text-(--text) [&::-webkit-details-marker]:hidden">
                     <SlidersHorizontal aria-hidden="true" className="size-4" />
-                    <span className="flex-1">{t("builder.customize")}</span>
+                    <span className="min-w-0 flex-1">
+                      {t("builder.customizeNamed", { value1: item.title })}
+                    </span>
                     <ChevronDown
                       aria-hidden="true"
                       className="size-4 transition-transform group-open/details:rotate-180"
@@ -423,20 +432,6 @@ export function ThemeBuilder({
                     {children[index]}
                   </div>
                 </details>
-              )}
-              {index < steps.length - 1 && (
-                <Button
-                  onClick={() => {
-                    setStep(index + 1);
-                    requestAnimationFrame(() => {
-                      stepButtons.current[index + 1]?.focus();
-                    });
-                  }}
-                  className="w-full"
-                >
-                  <span>{t("builder.next")}</span>
-                  <ChevronRight aria-hidden="true" className="size-4!" />
-                </Button>
               )}
             </fieldset>
           )}
