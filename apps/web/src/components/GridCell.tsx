@@ -326,30 +326,24 @@ export function GridCell({
     margin: 0,
     letterSpacing: 0,
   } as React.CSSProperties;
+  const captionVisible =
+    Boolean(asset) &&
+    gridStyle.titlesVisible !== false &&
+    geometry.captionHeight > 0;
   useLayoutEffect(() => {
     const field = caption.current;
-    if (!field) return;
+    if (!field || !captionVisible) return;
     let disposed = false;
-    const fit = () => {
+    const context = overlay
+      ? document.createElement("canvas").getContext("2d")
+      : null;
+    const fit = (entries?: ResizeObserverEntry[]) => {
       if (disposed) return;
-      const context = document.createElement("canvas").getContext("2d");
-      if (!context) return;
-      const bounds = field.getBoundingClientRect();
+      const box = entries?.[0]?.borderBoxSize?.[0];
+      const bounds = box
+        ? { width: box.inlineSize, height: box.blockSize }
+        : field.getBoundingClientRect();
       const padding = captionPadding(bounds.width);
-      if (overlay)
-        setOverlayCaptionRows(
-          Math.min(
-            3,
-            layoutCaption(
-              context,
-              cell.title || "Add heading",
-              gridStyle.cellFont,
-              600,
-              gridStyle.cellFontSize,
-              resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
-            ).lines.length,
-          ),
-        );
       const fontSize = Math.min(
         (bounds.width * (gridStyle.cellFontSize ?? 12)) / 100,
         Math.max(0, (bounds.height - padding.vertical * 2) / 1.05),
@@ -382,20 +376,39 @@ export function GridCell({
         ),
       );
     };
+    const fitText = () => {
+      if (disposed) return;
+      if (context)
+        setOverlayCaptionRows(
+          Math.min(
+            3,
+            layoutCaption(
+              context,
+              cell.title || "Add heading",
+              gridStyle.cellFont,
+              600,
+              gridStyle.cellFontSize,
+              resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight),
+            ).lines.length,
+          ),
+        );
+      fit();
+    };
     const observer = new ResizeObserver(fit);
     observer.observe(field);
-    void document.fonts.ready.then(fit);
-    void document.fonts
-      .load(
+    void Promise.all([
+      document.fonts.ready,
+      document.fonts.load(
         `${resolveFontWeight(gridStyle.cellFont, gridStyle.cellFontWeight)} 48px "${gridStyle.cellFont}"`,
-      )
-      .then(fit);
-    fit();
+      ),
+    ]).then(fitText);
+    fitText();
     return () => {
       disposed = true;
       observer.disconnect();
     };
   }, [
+    captionVisible,
     cell.title,
     gridStyle.cellFont,
     gridStyle.cellFontSize,

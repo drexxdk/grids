@@ -1534,6 +1534,50 @@ test("right sidebar switches local images and settings without a provider picker
   await expect(page.locator("#background-value")).toHaveValue("#112233");
 });
 
+test("window resizing reuses card content and canvas measurement contexts", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(page.locator("#board-grid .grid-cell")).toHaveCount(9);
+  await savedWorkspace(page);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+    window.__resizeCanvasCreations = 0;
+    const createElement = document.createElement.bind(document);
+    document.createElement = (name, options) => {
+      if (name === "canvas") window.__resizeCanvasCreations++;
+      return createElement(name, options);
+    };
+    window.__originalResizeCards = [
+      ...document.querySelectorAll("#board-grid .grid-cell"),
+    ];
+  });
+  for (const viewport of [
+    { width: 1200, height: 900 },
+    { width: 960, height: 600 },
+    { width: 390, height: 720 },
+    { width: 1440, height: 1000 },
+  ]) {
+    await setEditorViewport(page, viewport);
+    expect(await page.evaluate(() => window.__resizeCanvasCreations)).toBe(0);
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll("#board-grid .grid-cell")].every(
+          (card, index) => card === window.__originalResizeCards[index],
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      await page
+        .locator("#board-grid")
+        .evaluate((grid) => grid.getBoundingClientRect().width),
+    ).toBeGreaterThan(0);
+  }
+});
+
 test("responsive grid resizing keeps controls reachable and preserves cell contents", async ({
   page,
 }) => {
@@ -3998,7 +4042,12 @@ test("captions share external bands and fit individual overlays across canvas, l
   page,
 }, testInfo) => {
   await page.goto("./");
-  await openSidebarPanel(page, "Settings");
+  await openSidebarPanel(page, "Design");
+  await page
+    .locator("[data-theme-builder]")
+    .getByRole("button", { name: /2 Layout/ })
+    .click();
+  await page.locator("#theme-step-1 summary").click();
   await page.locator("#gap").fill("10");
   await page.locator("#canvas-padding").fill("10");
   await selectField(page, "image-shape", "square");
