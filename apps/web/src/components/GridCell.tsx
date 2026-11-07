@@ -40,7 +40,7 @@ import { centerTextArea, TextScrollbar } from "./TextScrollbar";
 import { contrastingColor } from "../canvasTheme";
 
 const cardToolButtonStyles = cva(
-  "pointer-events-auto absolute p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!",
+  "pointer-events-auto absolute p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [--control-hover-base:color-mix(in_srgb,black_60%,var(--card-background))] enabled:hover:control-hover! [&_svg]:size-[40%]!",
   {
     variants: {
       position: {
@@ -57,7 +57,7 @@ const cardToolButtonStyles = cva(
       },
       dragHandle: {
         true: "touch-none",
-        false: "backdrop-blur-sm enabled:hover:bg-black/75!",
+        false: "backdrop-blur-sm",
       },
     },
     defaultVariants: { size: "proportional", dragHandle: false },

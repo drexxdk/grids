@@ -2,6 +2,14 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+@utility control-hover {
+  background-color: color-mix(
+    in srgb,
+    var(--control-hover-tint, var(--line)) 25%,
+    var(--control-hover-base, var(--bg))
+  );
+}
+
 @utility scrollbar-safe-row {
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;

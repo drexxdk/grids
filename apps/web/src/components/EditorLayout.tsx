@@ -356,7 +356,7 @@ export function EditorLayout({
                   {
                     <div
                       data-panel-controls
-                      className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full" : "px-4 pt-4"}`}
+                      className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full" : "px-4 py-4"}`}
                     >
                       <ImageTabs
                         id={panelsId}

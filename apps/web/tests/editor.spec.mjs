@@ -269,6 +269,18 @@ async function useComicExample(page, publisher = "dc") {
   if (panel) await openSidebarPanel(page, panel);
 }
 
+function hoverColorOf(control, base = "--bg") {
+  return control.evaluate((element, baseToken) => {
+    const style = getComputedStyle(element);
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = `color-mix(in srgb, ${style.getPropertyValue("--control-hover-tint") || style.getPropertyValue("--line")} 25%, ${style.getPropertyValue(baseToken)})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  }, base);
+}
+
 async function openDesignSection(page, title) {
   const builder = page.locator("[data-theme-builder]");
   const toggle = builder.getByRole("button", {
@@ -1673,6 +1685,245 @@ test("window resizing reuses card content and canvas measurement contexts", asyn
         .locator("#board-grid")
         .evaluate((grid) => grid.getBoundingClientRect().width),
     ).toBeGreaterThan(0);
+  }
+});
+
+test("controls share quarter-strength background hover without changing borders", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await savedWorkspace(page);
+  const geometryOf = (button) =>
+    button.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const parent = element.parentElement.getBoundingClientRect();
+      return {
+        x: bounds.left - parent.left,
+        y: bounds.top - parent.top,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    });
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 720 },
+  ]) {
+    await setEditorViewport(page, viewport);
+    for (const name of [
+      "Add row",
+      "Remove row",
+      "Add column",
+      "Remove column",
+      "Reset",
+      "Export grid",
+      ...(viewport.width > 900 ? [/^(Show sidebar|Close sidebar)$/] : []),
+    ]) {
+      await page.mouse.move(0, 0);
+      const button = page.getByRole("button", { name, exact: true });
+      await button.scrollIntoViewIfNeeded();
+      await expect(button).toBeEnabled();
+      const borderColor = await button.evaluate(
+        (element) => getComputedStyle(element).borderTopColor,
+      );
+      const bounds = await geometryOf(button);
+      const hoverColor = await hoverColorOf(button);
+      await button.hover();
+      await expect(button).toHaveCSS("background-color", hoverColor);
+      for (const edge of ["top", "right", "bottom", "left"])
+        await expect(button).toHaveCSS(`border-${edge}-color`, borderColor);
+      expect(await geometryOf(button)).toEqual(bounds);
+    }
+  }
+  const remove = page.getByRole("button", {
+    name: "Remove column",
+    exact: true,
+  });
+  for (
+    let attempts = 0;
+    attempts < 12 && (await remove.isEnabled());
+    attempts++
+  )
+    await remove.click();
+  await expect(remove).toBeDisabled();
+  await page.mouse.move(0, 0);
+  const disabledBackground = await remove.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await remove.hover();
+  await expect(remove).toHaveCSS("background-color", disabledBackground);
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 720 },
+  ]) {
+    await setEditorViewport(page, viewport);
+    await openSidebarPanel(page, "Design");
+    const inactiveTab = page.getByRole("tab", { name: "Images", exact: true });
+    const activeTab = page.getByRole("tab", { name: "Design", exact: true });
+    await page.mouse.move(0, 0);
+    const tabBorder = await inactiveTab.evaluate(
+      (element) => getComputedStyle(element).borderTopColor,
+    );
+    const selectedBackground = await activeTab.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    await inactiveTab.hover();
+    await expect(inactiveTab).toHaveCSS(
+      "background-color",
+      await hoverColorOf(inactiveTab),
+    );
+    await expect(inactiveTab).toHaveCSS("border-top-color", tabBorder);
+    await activeTab.hover();
+    await expect(activeTab).toHaveCSS("background-color", selectedBackground);
+    if (viewport.width > 900) {
+      const tabs = page.locator("[data-panel-controls]");
+      await expect(tabs).toHaveCSS("padding-top", "16px");
+      await expect(tabs).toHaveCSS("padding-bottom", "16px");
+    }
+    await openDesignSection(page, "Layout");
+    const layout = page
+      .locator("[data-theme-builder]")
+      .getByRole("button", { name: /^\d Layout/ });
+    await layout.hover();
+    await expect(layout).toHaveCSS(
+      "background-color",
+      await hoverColorOf(layout, "--panel"),
+    );
+    const shape = page
+      .locator('#image-shape [role="radio"][aria-checked="false"]')
+      .first();
+    const selectedShape = page.locator(
+      '#image-shape [role="radio"][aria-checked="true"]',
+    );
+    const selectedShapeBackground = await selectedShape.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    const shapeBorder = await shape.evaluate(
+      (element) => getComputedStyle(element).borderTopColor,
+    );
+    const shapeGeometry = await geometryOf(shape);
+    await shape.hover();
+    await expect(shape).toHaveCSS(
+      "background-color",
+      await hoverColorOf(shape),
+    );
+    await expect(shape).toHaveCSS("border-top-color", shapeBorder);
+    expect(await geometryOf(shape)).toEqual(shapeGeometry);
+    await selectedShape.hover();
+    await expect(selectedShape).toHaveCSS(
+      "background-color",
+      selectedShapeBackground,
+    );
+    const spacing = page.locator("#builder-spacing");
+    const borderColor = await spacing.evaluate(
+      (element) => getComputedStyle(element).borderTopColor,
+    );
+    await spacing.hover();
+    const hoverColor = await hoverColorOf(spacing);
+    await expect(spacing).toHaveCSS("background-color", hoverColor);
+    await expect(spacing).toHaveCSS("border-top-color", borderColor);
+    await spacing.click();
+    await expect(spacing).toHaveAttribute("aria-expanded", "true");
+    const spacingOption = page
+      .getByRole("listbox")
+      .locator('[role="option"]:not(:disabled)')
+      .first();
+    await spacingOption.hover();
+    await expect(spacingOption).toHaveCSS(
+      "background-color",
+      await hoverColorOf(spacingOption, "--panel"),
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    const toggle = page.getByRole("switch", {
+      name: "Show borders",
+      exact: true,
+    });
+    if (await toggle.isChecked()) await toggle.click();
+    const toggleGeometry = await geometryOf(toggle);
+    await toggle.hover();
+    await expect(toggle).toHaveCSS(
+      "background-color",
+      await hoverColorOf(toggle, "--selected"),
+    );
+    const hoverDifference = await toggle.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const context = document.createElement("canvas").getContext("2d");
+      context.fillStyle = style.getPropertyValue("--selected");
+      context.fillRect(0, 0, 1, 1);
+      const normal = [...context.getImageData(0, 0, 1, 1).data];
+      context.fillStyle = style.backgroundColor;
+      context.fillRect(0, 0, 1, 1);
+      const hovered = context.getImageData(0, 0, 1, 1).data;
+      return Math.max(
+        ...normal
+          .slice(0, 3)
+          .map((value, index) => Math.abs(hovered[index] - value)),
+      );
+    });
+    expect(hoverDifference).toBeGreaterThan(25);
+    await expect(toggle).toHaveCSS("filter", "none");
+    await expect(toggle).toHaveCSS("box-shadow", "none");
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await page.mouse.move(0, 0);
+    await expect(toggle.locator("span")).toHaveCSS(
+      "transform",
+      "matrix(1, 0, 0, 1, 20, 0)",
+    );
+    await toggle.hover();
+    await expect(toggle).toHaveCSS(
+      "background-color",
+      await hoverColorOf(toggle, "--accent"),
+    );
+    await expect(toggle).not.toHaveCSS("background-color", borderColor);
+    await expect(toggle).toHaveCSS("filter", "none");
+    await expect(toggle).toHaveCSS("box-shadow", "none");
+    expect(await geometryOf(toggle)).toEqual(toggleGeometry);
+    await toggle.click();
+    const customize = page.locator("#theme-step-1 [data-customize-toggle]");
+    const customizeGeometry = await geometryOf(customize);
+    await expect(customize).toHaveCSS("border-top-style", "solid");
+    await expect(customize).toHaveCSS(
+      "border-top-width",
+      await spacing.evaluate(
+        (element) => getComputedStyle(element).borderTopWidth,
+      ),
+    );
+    await expect(customize).toHaveCSS("border-top-color", borderColor);
+    await customize.hover();
+    await expect(customize).toHaveCSS("background-color", hoverColor);
+    await expect(customize).toHaveCSS("border-top-color", borderColor);
+    expect(await geometryOf(customize)).toEqual(customizeGeometry);
+    await openDesignSection(page, "Colors");
+    const palette = page
+      .locator('[data-theme-builder] [role="radio"][aria-checked="false"]')
+      .first();
+    const paletteBorder = await palette.evaluate(
+      (element) => getComputedStyle(element).borderTopColor,
+    );
+    await palette.hover();
+    await expect(palette).toHaveCSS(
+      "background-color",
+      await hoverColorOf(palette, "--panel"),
+    );
+    await expect(palette).toHaveCSS("border-top-color", paletteBorder);
+    await page.locator("[data-theme-builder] [data-customize-toggle]").click();
+    for (const selector of ['input[type="color"]', 'input[type="text"]']) {
+      const input = page.locator(`[data-theme-builder] ${selector}`).first();
+      await page.mouse.move(0, 0);
+      const colorBorder = await input
+        .locator("..")
+        .evaluate((element) => getComputedStyle(element).borderTopColor);
+      await input.hover();
+      await expect(input).toHaveCSS(
+        "background-color",
+        await hoverColorOf(input),
+      );
+      await expect(input.locator("..")).toHaveCSS(
+        "border-top-color",
+        colorBorder,
+      );
+    }
   }
 });
 
@@ -8809,7 +9060,10 @@ test("selective reset keeps unselected data and fits desktop and mobile dialogs"
       await expect(target).toHaveCSS("border-color", toggleBorder);
     }
     await themeBox.hover();
-    await expect(themeBox).toHaveCSS("background-color", selectedBackground);
+    await expect(themeBox).toHaveCSS(
+      "background-color",
+      await hoverColorOf(themeBox, "--panel"),
+    );
     await expect(activeThemeTarget).toHaveCSS(
       "background-color",
       selectedBackground,

@@ -114,17 +114,23 @@ const buttonStyles = cva(
   {
     variants: {
       variant: {
-        secondary:
-          "border-(--line) bg-(--bg) text-(--text) enabled:hover:border-(--accent)",
+        secondary: "",
         primary:
-          "border-(--accent) bg-(--accent) text-[#19200d] enabled:hover:brightness-110",
+          "border-(--accent) bg-(--accent) text-[#19200d] [--control-hover-base:var(--accent)] enabled:hover:control-hover",
         success:
-          "border-emerald-400 bg-emerald-600 text-white enabled:hover:bg-emerald-500 focus-visible:outline-emerald-400",
+          "border-emerald-400 bg-emerald-600 text-white [--control-hover-base:var(--color-emerald-600)] enabled:hover:control-hover focus-visible:outline-emerald-400",
         danger:
-          "border-red-400/40 bg-red-500/10 text-red-300 enabled:hover:border-red-400 enabled:hover:bg-red-500/20 focus-visible:outline-red-400",
-        icon: "size-11 shrink-0 border-(--line) bg-(--bg) p-0 enabled:hover:border-(--accent)!",
+          "border-red-400/40 bg-red-500/10 text-red-300 [--control-hover-base:color-mix(in_srgb,var(--color-red-500)_10%,var(--panel))] enabled:hover:control-hover focus-visible:outline-red-400",
+        icon: "size-11 shrink-0 p-0",
       },
     },
+    compoundVariants: [
+      {
+        variant: ["secondary", "icon"],
+        className:
+          "border-(--line) bg-(--bg) text-(--text) enabled:hover:not-aria-pressed:control-hover!",
+      },
+    ],
     defaultVariants: { variant: "secondary" },
   },
 );
@@ -233,7 +239,7 @@ export function IconRadioField({
               disabled={optionValue === value}
               data-value={optionValue}
               className={clsx(
-                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-(--line) bg-(--bg) px-1 py-2 text-(--muted) data-hover:z-10 data-hover:border-(--accent) data-checked:bg-(--selected) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! data-checked:data-hover:border-(--line) focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
+                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-(--line) bg-(--bg) px-1 py-2 text-(--muted) [--control-hover-base:var(--bg)] data-hover:z-10 enabled:data-hover:control-hover data-checked:bg-(--selected) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
                 optionIndex % columns !== 0 && "-ml-px",
                 optionIndex >= columns && "-mt-px",
                 optionIndex === 0 && "rounded-tl-md",
@@ -311,7 +317,7 @@ export function SelectField({
             : undefined
         }
         className={clsx(
-          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left data-hover:border-(--accent) focus-visible:-outline-offset-3!",
+          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left enabled:data-hover:control-hover focus-visible:-outline-offset-3!",
           largeFontPreview && "py-0!",
           compact && "h-11 px-2! py-0!",
         )}
@@ -363,7 +369,7 @@ export function SelectField({
                 fontWeight: option.fontWeight,
               }}
               className={clsx(
-                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word data-focus:bg-(--selected) data-selected:bg-(--selected) data-selected:text-(--accent) data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
+                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word [--control-hover-base:var(--panel)] enabled:hover:control-hover enabled:data-focus:control-hover data-selected:bg-(--selected) data-selected:text-(--accent) data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
                 largeFontPreview && "py-0! text-[20px]! leading-7",
               )}
             >
@@ -403,7 +409,7 @@ export function ColorField({
       </label>
       <DataInteractive
         as="div"
-        className="flex w-full min-w-0 items-center rounded-sm border border-solid border-(--line) bg-(--bg) data-hover:border-(--accent) focus-within:border-(--accent) transition-colors"
+        className="flex w-full min-w-0 items-center rounded-sm border border-solid border-(--line) bg-(--bg) focus-within:border-(--accent) transition-colors"
       >
         <DataInteractive
           as="input"
@@ -412,7 +418,7 @@ export function ColorField({
           value={value}
           aria-label={t("common.fields.colorPicker", { value1: label })}
           title={t("common.fields.colorPicker", { value1: label })}
-          className="h-11 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-1 data-hover:bg-(--selected) transition-colors @min-[220px]/color:w-16"
+          className="h-11 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-1 data-hover:control-hover transition-colors @min-[220px]/color:w-16"
           onChange={(event) => onChange(event.target.value)}
         />
         <DataInteractive
@@ -424,7 +430,7 @@ export function ColorField({
           spellCheck={false}
           autoComplete="off"
           maxLength={7}
-          className="h-11! w-full min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-2 text-(--text) outline-none data-hover:bg-(--selected)! transition-colors"
+          className="h-11! w-full min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-2 text-(--text) outline-none data-hover:control-hover! transition-colors"
           onChange={(event) => {
             setDraft(event.target.value);
             const color = normalize(event.target.value);
@@ -464,8 +470,10 @@ export function Toggle({
         onChange={onChange}
         aria-label={label}
         className={clsx(
-          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) enabled:hover:brightness-110 enabled:hover:ring-2 enabled:hover:ring-(--accent)/40 transition-[filter,box-shadow] motion-reduce:transition-none",
-          checked ? "bg-(--accent)" : "bg-(--selected)",
+          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) transition-colors motion-reduce:transition-none",
+          checked
+            ? "bg-(--accent) [--control-hover-base:var(--accent)] enabled:hover:control-hover enabled:data-hover:control-hover"
+            : "bg-(--selected) [--control-hover-base:var(--selected)] [--control-hover-tint:var(--text)] enabled:hover:control-hover enabled:data-hover:control-hover",
         )}
       >
         <m.span
@@ -525,7 +533,7 @@ export function Accordion({
     <Disclosure as="section" defaultOpen className="settings-section">
       {({ open }) => (
         <>
-          <DisclosureButton className="flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left">
+          <DisclosureButton className="flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left [--control-hover-base:var(--panel)] data-hover:control-hover">
             <span className="eyebrow">{title}</span>
             <m.span
               animate={{ rotate: open ? 180 : 0 }}
@@ -577,7 +585,7 @@ export function TemplateAccordion({
                 trigger.current?.getAttribute("aria-expanded") !== "true";
               if (next !== expanded) onToggle(next);
             }}
-            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-(--accent) enabled:hover:bg-(--selected) transition-colors"
+            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-(--accent) [--control-hover-base:var(--panel)] enabled:hover:control-hover transition-colors"
           >
             <span>{title}</span>
             <ChevronDown
@@ -608,7 +616,7 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
   const present = useIsPresent();
   const reduced = useReducedMotion();
   const itemClass =
-    "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left text-[11px] no-underline data-focus:bg-(--selected) data-disabled:opacity-50";
+    "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left text-[11px] no-underline [--control-hover-base:var(--panel)] not-data-disabled:hover:control-hover data-focus:control-hover data-disabled:opacity-50";
   return (
     <MenuItems
       static

@@ -159,7 +159,7 @@ export function ThemeBuilder({
                       closeSection.current = close;
                     }
                   }}
-                  className="relative flex min-h-14 w-full items-center gap-3 rounded-none! border-0! bg-transparent! py-3! pr-12! pl-3! text-left text-sm! data-hover:bg-(--selected)! focus-visible:-outline-offset-3!"
+                  className="relative flex min-h-14 w-full items-center gap-3 rounded-none! border-0! bg-transparent! py-3! pr-12! pl-3! text-left text-sm! [--control-hover-base:var(--panel)] data-hover:control-hover! focus-visible:-outline-offset-3!"
                 >
                   <span
                     className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${open ? "bg-(--accent) text-(--bg)" : "bg-(--selected) text-(--muted)"}`}
@@ -220,7 +220,7 @@ export function ThemeBuilder({
                                 }
                               }}
                               title={t(`builder.palettes.${palette.name}`)}
-                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--line)! aria-checked:bg-(--selected)! data-hover:border-(--accent) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
+                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--line)! aria-checked:bg-(--selected)! [--control-hover-base:var(--panel)] enabled:data-hover:not-aria-checked:control-hover! focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
                             >
                               <span
                                 aria-hidden="true"
@@ -471,7 +471,7 @@ export function ThemeBuilder({
                             <>
                               <DisclosureButton
                                 data-customize-toggle
-                                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-sm border-0 bg-(--bg) px-3 text-left text-xs text-(--muted) hover:text-(--text) data-open:text-(--text)"
+                                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left text-xs text-(--muted) data-hover:control-hover hover:text-(--text) data-open:text-(--text) focus-visible:-outline-offset-3!"
                               >
                                 <SlidersHorizontal
                                   aria-hidden="true"

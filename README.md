@@ -59,6 +59,8 @@ Canvas images, library images and image pickers retain their external hover/focu
 
 Row and column controls remain in separate groups, with plain minus/plus icons and the same neutral button theme as Reset grid. Their accessible labels, minimum/maximum limits and resize behavior are unchanged.
 
+Interactive controls share the `control-hover` Tailwind utility: hover mixes 25% of the UI border color into the control's normal background without changing its border. Buttons, tabs, segmented choices, dropdowns and their options, disclosures, switches, color inputs, palette/provider tiles and image tools use this rule. Borderless off-switches use a contrasting text tint so their hover remains visible; on-switches retain their colored state. Customize sub-accordions use the same border and padding as dropdowns. Selected and disabled choices retain their appearance, and keyboard focus indicators remain distinct. New controls should reuse this utility rather than define their own hover colors.
+
 Canvas card, caption and heading hover feedback uses the chosen theme's text colors; library/upload hover and active drop feedback derive from its surface colors. Drop zones change background color and show a spaced dotted border; image cards combine a background-tint overlay with a solid border. Feedback borders have a small 2px offset and do not affect content geometry. Dotted borders use 2px marks and 6px gaps. These editor-only colors do not alter the exported artwork.
 
 Each color palette coordinates the canvas, heading background, card surface and text. Light palettes use readable dark text instead of inheriting the editor's dark UI. The app toolbar and sidebar keep their own colors.
