@@ -17,7 +17,13 @@ import {
   RadioGroup,
 } from "@headlessui/react";
 import { AnimatePresence } from "motion/react";
-import { fontOptions, resolveFontWeight, type Board } from "../model";
+import {
+  colorPalettes as palettes,
+  colorPaletteStyle,
+  fontOptions,
+  resolveFontWeight,
+  type Board,
+} from "../model";
 import { t } from "../i18n";
 import {
   AccordionPanel,
@@ -28,65 +34,6 @@ import {
   SelectField,
   Toggle,
 } from "./ui/controls";
-
-const palettes = [
-  {
-    name: "Ink",
-    background: "#17191b",
-    surface: "#23272b",
-    text: "#eef1f3",
-    overlay: "#111315",
-  },
-  {
-    name: "Forest",
-    background: "#18382b",
-    surface: "#244b3a",
-    text: "#f0f3df",
-    overlay: "#18382b",
-  },
-  {
-    name: "Ocean",
-    background: "#123d51",
-    surface: "#1c5167",
-    text: "#def5f4",
-    overlay: "#123d51",
-  },
-  {
-    name: "Plum",
-    background: "#46215b",
-    surface: "#643278",
-    text: "#f6eafa",
-    overlay: "#2c1639",
-  },
-  {
-    name: "Rose",
-    background: "#613745",
-    surface: "#754957",
-    text: "#ffe6e9",
-    overlay: "#613745",
-  },
-  {
-    name: "Cocoa",
-    background: "#4a3328",
-    surface: "#684b3a",
-    text: "#fff0df",
-    overlay: "#322219",
-  },
-  {
-    name: "Sun",
-    background: "#f4ca36",
-    surface: "#fff0a3",
-    text: "#222222",
-    overlay: "#fff0a3",
-  },
-  {
-    name: "Snow",
-    background: "#ffffff",
-    surface: "#d9dfdd",
-    text: "#202325",
-    overlay: "#ffffff",
-  },
-] as const;
 
 function revealAccordion(accordion: HTMLElement) {
   let scroller = accordion.parentElement;
@@ -155,6 +102,10 @@ export function ThemeBuilder({
     selectedPalette ??
     palettes.find((palette) => palette.name === board.colorTheme);
   const colorsModified = !selectedPalette;
+  const applyPalette = (name: string) => {
+    const style = colorPaletteStyle(name);
+    if (style) onChange(style);
+  };
   const steps = [
     {
       title: t("builder.colors"),
@@ -239,22 +190,8 @@ export function ThemeBuilder({
                     >
                       {index === 0 && (
                         <RadioGroup
-                          value={selectedPalette?.name ?? ""}
-                          onChange={(name) => {
-                            const palette = palettes.find(
-                              (item) => item.name === name,
-                            );
-                            if (palette)
-                              onChange({
-                                colorTheme: palette.name,
-                                background: palette.background,
-                                headingBackgroundColor: palette.background,
-                                headingTextColor: palette.text,
-                                cellBackgroundColor: palette.surface,
-                                cellTextColor: palette.text,
-                                captionOverlayColor: palette.overlay,
-                              });
-                          }}
+                          value={appliedPalette?.name ?? ""}
+                          onChange={applyPalette}
                           aria-label={t("builder.colors")}
                           className="grid grid-cols-1 gap-2 @min-[224px]/themes:grid-cols-2 @min-[328px]/themes:grid-cols-3 @min-[480px]/themes:grid-cols-4"
                         >
@@ -265,6 +202,23 @@ export function ThemeBuilder({
                               type="button"
                               value={palette.name}
                               disabled={selectedPalette === palette}
+                              onClick={() => {
+                                if (
+                                  appliedPalette === palette &&
+                                  colorsModified
+                                )
+                                  applyPalette(palette.name);
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  appliedPalette === palette &&
+                                  colorsModified &&
+                                  (event.key === " " || event.key === "Enter")
+                                ) {
+                                  event.preventDefault();
+                                  applyPalette(palette.name);
+                                }
+                              }}
                               title={t(`builder.palettes.${palette.name}`)}
                               className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--line)! aria-checked:bg-(--selected)! data-hover:border-(--accent) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
                             >

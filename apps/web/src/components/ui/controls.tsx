@@ -194,13 +194,15 @@ export function IconRadioField({
   options,
   columns,
   onChange,
+  hideLabel = false,
 }: {
   id: string;
   label: string;
   value: string;
-  options: { value: string; label: string; icon: LucideIcon }[];
+  options: { value: string; label: string; icon?: LucideIcon }[];
   columns: 2 | 3;
   onChange: (value: string) => void;
+  hideLabel?: boolean;
 }) {
   return (
     <RadioGroup
@@ -209,7 +211,7 @@ export function IconRadioField({
       onChange={onChange}
       className="@container/radio flex flex-col gap-2"
     >
-      <Label className="field-label">{label}</Label>
+      <Label className={hideLabel ? "sr-only" : "field-label"}>{label}</Label>
       <div
         className={clsx(
           "isolate grid gap-0 rounded-md bg-(--bg)",
@@ -249,7 +251,7 @@ export function IconRadioField({
                   "@max-[260px]/radio:col-span-2 @max-[260px]/radio:ml-0 @max-[260px]/radio:-mt-px @max-[260px]/radio:rounded-tr-none @max-[260px]/radio:rounded-bl-md",
               )}
             >
-              <Icon aria-hidden="true" className="size-4! shrink-0" />
+              {Icon && <Icon aria-hidden="true" className="size-4! shrink-0" />}
               <span className="min-w-0 text-center text-xs leading-4 wrap-break-word">
                 {optionLabel}
               </span>

@@ -368,10 +368,88 @@ export type GridPatch = Partial<
   GridStyle & Pick<GridContent, "name" | "heading">
 >;
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
+export const colorPalettes = [
+  {
+    name: "Ink",
+    background: "#17191b",
+    surface: "#23272b",
+    text: "#eef1f3",
+    overlay: "#111315",
+  },
+  {
+    name: "Forest",
+    background: "#18382b",
+    surface: "#244b3a",
+    text: "#f0f3df",
+    overlay: "#18382b",
+  },
+  {
+    name: "Ocean",
+    background: "#123d51",
+    surface: "#1c5167",
+    text: "#def5f4",
+    overlay: "#123d51",
+  },
+  {
+    name: "Plum",
+    background: "#46215b",
+    surface: "#643278",
+    text: "#f6eafa",
+    overlay: "#2c1639",
+  },
+  {
+    name: "Rose",
+    background: "#613745",
+    surface: "#754957",
+    text: "#ffe6e9",
+    overlay: "#613745",
+  },
+  {
+    name: "Cocoa",
+    background: "#4a3328",
+    surface: "#684b3a",
+    text: "#fff0df",
+    overlay: "#322219",
+  },
+  {
+    name: "Sun",
+    background: "#f4ca36",
+    surface: "#fff0a3",
+    text: "#222222",
+    overlay: "#fff0a3",
+  },
+  {
+    name: "Snow",
+    background: "#ffffff",
+    surface: "#d9dfdd",
+    text: "#202325",
+    overlay: "#ffffff",
+  },
+] as const;
+
+export function colorPaletteStyle(
+  name: string | undefined,
+): Partial<GridStyle> | undefined {
+  const palette = colorPalettes.find((item) => item.name === name);
+  return palette
+    ? {
+        colorTheme: palette.name,
+        background: palette.background,
+        headingBackgroundColor: palette.background,
+        headingTextColor: palette.text,
+        cellBackgroundColor: palette.surface,
+        cellTextColor: palette.text,
+        captionOverlayColor: palette.overlay,
+      }
+    : undefined;
+}
+
 export type ResetSelection = {
   canvas: boolean;
   theme: boolean;
+  defaultTheme: boolean;
   images: boolean;
+  placements: boolean;
 };
 export type DocumentCommand =
   | { type: "asset/title"; assetId: string; title: string }
@@ -475,10 +553,6 @@ export function resizeBoard(
     const column = index % board.columns;
     positions.set(`${row}:${column}`, { row, column, cell });
   });
-  for (const entry of board.overflow ?? []) {
-    const key = `${entry.row}:${entry.column}`;
-    if (!positions.has(key)) positions.set(key, entry);
-  }
   const cells = Array.from({ length: rows * columns }, (_, index) => {
     const row = Math.floor(index / columns);
     const column = index % columns;
@@ -487,7 +561,7 @@ export function resizeBoard(
     positions.delete(key);
     return cell;
   });
-  return { ...board, rows, columns, cells, overflow: [...positions.values()] };
+  return { ...board, rows, columns, cells, overflow: [] };
 }
 export const makeWorkspace = (): Workspace => ({
   version: 1,
@@ -841,7 +915,13 @@ export const createResetCommand = (): DocumentCommand => ({
 });
 
 export const createResetGridCommand = (
-  selection: ResetSelection = { canvas: true, theme: true, images: true },
+  selection: ResetSelection = {
+    canvas: true,
+    theme: true,
+    defaultTheme: true,
+    images: true,
+    placements: true,
+  },
 ): DocumentCommand => {
   const defaults = makeWorkspace();
   return {
@@ -1076,30 +1156,42 @@ export function documentReducer(
     case "grid/reset":
       return resetWorkspace(workspace, command.defaults);
     case "grid/reset-all": {
-      const { canvas, theme, images } = command.selection;
-      if (canvas && theme && images) return command.defaults;
-      if (!canvas && !theme && !images) return workspace;
+      const { canvas, theme, defaultTheme, images, placements } =
+        command.selection;
+      if (canvas && defaultTheme && images && placements)
+        return command.defaults;
+      if (!canvas && !theme && !defaultTheme && !images && !placements)
+        return workspace;
       const clearCell = (cell: Cell): Cell => ({
         id: cell.id,
-        title: canvas ? "" : cell.title,
+        title: "",
         assetId: null,
         fit: "cover",
       });
-      let nextGrid = theme
-        ? applyGridStyle(grid, getEditorSettings(command.defaults).style)
-        : grid;
+      let nextGrid =
+        theme || defaultTheme
+          ? applyGridStyle(grid, {
+              ...getEditorSettings(command.defaults).style,
+              ...(!defaultTheme
+                ? colorPaletteStyle(grid.colorTheme)
+                : undefined),
+            })
+          : grid;
       if (canvas) {
         nextGrid = {
           ...nextGrid,
           id: command.defaults.grid.id,
           name: command.defaults.grid.name,
           heading: "",
-          cells: nextGrid.cells.map(clearCell),
+          rows: command.defaults.grid.rows,
+          columns: command.defaults.grid.columns,
+          cells: command.defaults.grid.cells,
           overflow: [],
         };
-      } else if (images) {
+      } else if (placements) {
         nextGrid = {
           ...nextGrid,
+          heading: "",
           cells: nextGrid.cells.map(clearCell),
           overflow: nextGrid.overflow.map((entry) => ({
             ...entry,
@@ -1107,10 +1199,15 @@ export function documentReducer(
           })),
         };
       }
+      const referenced = referencedAssetIds({ ...workspace, grid: nextGrid });
       return {
         ...workspace,
         grid: nextGrid,
-        assets: images ? [] : workspace.assets,
+        assets: images
+          ? workspace.assets
+              .filter((asset) => referenced.has(asset.id))
+              .map((asset) => ({ ...asset, libraryHidden: true }))
+          : workspace.assets,
       };
     }
     case "assets/import": {

@@ -166,7 +166,13 @@ test("color theme identity roundtrips settings and resets without losing modifie
   ).toBe(false);
   const reset = model.documentReducer(
     workspace,
-    model.createResetGridCommand({ canvas: false, theme: true, images: false }),
+    model.createResetGridCommand({
+      canvas: false,
+      theme: false,
+      defaultTheme: true,
+      images: false,
+      placements: false,
+    }),
   );
   expect(reset.grid.colorTheme).toBe("Ink");
   expect(reset.grid.background).toBe("#17191b");
@@ -240,7 +246,11 @@ test("preset starters adapt to current layouts and sample previews stay separate
         ...applied.grid.overflow.map((item) => item.cell),
       ];
       expect(retained).toContainEqual(original.grid.cells[0]);
-      expect(retained).toContainEqual(original.grid.cells[8]);
+      if (rows > 2 && columns > 2) {
+        expect(retained).toContainEqual(original.grid.cells[8]);
+      } else {
+        expect(retained).not.toContainEqual(original.grid.cells[8]);
+      }
     }
     expect(draft).toEqual(original);
   }
@@ -1955,11 +1965,10 @@ test("independent typography settings validate, roundtrip and reset without chan
   expect(reset.grid.headingTextColor).toBe("#eef1f3");
   expect(reset.grid.cellTextColor).toBe("#eef1f3");
   expect(reset.assets).toBe(workspace.assets);
+  expect(reset.grid.overflow).toEqual([]);
   expect(
-    reset.grid.overflow.find(
-      (entry) => entry.cell.id === workspace.grid.cells[15].id,
-    ).cell.title,
-  ).toBe("Private caption");
+    reset.grid.cells.some((cell) => cell.id === workspace.grid.cells[15].id),
+  ).toBe(false);
 });
 
 test("image captions stay independent across library, placements and overflow without changing crops", () => {
@@ -1967,8 +1976,10 @@ test("image captions stay independent across library, placements and overflow wi
   const asset = workspace.assets[0];
   const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
   workspace.grid.cells[15].crop = crop;
+  const legacyCell = workspace.grid.cells[15];
   const overflow = model.resizeBoard(workspace.grid, 3, 3);
   workspace.grid = overflow;
+  workspace.grid.overflow = [{ row: 3, column: 3, cell: legacyCell }];
   workspace.grid.cells[0] = {
     ...workspace.grid.cells[0],
     assetId: asset.id,
@@ -2047,7 +2058,9 @@ test("library crops become placement defaults without changing existing cells or
     crop: existingCrop,
   };
   workspace.grid.cells[15].crop = existingCrop;
+  const legacyCell = workspace.grid.cells[15];
   workspace.grid = model.resizeBoard(workspace.grid, 3, 3);
+  workspace.grid.overflow = [{ row: 3, column: 3, cell: legacyCell }];
   const crop = { x: 0.5, y: 0, width: 0.5, height: 1 };
   const cropped = model.documentReducer(workspace, {
     type: "asset/crop",
@@ -2637,6 +2650,136 @@ test("document commands patch, place, swap and clear content without replacing c
   ).toBe(edited);
 });
 
+test("current theme reset retains Rose while default theme reset restores Ink", () => {
+  const workspace = localWorkspace();
+  workspace.grid = {
+    ...workspace.grid,
+    ...model.colorPaletteStyle("Rose"),
+    background: "#554455",
+    gap: 60,
+  };
+  for (const defaultTheme of [false, true]) {
+    const command = model.createResetGridCommand({
+      canvas: false,
+      theme: !defaultTheme,
+      defaultTheme,
+      images: false,
+      placements: false,
+    });
+    const reset = model.documentReducer(workspace, command);
+    expect(reset.grid).toMatchObject(
+      model.colorPaletteStyle(defaultTheme ? "Ink" : "Rose"),
+    );
+    expect(reset.grid.gap).toBe(command.defaults.grid.gap);
+    expect(reset.grid.cells).toBe(workspace.grid.cells);
+    expect(reset.grid.heading).toBe(workspace.grid.heading);
+    expect(reset.assets).toBe(workspace.assets);
+    expect(reset.exportSettings).toBe(workspace.exportSettings);
+    expect(model.workspaceSchema.safeParse(reset).success).toBe(true);
+  }
+});
+
+test("panel and canvas image resets preserve the unselected image location", () => {
+  const workspace = localWorkspace();
+  const unused = {
+    ...workspace.assets[0],
+    id: crypto.randomUUID(),
+    title: "Unused",
+  };
+  workspace.assets.push(unused);
+  const panel = model.documentReducer(
+    workspace,
+    model.createResetGridCommand({
+      canvas: false,
+      theme: false,
+      images: true,
+      placements: false,
+    }),
+  );
+  expect(panel.grid).toBe(workspace.grid);
+  expect(panel.assets).toEqual([
+    { ...workspace.assets[0], libraryHidden: true },
+  ]);
+  const canvas = model.documentReducer(
+    workspace,
+    model.createResetGridCommand({
+      canvas: false,
+      theme: false,
+      images: false,
+      placements: true,
+    }),
+  );
+  expect(canvas.assets).toBe(workspace.assets);
+  expect(canvas.grid.cells[15]).toMatchObject({
+    title: "Private caption",
+    assetId: null,
+  });
+  const both = model.documentReducer(
+    workspace,
+    model.createResetGridCommand({
+      canvas: false,
+      theme: false,
+      images: true,
+      placements: true,
+    }),
+  );
+  expect(both.assets).toEqual([]);
+  expect(both.grid.cells[15]).toMatchObject({
+    title: "Private caption",
+    assetId: null,
+  });
+  expect(model.workspaceSchema.safeParse(panel).success).toBe(true);
+  expect(model.workspaceSchema.safeParse(canvas).success).toBe(true);
+});
+
+test("removed rows and columns discard cell data while retaining visible cells and library images", () => {
+  const workspace = localWorkspace();
+  workspace.grid.cells = workspace.grid.cells.map((cell, index) => ({
+    ...cell,
+    title: `Cell ${index}`,
+    assetId: workspace.assets[0].id,
+    fit: "contain",
+  }));
+  const previous = structuredClone(workspace);
+  for (const [rows, columns] of [
+    [3, 4],
+    [4, 3],
+    [3, 3],
+  ]) {
+    const shrink = model.createResizeCommand(workspace.grid.id, rows, columns);
+    const smaller = model.documentReducer(workspace, shrink);
+    expect(smaller.grid.overflow).toEqual([]);
+    expect(smaller.assets).toBe(workspace.assets);
+    const grow = model.createResizeCommand(workspace.grid.id, 4, 4);
+    const expanded = model.documentReducer(smaller, grow);
+    expect(expanded).toEqual(model.documentReducer(smaller, grow));
+    expect(expanded.grid.overflow).toEqual([]);
+    expanded.grid.cells.forEach((cell, index) => {
+      const row = Math.floor(index / 4);
+      const column = index % 4;
+      if (row < rows && column < columns) {
+        expect(cell).toBe(workspace.grid.cells[index]);
+      } else {
+        expect(cell).toMatchObject({ title: "", assetId: null, fit: "cover" });
+        expect(cell.crop).toBeUndefined();
+        expect(cell.id).not.toBe(workspace.grid.cells[index].id);
+      }
+    });
+    expect(model.workspaceSchema.safeParse(expanded).success).toBe(true);
+  }
+  const legacy = {
+    ...workspace.grid,
+    rows: 3,
+    cells: workspace.grid.cells.slice(0, 12),
+    overflow: [{ row: 3, column: 3, cell: workspace.grid.cells[15] }],
+  };
+  expect(model.resizeBoard(legacy, 4, 4).cells[15]).toMatchObject({
+    title: "",
+    assetId: null,
+  });
+  expect(workspace).toEqual(previous);
+});
+
 test("document resize and reset commands replay stable IDs and preserve newer edits", () => {
   const workspace = model.makeWorkspace();
   const resize = model.createResizeCommand(workspace.grid.id, 4, 4);
@@ -2644,7 +2787,7 @@ test("document resize and reset commands replay stable IDs and preserve newer ed
     model.documentReducer(workspace, resize),
   );
   const grown = model.documentReducer(workspace, resize);
-  const cell = grown.grid.cells[15];
+  const cell = grown.grid.cells[10];
   const edited = model.documentReducer(grown, {
     type: "cell/patch",
     gridId: grown.grid.id,
@@ -2654,13 +2797,10 @@ test("document resize and reset commands replay stable IDs and preserve newer ed
   const reset = model.createResetCommand();
   const resetWorkspace = model.documentReducer(edited, reset);
   expect(resetWorkspace).toEqual(model.documentReducer(edited, reset));
-  expect(
-    resetWorkspace.grid.overflow.find(
-      (entry) => entry.row === 3 && entry.column === 3,
-    )?.cell.title,
-  ).toBe("Newer edit");
+  expect(resetWorkspace.grid.overflow).toEqual([]);
+  expect(resetWorkspace.grid.cells[8].title).toBe("Newer edit");
   const restored = model.documentReducer(resetWorkspace, resize);
-  expect(restored.grid.cells[15]).toMatchObject({
+  expect(restored.grid.cells[10]).toMatchObject({
     id: cell.id,
     title: "Newer edit",
   });
@@ -2711,50 +2851,90 @@ test("selective reset preserves unselected canvas, theme, images and export sett
   const workspace = localWorkspace();
   workspace.grid.heading = "Keep heading";
   workspace.grid.background = "#123456";
-  workspace.grid = model.resizeBoard(workspace.grid, 2, 2);
+  workspace.grid = model.resizeBoard(workspace.grid, 2, 3);
+  workspace.grid.cells[0] = {
+    ...workspace.grid.cells[0],
+    assetId: workspace.assets[0].id,
+    title: "Keep caption",
+  };
   const previous = structuredClone(workspace);
   for (const canvas of [false, true]) {
     for (const theme of [false, true]) {
-      for (const images of [false, true]) {
-        const command = model.createResetGridCommand({ canvas, theme, images });
-        const reset = model.documentReducer(workspace, command);
-        expect(reset).toEqual(model.documentReducer(workspace, command));
-        expect(model.workspaceSchema.safeParse(reset).success).toBe(true);
-        if (canvas && theme && images) {
-          expect(reset).toEqual(command.defaults);
-          continue;
-        }
-        expect(reset.grid.rows).toBe(workspace.grid.rows);
-        expect(reset.grid.columns).toBe(workspace.grid.columns);
-        expect(reset.grid.heading).toBe(canvas ? "" : workspace.grid.heading);
-        expect(reset.grid.background).toBe(
-          theme ? command.defaults.grid.background : workspace.grid.background,
-        );
-        expect(reset.exportSettings).toBe(workspace.exportSettings);
-        expect(reset.assets).toEqual(images ? [] : workspace.assets);
-        if (canvas || images) {
-          expect(
-            reset.grid.cells.every((cell) => !cell.assetId && !cell.crop),
-          ).toBe(true);
-          expect(
-            reset.grid.overflow.every(
-              (entry) => !entry.cell.assetId && !entry.cell.crop,
-            ),
-          ).toBe(true);
-        } else {
-          expect(reset.grid.cells).toBe(workspace.grid.cells);
-          expect(reset.grid.overflow).toBe(workspace.grid.overflow);
-        }
-        if (canvas) {
-          expect(reset.grid.cells.every((cell) => !cell.title)).toBe(true);
-          expect(reset.grid.overflow).toEqual([]);
-        } else {
-          expect(reset.grid.cells.map((cell) => cell.title)).toEqual(
-            workspace.grid.cells.map((cell) => cell.title),
-          );
-          expect(reset.grid.overflow.map((entry) => entry.cell.title)).toEqual(
-            workspace.grid.overflow.map((entry) => entry.cell.title),
-          );
+      for (const defaultTheme of [false, true]) {
+        for (const images of [false, true]) {
+          for (const placements of [false, true]) {
+            const command = model.createResetGridCommand({
+              canvas,
+              theme,
+              defaultTheme,
+              images,
+              placements,
+            });
+            const reset = model.documentReducer(workspace, command);
+            expect(reset).toEqual(model.documentReducer(workspace, command));
+            expect(model.workspaceSchema.safeParse(reset).success).toBe(true);
+            if (canvas && defaultTheme && images && placements) {
+              expect(reset).toEqual(command.defaults);
+              continue;
+            }
+            expect(reset.grid.rows).toBe(
+              canvas ? command.defaults.grid.rows : workspace.grid.rows,
+            );
+            expect(reset.grid.columns).toBe(
+              canvas ? command.defaults.grid.columns : workspace.grid.columns,
+            );
+            expect(reset.grid.heading).toBe(
+              canvas || placements ? "" : workspace.grid.heading,
+            );
+            expect(reset.grid.background).toBe(
+              theme || defaultTheme
+                ? command.defaults.grid.background
+                : workspace.grid.background,
+            );
+            expect(reset.exportSettings).toBe(workspace.exportSettings);
+            expect(reset.assets).toEqual(
+              images
+                ? canvas || placements
+                  ? []
+                  : workspace.assets.map((asset) => ({
+                      ...asset,
+                      libraryHidden: true,
+                    }))
+                : workspace.assets,
+            );
+            if (canvas || placements) {
+              expect(
+                reset.grid.cells.every(
+                  (cell) => !cell.assetId && !cell.crop && !cell.title,
+                ),
+              ).toBe(true);
+              expect(
+                reset.grid.overflow.every(
+                  (entry) =>
+                    !entry.cell.assetId &&
+                    !entry.cell.crop &&
+                    !entry.cell.title,
+                ),
+              ).toBe(true);
+            } else {
+              expect(reset.grid.cells).toBe(workspace.grid.cells);
+              expect(reset.grid.overflow).toBe(workspace.grid.overflow);
+            }
+            if (canvas) {
+              expect(reset.grid.cells).toEqual(command.defaults.grid.cells);
+              expect(reset.grid.cells.every((cell) => !cell.title)).toBe(true);
+              expect(reset.grid.overflow).toEqual([]);
+            } else if (!placements) {
+              expect(reset.grid.cells.map((cell) => cell.title)).toEqual(
+                workspace.grid.cells.map((cell) => cell.title),
+              );
+              expect(
+                reset.grid.overflow.map((entry) => entry.cell.title),
+              ).toEqual(
+                workspace.grid.overflow.map((entry) => entry.cell.title),
+              );
+            }
+          }
         }
       }
     }
@@ -2861,6 +3041,9 @@ test("library deletion retains visible and removed references while deleting unu
     workspace,
     model.createResizeCommand(workspace.grid.id, 3, 3),
   );
+  reduced.grid.overflow = [
+    { row: 3, column: 3, cell: workspace.grid.cells[15] },
+  ];
   const original = structuredClone(reduced);
   const deleted = model.documentReducer(reduced, {
     type: "assets/delete",
@@ -2904,6 +3087,9 @@ test("trash cleanup protects live and overflow references and restores image ide
     workspace,
     model.createResizeCommand(workspace.grid.id, 3, 3),
   );
+  reduced.grid.overflow = [
+    { row: 3, column: 3, cell: workspace.grid.cells[15] },
+  ];
   const original = structuredClone(reduced);
   const trashed = model.documentReducer(reduced, {
     type: "assets/trash-unused",

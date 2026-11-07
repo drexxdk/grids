@@ -23,6 +23,7 @@ import {
 import {
   Button,
   ColorField,
+  IconRadioField,
   PercentField,
   SelectField,
 } from "./components/ui/controls";
@@ -296,9 +297,18 @@ export default function App() {
   const [resetSelection, setResetSelection] = useState<ResetSelection>({
     canvas: false,
     theme: false,
+    defaultTheme: false,
     images: false,
+    placements: false,
   });
-  const resetAll = Object.values(resetSelection).every(Boolean);
+  const [resetThemeTarget, setResetThemeTarget] = useState<
+    "current" | "default"
+  >("current");
+  const resetAll =
+    resetSelection.canvas &&
+    resetSelection.defaultTheme &&
+    resetSelection.images &&
+    resetSelection.placements;
   const resetSelected = Object.values(resetSelection).some(Boolean);
   const board = workspace.grid;
   useLayoutEffect(() => {
@@ -720,12 +730,18 @@ export default function App() {
   };
   const resetGrid = () => {
     if (!resetSelected || importProgress !== null) return;
+    const command = createResetGridCommand(resetSelection);
     if (resetSelection.images) {
+      const retained = new Set(
+        documentReducer(workspace, command).assets.map((asset) => asset.id),
+      );
       localStore.current?.scheduleImageDeletion(
-        workspace.assets.map((asset) => asset.id),
+        workspace.assets
+          .filter((asset) => !retained.has(asset.id))
+          .map((asset) => asset.id),
       );
     }
-    dispatchDocument(createResetGridCommand(resetSelection));
+    dispatchDocument(command);
     setHeadingEditing(false);
     setImageTarget(null);
     setCardDrag(null);
@@ -780,8 +796,11 @@ export default function App() {
                   setResetSelection({
                     canvas: false,
                     theme: false,
+                    defaultTheme: false,
                     images: false,
+                    placements: false,
                   });
+                  setResetThemeTarget("current");
                   setResetGridOpen(true);
                 }}
               >
@@ -1525,57 +1544,114 @@ export default function App() {
         returnFocus={resetGridButton}
       >
         <div className="flex flex-col gap-4">
-          <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <fieldset className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0 max-[360px]:grid-cols-1">
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
-            <label className="flex min-h-11 cursor-pointer items-center gap-3">
+            <label
+              data-reset-option="all"
+              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-[:focus-visible]:border-(--accent)"
+            >
               <input
                 type="checkbox"
-                className="size-5 shrink-0 accent-(--accent)"
+                className="size-5 shrink-0 accent-(--accent) outline-none!"
                 checked={resetAll}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
+                  if (checked) setResetThemeTarget("default");
                   setResetSelection({
                     canvas: checked,
-                    theme: checked,
+                    theme: false,
+                    defaultTheme: checked,
                     images: checked,
+                    placements: checked,
                   });
                 }}
               />
               <span className="font-semibold">{t("editor.reset.all")}</span>
             </label>
-            {(["canvas", "theme", "images"] as const).map((part) => (
-              <label
-                key={part}
-                className="flex min-h-11 cursor-pointer items-center gap-3"
-              >
-                <input
-                  type="checkbox"
-                  className="size-5 shrink-0 accent-(--accent)"
-                  checked={resetSelection[part]}
-                  onChange={(event) => {
-                    const checked = event.currentTarget.checked;
-                    setResetSelection((selection) => ({
-                      ...selection,
-                      [part]: checked,
-                    }));
-                  }}
-                />
-                <span className="flex min-w-0 flex-col gap-1">
-                  <span className="font-semibold">
-                    {t(`editor.reset.${part}`)}
-                  </span>
-                  <span className="text-sm text-(--muted)">
-                    {t(`editor.reset.${part}Description`)}
-                  </span>
-                </span>
-              </label>
-            ))}
+            {(["canvas", "theme", "placements", "images"] as const).map(
+              (part) => (
+                <div
+                  key={part}
+                  data-reset-option={part}
+                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-[input:focus-visible]:border-(--accent) [&_[role=radio]]:border-(--bg)! max-[360px]:p-2"
+                >
+                  <label className="flex min-w-0 cursor-pointer flex-col gap-2 outline-none!">
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="size-5 shrink-0 accent-(--accent) outline-none!"
+                        aria-label={t(`editor.reset.${part}`)}
+                        aria-describedby={`reset-${part}-description`}
+                        checked={
+                          part === "theme"
+                            ? resetSelection.theme ||
+                              resetSelection.defaultTheme
+                            : resetSelection[part]
+                        }
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setResetSelection((selection) => ({
+                            ...selection,
+                            ...(part === "theme"
+                              ? {
+                                  theme:
+                                    checked && resetThemeTarget === "current",
+                                  defaultTheme:
+                                    checked && resetThemeTarget === "default",
+                                }
+                              : { [part]: checked }),
+                          }));
+                        }}
+                      />
+                      <span className="min-w-0 text-sm font-semibold wrap-anywhere">
+                        {t(`editor.reset.${part}`)}
+                      </span>
+                    </span>
+                    <span
+                      id={`reset-${part}-description`}
+                      className="text-sm text-(--muted) wrap-anywhere max-[360px]:text-xs"
+                    >
+                      {t(`editor.reset.${part}Description`)}
+                    </span>
+                  </label>
+                  {part === "theme" && (
+                    <IconRadioField
+                      id="reset-theme-target"
+                      label={t("editor.reset.themeTarget")}
+                      hideLabel
+                      columns={2}
+                      value={resetThemeTarget}
+                      options={[
+                        { value: "current", label: t("editor.reset.current") },
+                        { value: "default", label: t("editor.reset.default") },
+                      ]}
+                      onChange={(value) => {
+                        const target =
+                          value === "default" ? "default" : "current";
+                        setResetThemeTarget(target);
+                        setResetSelection((selection) => {
+                          const checked =
+                            selection.theme || selection.defaultTheme;
+                          return {
+                            ...selection,
+                            theme: checked && target === "current",
+                            defaultTheme: checked && target === "default",
+                          };
+                        });
+                      }}
+                    />
+                  )}
+                </div>
+              ),
+            )}
           </fieldset>
           <p aria-live="polite" className="m-0 text-sm text-(--muted)">
             {resetAll
               ? t("editor.reset.allWarning")
               : resetSelection.images
-                ? t("editor.reset.imagesWarning")
+                ? resetSelection.canvas || resetSelection.placements
+                  ? t("editor.reset.allImagesWarning")
+                  : t("editor.reset.imagesWarning")
                 : t("editor.reset.retention")}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
