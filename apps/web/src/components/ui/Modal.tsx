@@ -1,4 +1,6 @@
 import { t } from "../../i18n";
+import { cva } from "class-variance-authority";
+import { motionDuration, motionPresets } from "./motion";
 import {
   Dialog,
   DialogBackdrop,
@@ -15,6 +17,40 @@ import {
   type RefObject,
 } from "react";
 import { Button, MotionDiv } from "./controls";
+
+const modalFrameStyles = cva(
+  "fixed inset-0 overflow-y-auto overscroll-contain",
+  {
+    variants: { fullscreen: { true: "", false: "p-4" } },
+  },
+);
+
+const modalPanelStyles = cva("flex w-full flex-col bg-ui-panel", {
+  variants: {
+    fullscreen: {
+      true: "h-dvh",
+      false:
+        "gap-4 rounded-lg border border-solid border-ui-border p-5 shadow-xl",
+    },
+    size: { compact: "", wide: "" },
+  },
+  compoundVariants: [
+    { fullscreen: false, size: "compact", className: "max-w-md" },
+    { fullscreen: false, size: "wide", className: "max-w-200" },
+  ],
+});
+
+const modalHeaderStyles = cva(
+  "flex shrink-0 items-center justify-between gap-3",
+  {
+    variants: {
+      fullscreen: {
+        true: "p-3 pt-[max(12px,env(safe-area-inset-top))]",
+        false: "",
+      },
+    },
+  },
+);
 
 function InitialDialogFocus({
   target,
@@ -72,6 +108,7 @@ export function Modal({
     return () => cancelAnimationFrame(frame);
   }, [open, ready, prepared]);
   const reduced = useReducedMotion();
+  const transition = { duration: reduced ? 0 : motionDuration.layout };
   const touch =
     typeof window !== "undefined" &&
     (window.matchMedia("(any-pointer: coarse)").matches ||
@@ -100,22 +137,20 @@ export function Modal({
               : pendingCloseButton
           }
           as={MotionDiv}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          motionTransition={{ duration: reduced ? 0 : 0.18 }}
+          {...motionPresets.fade}
+          motionTransition={transition}
           className="fixed inset-0 z-60"
         >
           <DialogBackdrop
             as={MotionDiv}
             initial={false}
-            motionTransition={{ duration: reduced ? 0 : 0.18 }}
+            motionTransition={transition}
             className="fixed inset-0 bg-black/60"
           />
           <div
             data-modal-scroll
             data-overlay-scroll="y"
-            className={`fixed inset-0 overflow-y-auto overscroll-contain ${fullscreen ? "" : "p-4"}`}
+            className={modalFrameStyles({ fullscreen })}
           >
             <div className="flex min-h-full items-center justify-center">
               {contentReady ? (
@@ -127,20 +162,14 @@ export function Modal({
                     ready === undefined || reduced ? false : { opacity: 0 }
                   }
                   animate={{ opacity: 1 }}
-                  motionTransition={{ duration: reduced ? 0 : 0.18 }}
-                  className={
-                    fullscreen
-                      ? "flex h-dvh w-full flex-col bg-ui-panel"
-                      : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-ui-border bg-ui-panel p-5 shadow-xl`
-                  }
+                  motionTransition={transition}
+                  className={modalPanelStyles({ fullscreen, size })}
                 >
                   <InitialDialogFocus
                     target={touch ? closeButton : (initialFocus ?? closeButton)}
                     enabled={touch || ready !== undefined}
                   />
-                  <div
-                    className={`flex shrink-0 items-center justify-between gap-3 ${fullscreen ? "p-3 pt-[max(12px,env(safe-area-inset-top))]" : "mb-4"}`}
-                  >
+                  <div className={modalHeaderStyles({ fullscreen })}>
                     <DialogTitle className="text-lg font-semibold">
                       {title}
                     </DialogTitle>
