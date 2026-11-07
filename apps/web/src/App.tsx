@@ -873,49 +873,8 @@ export default function App() {
                       void importFiles(files);
                     }}
                   />
-                  {activeAssets.map((asset) => (
-                    <LibraryImage
-                      key={asset.id}
-                      asset={asset}
-                      cell={board.cells.find(
-                        (cell) => cell.assetId === asset.id,
-                      )}
-                      gridStyle={board}
-                      captionRows={captionRows}
-                      onTitle={(title) =>
-                        dispatchDocument({
-                          type: "asset/title",
-                          assetId: asset.id,
-                          title,
-                        })
-                      }
-                      onCrop={(crop, assetId) =>
-                        dispatchDocument({ type: "asset/crop", assetId, crop })
-                      }
-                      disabled={false}
-                      moving={cardDrag !== null}
-                      dragAffected={
-                        cardDrag?.source.kind === "asset" &&
-                        cardDrag.source.assetId === asset.id
-                      }
-                      onMoveStart={(source, visual) =>
-                        setCardDrag({ source, visual, targetId: null })
-                      }
-                      onTouchDrag={touchDrag}
-                      onDelete={() => deleteImages([asset.id])}
-                    />
-                  ))}
-                  {Array.from(
-                    { length: importProgress?.loadingCards ?? 0 },
-                    (_, index) => (
-                      <LibraryImagePlaceholder
-                        key={`upload:${index}`}
-                        gridStyle={board}
-                        captionRows={captionRows}
-                        loading
-                      />
-                    ),
-                  )}
+                  {renderLibraryImages()}
+                  {renderLoadingCards()}
                 </div>
                 <input
                   id="upload"
@@ -1266,7 +1225,7 @@ export default function App() {
               top: cardDrag.visual.y - cardDrag.visual.offsetY - 8,
               transform: "rotate(-2deg)",
               transformOrigin: `${cardDrag.visual.offsetX}px ${cardDrag.visual.offsetY}px`,
-              boxShadow: "0 18px 32px #0008, 0 3px 8px #0006",
+              boxShadow: "var(--drag-shadow)",
               borderRadius: `${board.cornerRadius ?? 12.5}% / ${((board.cornerRadius ?? 12.5) * cardDrag.visual.width) / cardDrag.visual.height}%`,
             }}
           >
@@ -1357,12 +1316,7 @@ export default function App() {
             <Button onClick={() => setExportOpen(false)}>
               {t("common.actions.cancel")}
             </Button>
-            <Button
-              intent="primary"
-              className="min-h-11"
-              disabled={exporting}
-              onClick={exportGrid}
-            >
+            <Button intent="primary" disabled={exporting} onClick={exportGrid}>
               <Download aria-hidden="true" />
               {exporting ? t("export.progress") : t("export.download")}
             </Button>
@@ -1398,43 +1352,8 @@ export default function App() {
                   if (files.length === 1) closeImagePicker();
                 }}
               />
-              {activeAssets.map((asset) => (
-                <LibraryImage
-                  key={asset.id}
-                  className=""
-                  asset={asset}
-                  cell={board.cells.find((cell) => cell.assetId === asset.id)}
-                  gridStyle={board}
-                  captionRows={captionRows}
-                  disabled={false}
-                  onTitle={(title) =>
-                    dispatchDocument({
-                      type: "asset/title",
-                      assetId: asset.id,
-                      title,
-                    })
-                  }
-                  onCrop={(crop, assetId) =>
-                    dispatchDocument({ type: "asset/crop", assetId, crop })
-                  }
-                  onDelete={() => deleteImages([asset.id])}
-                  onSelect={() => {
-                    if (imageTarget) placeAsset(asset.id, imageTarget);
-                    closeImagePicker();
-                  }}
-                />
-              ))}
-              {Array.from(
-                { length: importProgress?.loadingCards ?? 0 },
-                (_, index) => (
-                  <LibraryImagePlaceholder
-                    key={`upload:${index}`}
-                    gridStyle={board}
-                    captionRows={captionRows}
-                    loading
-                  />
-                ),
-              )}
+              {renderLibraryImages(true)}
+              {renderLoadingCards()}
             </div>
             <input
               id="picker-cell-upload"
@@ -1459,7 +1378,7 @@ export default function App() {
         returnFocus={reloadButton}
       >
         <p>{t("save.reloadPrompt")}</p>
-        <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button onClick={() => setReloadOpen(false)}>
             {t("common.actions.cancel")}
           </Button>
@@ -1477,6 +1396,62 @@ export default function App() {
       </Modal>
     </>
   );
+
+  function renderLibraryImages(selectionOnly = false) {
+    return activeAssets.map((asset) => (
+      <LibraryImage
+        key={asset.id}
+        className={selectionOnly ? "" : undefined}
+        asset={asset}
+        cell={board.cells.find((cell) => cell.assetId === asset.id)}
+        gridStyle={board}
+        captionRows={captionRows}
+        disabled={false}
+        onTitle={(title) =>
+          dispatchDocument({ type: "asset/title", assetId: asset.id, title })
+        }
+        onCrop={(crop, assetId) =>
+          dispatchDocument({ type: "asset/crop", assetId, crop })
+        }
+        onDelete={() => deleteImages([asset.id])}
+        moving={selectionOnly ? undefined : cardDrag !== null}
+        dragAffected={
+          !selectionOnly &&
+          cardDrag?.source.kind === "asset" &&
+          cardDrag.source.assetId === asset.id
+        }
+        onMoveStart={
+          selectionOnly
+            ? undefined
+            : (source, visual) =>
+                setCardDrag({ source, visual, targetId: null })
+        }
+        onTouchDrag={selectionOnly ? undefined : touchDrag}
+        onSelect={
+          selectionOnly
+            ? () => {
+                if (imageTarget) placeAsset(asset.id, imageTarget);
+                closeImagePicker();
+              }
+            : undefined
+        }
+      />
+    ));
+  }
+
+  function renderLoadingCards() {
+    return Array.from(
+      { length: importProgress?.loadingCards ?? 0 },
+      (_, index) => (
+        <LibraryImagePlaceholder
+          key={`upload:${index}`}
+          gridStyle={board}
+          captionRows={captionRows}
+          loading
+        />
+      ),
+    );
+  }
 
   function renderResetPanel() {
     return (

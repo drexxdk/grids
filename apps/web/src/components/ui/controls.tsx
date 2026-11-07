@@ -23,7 +23,13 @@ import {
 } from "@headlessui/react";
 import { cva, type VariantProps } from "class-variance-authority";
 import clsx from "clsx";
-import { ChevronDown, MoreHorizontal, type LucideIcon } from "lucide-react";
+import {
+  ChevronDown,
+  LoaderCircle,
+  MoreHorizontal,
+  type LucideIcon,
+  type LucideProps,
+} from "lucide-react";
 import {
   AnimatePresence,
   m,
@@ -241,6 +247,27 @@ export function PercentField({
       onChange={(next) =>
         onChange(Number((min + (next / 100) * (max - min)).toFixed(6)))
       }
+    />
+  );
+}
+
+const spinnerStyles = cva("shrink-0 motion-safe:animate-spin", {
+  variants: {
+    size: { control: "size-5", card: "size-[18cqw]!", fluid: "" },
+  },
+  defaultVariants: { size: "control" },
+});
+
+export function Spinner({
+  size,
+  className,
+  ...props
+}: Omit<LucideProps, "size"> & VariantProps<typeof spinnerStyles>) {
+  return (
+    <LoaderCircle
+      aria-hidden="true"
+      {...props}
+      className={spinnerStyles({ size, className })}
     />
   );
 }

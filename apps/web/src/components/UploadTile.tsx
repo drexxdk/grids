@@ -1,5 +1,6 @@
 import { t } from "../i18n";
-import { ImagePlus, LoaderCircle } from "lucide-react";
+import { ImagePlus } from "lucide-react";
+import { Spinner } from "./ui/controls";
 import { useState, type CSSProperties, type Ref } from "react";
 import { cellGeometry, type GridStyle } from "../model";
 import { CardBorder, CardFrame } from "./CardFrame";
@@ -91,10 +92,7 @@ export function UploadTile({
         >
           {progress ? (
             <>
-              <LoaderCircle
-                aria-hidden="true"
-                className="animate-spin motion-reduce:animate-none"
-              />
+              <Spinner size="fluid" />
               <span
                 role="status"
                 aria-live="polite"

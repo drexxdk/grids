@@ -154,7 +154,7 @@ export function GridResizer({
           maxWidth: "100%",
           paddingTop: 0,
         }}
-        className={`relative isolate flex min-w-0 flex-col @container shadow-[0_10px_45px_#0005] ${bottomControls ? `${leadingSpace ? "col-start-2" : "col-start-1"} row-start-1` : ""}`}
+        className={`relative isolate flex min-w-0 flex-col @container shadow-ui-canvas ${bottomControls ? `${leadingSpace ? "col-start-2" : "col-start-1"} row-start-1` : ""}`}
       >
         <span
           aria-hidden="true"

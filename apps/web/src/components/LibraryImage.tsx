@@ -7,7 +7,7 @@ import {
 } from "../model";
 import { captionMaxLength } from "../config";
 import type { CSSProperties, Ref } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Spinner } from "./ui/controls";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
 import { CardBorder } from "./CardFrame";
 
@@ -42,9 +42,7 @@ export function LibraryImagePlaceholder({
           } as CSSProperties
         }
       >
-        {loading && (
-          <LoaderCircle className="size-[18cqw]! animate-spin text-ui-muted motion-reduce:animate-none" />
-        )}
+        {loading && <Spinner size="card" className="text-ui-muted" />}
         <CardBorder style={gridStyle} />
       </div>
     </div>

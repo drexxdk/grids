@@ -2,14 +2,7 @@ import { t } from "../i18n";
 import { captionMaxLength } from "../config";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { cva } from "class-variance-authority";
-import {
-  Check,
-  Crop,
-  ImagePlus,
-  LoaderCircle,
-  Move,
-  Trash2,
-} from "lucide-react";
+import { Check, Crop, ImagePlus, Move, Trash2 } from "lucide-react";
 import type { ProviderImage } from "../providers";
 import { useDrag } from "@use-gesture/react";
 import {
@@ -33,7 +26,7 @@ import {
   type GridStyle,
 } from "../model";
 import { layoutCaption } from "../export";
-import { Button } from "./ui/controls";
+import { Button, Spinner } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 import { CardBorder, CardFrame } from "./CardFrame";
 import { centerTextArea, TextScrollbar } from "./TextScrollbar";
@@ -739,10 +732,7 @@ export function GridCell({
                         aria-label={t("common.actions.loading")}
                         className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--card-background)"
                       >
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="size-[18cqw]! animate-spin motion-reduce:animate-none"
-                        />
+                        <Spinner size="card" />
                       </span>
                     )}
                   {failedImage === asset.src && (
@@ -1034,10 +1024,7 @@ export function GridCell({
               aria-label={t("library.search.importing")}
               className="pointer-events-none absolute inset-0 z-60 flex items-center justify-center rounded-[inherit] bg-black/40"
             >
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-[18cqw]! animate-spin motion-reduce:animate-none"
-              />
+              <Spinner size="card" />
             </span>
           )}
           {asset && cropTarget === asset.id && onCrop && (

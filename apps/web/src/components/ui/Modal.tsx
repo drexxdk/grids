@@ -7,7 +7,7 @@ import {
   DialogPanel,
   DialogTitle,
 } from "@headlessui/react";
-import { LoaderCircle, X } from "lucide-react";
+import { X } from "lucide-react";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import {
   useEffect,
@@ -16,7 +16,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Button, MotionDiv } from "./controls";
+import { Button, MotionDiv, Spinner } from "./controls";
 
 const modalFrameStyles = cva(
   "fixed inset-0 overflow-y-auto overscroll-contain",
@@ -192,10 +192,7 @@ export function Modal({
                     role="status"
                     className="flex items-center gap-2 text-sm text-ui-text"
                   >
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="size-5 motion-safe:animate-spin"
-                    />
+                    <Spinner />
                     {t("common.actions.loading")}
                   </span>
                   <Button
