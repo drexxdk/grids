@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   SlidersHorizontal,
   RectangleVertical,
   RectangleHorizontal,
@@ -10,12 +9,7 @@ import {
   PanelBottomDashed,
 } from "lucide-react";
 import { useRef, type ReactNode } from "react";
-import {
-  Disclosure,
-  DisclosureButton,
-  Radio,
-  RadioGroup,
-} from "@headlessui/react";
+import { Disclosure, Radio, RadioGroup } from "@headlessui/react";
 import { AnimatePresence } from "motion/react";
 import {
   colorPalettes as palettes,
@@ -29,6 +23,8 @@ import { t } from "../i18n";
 import {
   AccordionPanel,
   ChoiceButton,
+  DisclosureChevron,
+  DisclosureTrigger,
   ColorField,
   IconRadioField,
   PercentField,
@@ -179,7 +175,7 @@ export function ThemeBuilder({
           {({ open, close }) => (
             <>
               <h3 className="m-0 text-sm">
-                <DisclosureButton
+                <DisclosureTrigger
                   ref={(element: HTMLButtonElement | null) => {
                     if (element && open) closeSection.current = close;
                   }}
@@ -190,7 +186,6 @@ export function ThemeBuilder({
                       closeSection.current = close;
                     }
                   }}
-                  className="relative flex min-h-14 w-full items-center gap-3 rounded-none! border-0! bg-transparent! py-3! pr-12! pl-3! text-left text-sm! [--control-hover-base:var(--panel)] data-hover:control-hover! focus-visible:-outline-offset-3!"
                 >
                   <span
                     className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${open ? "bg-ui-accent text-ui-background" : "bg-ui-selected text-ui-muted"}`}
@@ -204,12 +199,9 @@ export function ThemeBuilder({
                     </span>
                   </span>
                   <span className="pointer-events-none absolute inset-y-0 right-0 flex aspect-square items-center justify-center">
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={`size-4! ${open ? "rotate-180" : ""}`}
-                    />
+                    <DisclosureChevron open={open} />
                   </span>
-                </DisclosureButton>
+                </DisclosureTrigger>
               </h3>
               <AnimatePresence initial={false}>
                 {open && (
@@ -500,9 +492,9 @@ export function ThemeBuilder({
                         >
                           {({ open: customOpen }) => (
                             <>
-                              <DisclosureButton
+                              <DisclosureTrigger
+                                level="customize"
                                 data-customize-toggle
-                                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-sm border border-solid border-ui-border bg-ui-background px-3 py-2 text-left text-xs text-ui-muted data-hover:control-hover hover:text-ui-text data-open:text-ui-text focus-visible:-outline-offset-3!"
                               >
                                 <SlidersHorizontal
                                   aria-hidden="true"
@@ -513,11 +505,8 @@ export function ThemeBuilder({
                                     value1: item.title,
                                   })}
                                 </span>
-                                <ChevronDown
-                                  aria-hidden="true"
-                                  className={`size-4 shrink-0 transition-transform motion-reduce:transition-none ${customOpen ? "rotate-180" : ""}`}
-                                />
-                              </DisclosureButton>
+                                <DisclosureChevron open={customOpen} />
+                              </DisclosureTrigger>
                               <AnimatePresence initial={false}>
                                 {customOpen && (
                                   <AccordionPanel

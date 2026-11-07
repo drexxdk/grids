@@ -1,4 +1,5 @@
 import { t } from "../../i18n";
+import { motionPresets, useUiTransition } from "./motion";
 import {
   DataInteractive,
   Description,
@@ -479,6 +480,37 @@ export function IconRadioField({
   );
 }
 
+const selectTriggerStyles = cva(
+  "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-ui-border bg-ui-background text-left enabled:data-hover:control-hover focus-visible:-outline-offset-3!",
+  {
+    variants: {
+      compact: { true: "h-11 px-2", false: "px-3" },
+      fontPreview: { true: "py-0", false: "" },
+    },
+    compoundVariants: [
+      { compact: false, fontPreview: false, className: "py-2" },
+      { compact: true, fontPreview: false, className: "py-0" },
+    ],
+  },
+);
+
+const popupStyles = cva(
+  "z-70 w-(--button-width) max-w-[calc(100vw-24px)] rounded-sm border border-solid border-ui-border bg-ui-panel p-1 [--anchor-gap:4px] [--anchor-padding:12px] transition-opacity duration-(--ui-motion-popup,140ms) data-closed:opacity-0 motion-reduce:transition-none",
+  { variants: { compact: { true: "min-w-42.5", false: "" } } },
+);
+
+const selectOptionStyles = cva(
+  "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 wrap-break-word [--control-hover-base:var(--panel)] enabled:hover:control-hover enabled:data-focus:control-hover data-selected:bg-ui-selected data-selected:text-ui-accent data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
+  {
+    variants: {
+      fontPreview: {
+        true: "py-0 text-[20px]! leading-7",
+        false: "py-2 text-sm!",
+      },
+    },
+  },
+);
+
 export function SelectField({
   id,
   label,
@@ -526,11 +558,10 @@ export function SelectField({
               })
             : undefined
         }
-        className={clsx(
-          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-ui-border bg-ui-background px-3 py-2 text-left enabled:data-hover:control-hover focus-visible:-outline-offset-3!",
-          largeFontPreview && "py-0!",
-          compact && "h-11 px-2! py-0!",
-        )}
+        className={selectTriggerStyles({
+          compact,
+          fontPreview: largeFontPreview,
+        })}
       >
         {SelectedIcon && (
           <SelectedIcon aria-hidden="true" className="size-4.5 shrink-0" />
@@ -554,13 +585,11 @@ export function SelectField({
         <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
       </ListboxButton>
       <ListboxOptions
+        transition
         data-overlay-scroll="y"
         anchor="bottom"
         modal={false}
-        className={clsx(
-          "z-70 w-(--button-width) max-w-[calc(100vw-24px)] rounded-sm border border-solid border-ui-border bg-ui-panel p-1 [--anchor-gap:4px] [--anchor-padding:12px]",
-          compact && "min-w-42.5",
-        )}
+        className={popupStyles({ compact })}
       >
         {options.map((option) => {
           const OptionIcon = option.icon;
@@ -579,10 +608,7 @@ export function SelectField({
                   : undefined,
                 fontWeight: option.fontWeight,
               }}
-              className={clsx(
-                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word [--control-hover-base:var(--panel)] enabled:hover:control-hover enabled:data-focus:control-hover data-selected:bg-ui-selected data-selected:text-ui-accent data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
-                largeFontPreview && "py-0! text-[20px]! leading-7",
-              )}
+              className={selectOptionStyles({ fontPreview: largeFontPreview })}
             >
               {OptionIcon && (
                 <OptionIcon aria-hidden="true" className="size-4.5 shrink-0" />
@@ -663,6 +689,67 @@ export function ColorField({
   );
 }
 
+const disclosureTriggerStyles = cva(
+  "relative flex w-full items-center text-left focus-visible:-outline-offset-3!",
+  {
+    variants: {
+      level: {
+        main: "min-h-14 gap-3 rounded-none! border-0! bg-transparent! py-3! pr-12! pl-3! text-sm! [--control-hover-base:var(--panel)] data-hover:control-hover!",
+        customize:
+          "min-h-11 cursor-pointer gap-2 rounded-sm border border-solid border-ui-border bg-ui-background px-3 py-2 text-xs text-ui-muted data-hover:control-hover hover:text-ui-text data-open:text-ui-text",
+      },
+    },
+    defaultVariants: { level: "main" },
+  },
+);
+
+export function DisclosureTrigger({
+  level,
+  className,
+  ref,
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof disclosureTriggerStyles> & {
+    ref?: Ref<HTMLButtonElement>;
+  }) {
+  return (
+    <DisclosureButton
+      {...props}
+      ref={ref}
+      type={type}
+      className={disclosureTriggerStyles({ level, className })}
+    />
+  );
+}
+
+export function DisclosureChevron({ open }: { open: boolean }) {
+  const transition = useUiTransition("layout");
+  return (
+    <m.span
+      aria-hidden="true"
+      className="flex shrink-0"
+      animate={{ rotate: open ? 180 : 0 }}
+      transition={transition}
+    >
+      <ChevronDown className="size-4!" />
+    </m.span>
+  );
+}
+
+const switchStyles = cva(
+  "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent transition-colors motion-reduce:transition-none",
+  {
+    variants: {
+      checked: {
+        true: "bg-ui-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover enabled:data-hover:control-hover",
+        false:
+          "bg-ui-selected [--control-hover-base:var(--selected)] [--control-hover-tint:var(--text)] enabled:hover:control-hover enabled:data-hover:control-hover",
+      },
+    },
+  },
+);
+
 export function Toggle({
   checked,
   onChange,
@@ -672,7 +759,7 @@ export function Toggle({
   onChange: (checked: boolean) => void;
   label: string;
 }) {
-  const reduced = useReducedMotion();
+  const transition = useUiTransition("control");
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm font-semibold">{label}</span>
@@ -680,18 +767,13 @@ export function Toggle({
         checked={checked}
         onChange={onChange}
         aria-label={label}
-        className={clsx(
-          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent transition-colors motion-reduce:transition-none",
-          checked
-            ? "bg-ui-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover enabled:data-hover:control-hover"
-            : "bg-ui-selected [--control-hover-base:var(--selected)] [--control-hover-tint:var(--text)] enabled:hover:control-hover enabled:data-hover:control-hover",
-        )}
+        className={switchStyles({ checked })}
       >
         <m.span
           aria-hidden="true"
           initial={false}
           animate={{ x: checked ? 20 : 0 }}
-          transition={{ duration: reduced ? 0 : 0.16 }}
+          transition={transition}
           className="absolute top-1 left-1 size-4 rounded-full bg-ui-panel"
         />
       </Switch>
@@ -707,7 +789,7 @@ export function AccordionPanel({
   onReveal?: (panel: HTMLDivElement) => void;
 }) {
   const present = useIsPresent();
-  const reduced = useReducedMotion();
+  const transition = useUiTransition("layout");
   const panel = useRef<HTMLDivElement>(null);
   const reveal = () => {
     if (present && panel.current) onReveal?.(panel.current);
@@ -719,10 +801,8 @@ export function AccordionPanel({
       ref={panel}
       inert={!present}
       aria-hidden={present ? undefined : true}
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      motionTransition={{ duration: reduced ? 0 : 0.18 }}
+      {...motionPresets.collapse}
+      motionTransition={transition}
       onUpdate={onReveal ? reveal : undefined}
       onAnimationComplete={onReveal ? reveal : undefined}
       className="overflow-hidden"

@@ -20,6 +20,7 @@ import {
 } from "react";
 import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
+import { motionDuration } from "./ui/motion";
 import { useEditorState } from "../browser/navigation";
 
 const compactQuery =
@@ -301,7 +302,7 @@ export function EditorLayout({
               animate={compact ? { height: "auto" } : { x: 0 }}
               exit={compact ? { height: 0 } : { x: "100%" }}
               motionTransition={{
-                duration: reduced ? 0 : 0.18,
+                duration: reduced ? 0 : motionDuration.layout,
                 ease: "easeInOut",
               }}
               className={

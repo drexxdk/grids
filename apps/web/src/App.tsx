@@ -767,7 +767,7 @@ export default function App() {
   }
   return (
     <>
-      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none panel-right:grid! panel-right:grid-cols-[minmax(0,1fr)_0px]! panel-right:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_350px]! panel-bottom:flex! panel-bottom:flex-col!">
+      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-(--ui-motion-layout,180ms) ease-in-out motion-reduce:transition-none panel-right:grid! panel-right:grid-cols-[minmax(0,1fr)_0px]! panel-right:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_350px]! panel-bottom:flex! panel-bottom:flex-col!">
         <EditorLayout
           canvasControls={null}
           resetPanel={renderResetPanel()}
