@@ -53,7 +53,6 @@ export function GridPreview({
     frameHeight: number;
     previewWidth: number;
     controlsHeight: number;
-    rowOffset: number;
     height: number;
     boardWidth: number;
     cellWidth: number;
@@ -102,32 +101,14 @@ export function GridPreview({
           toolbarHeight -
           1,
       );
-      const scroller = container.parentElement;
-      const nativeBar =
-        parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--native-scrollbar-width",
-          ),
-        ) || 0;
-      const stableHeight = scroller
-        ? workspaceHeight +
-          (scroller.offsetHeight - scroller.clientHeight) -
-          nativeBar
-        : workspaceHeight;
       const availableWidth = workspaceWidth + 12;
-      const availableHeight = stableHeight + 12;
-      const viewport = frame.querySelector<HTMLElement>(
-        "[data-canvas-viewport]",
-      );
-      const scrollbarWidth = viewport
-        ? viewport.offsetWidth - viewport.clientWidth
-        : 0;
+      const availableHeight = workspaceHeight + 12;
       const fitCellWidth = (headingRows: number) =>
         Math.max(
           previewCardMinWidth,
           Math.min(
             previewCardMaxWidth,
-            (availableWidth - scrollbarWidth) / widthRatio,
+            availableWidth / widthRatio,
             availableHeight /
               (boardHeightRatio +
                 (board.headingVisible
@@ -141,7 +122,7 @@ export function GridPreview({
         for (; headingRows < 3; headingRows++) {
           const width = fitCellWidth(headingRows);
           const headingWidth =
-            Math.min(availableWidth, width * widthRatio + scrollbarWidth) -
+            Math.min(availableWidth, width * widthRatio) -
             width * paddingRatio -
             Math.max(12, width * paddingRatio);
           if (
@@ -159,17 +140,11 @@ export function GridPreview({
         : 0;
       const cellWidth = fitCellWidth(headingRows);
       const boardWidth = cellWidth * widthRatio;
-      const viewportWidth = Math.max(
-        1,
-        Math.min(availableWidth, boardWidth + scrollbarWidth),
-      );
-      const horizontalScrollbar =
-        boardWidth > viewportWidth - scrollbarWidth + 1 ? scrollbarWidth : 0;
+      const viewportWidth = Math.max(1, Math.min(availableWidth, boardWidth));
       const height = Math.max(
         1,
         cellWidth *
-          (boardHeightRatio - (board.headingVisible ? paddingRatio : 0)) +
-          horizontalScrollbar,
+          (boardHeightRatio - (board.headingVisible ? paddingRatio : 0)),
       );
       const next = {
         width: viewportWidth + 60,
@@ -179,7 +154,6 @@ export function GridPreview({
           availableHeight,
           height + cellWidth * headingAreaRatio,
         ),
-        rowOffset: -scrollbarWidth / 2,
         height,
         boardWidth,
         cellWidth,
@@ -236,7 +210,8 @@ export function GridPreview({
   return (
     <div
       data-workspace-scroll
-      className="relative min-h-0 flex-1 overflow-auto overscroll-x-contain scrollbar-gutter-stable"
+      data-overlay-scroll="both"
+      className="relative min-h-0 flex-1 overflow-auto overscroll-x-contain"
     >
       <div className="canvas-area sticky top-0 left-0 m-0! flex h-full min-h-0 w-full shrink-0 flex-col justify-center-safe p-3! pr-0! pb-0!">
         <GridResizer
@@ -258,7 +233,6 @@ export function GridPreview({
               "--preview-board-width": size
                 ? `${size.boardWidth}px`
                 : undefined,
-              "--preview-scrollbar-width": `${-(size?.rowOffset ?? 0) * 2}px`,
               "--grid-top-padding": board.headingVisible
                 ? "0px"
                 : `${size?.padding ?? board.canvasPadding ?? 60}px`,
@@ -282,7 +256,7 @@ export function GridPreview({
         data-workspace-extent
         className="pointer-events-none"
         style={{
-          width: `calc(100% + ${overflow.width}px + ${overflow.width > 0 && overflow.height === 0 ? "var(--native-scrollbar-width,0px)" : "0px"})`,
+          width: `calc(100% + ${overflow.width}px)`,
           height: overflow.height,
         }}
       />

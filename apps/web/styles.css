@@ -1,6 +1,7 @@
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "overlayscrollbars/overlayscrollbars.css" layer(components);
 
 @utility control-hover {
   background-color: color-mix(
@@ -144,21 +145,41 @@
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
 }
 body {
   margin: 0;
 }
-html {
-  scrollbar-gutter: stable;
+.os-theme-gridz {
+  touch-action: auto;
+  --os-size: 12px;
+  --os-padding-perpendicular: 3px;
+  --os-padding-axis: 3px;
+  --os-track-bg: transparent;
+  --os-track-bg-hover: transparent;
+  --os-track-bg-active: transparent;
+  --os-handle-border-radius: 3px;
+  --os-handle-bg: color-mix(in srgb, var(--muted, #8f9a9e) 65%, transparent);
+  --os-handle-bg-hover: var(--muted, #8f9a9e);
+  --os-handle-bg-active: var(--text, #eef1f3);
+  --os-handle-perpendicular-size: 50%;
+  --os-handle-perpendicular-size-hover: 100%;
+  --os-handle-perpendicular-size-active: 100%;
 }
-html:has(.app-layout) {
-  scrollbar-gutter: auto;
-  padding-right: var(--native-scrollbar-width, 0px);
+.os-theme-gridz .os-scrollbar-track,
+.os-theme-gridz .os-scrollbar-handle {
+  touch-action: auto;
+}
+@media (pointer: coarse) {
+  .os-theme-gridz {
+    pointer-events: none !important;
+  }
 }
 html:has(#headlessui-portal-root [role="dialog"][aria-modal="true"]) {
   overflow: hidden;
-  scrollbar-gutter: auto;
-  padding-right: var(--scrollbar-width, 0px) !important;
 }
 button,
 input,

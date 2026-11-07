@@ -600,165 +600,258 @@ for (const [mode, controlsTest] of [
   );
 }
 
-for (const [mode, rowTest] of [
-  ["mobile", touchTest],
-  ["classic", scrollbarTest],
-]) {
-  rowTest(
-    `compact ${mode} panels reserve only native scrollbar space`,
-    async ({ page }) => {
-      await page.goto("./");
-      await useComicExample(page);
-      await setEditorViewport(page, { width: 390, height: 720 });
-      const shelfHeight = () =>
-        page
-          .locator("[data-editor-sidebar]")
-          .evaluate((element) => element.getBoundingClientRect().height);
-      const checkRow = async (row, cardSelector) => {
-        await expect(row).toBeVisible();
-        await expect
-          .poll(() =>
-            row.evaluate((element, selector) => {
-              const style = getComputedStyle(element);
-              const bounds = element.getBoundingClientRect();
-              const card = element
-                .querySelector(selector)
-                .getBoundingClientRect();
-              return {
-                top: parseFloat(style.paddingTop),
-                bottom: parseFloat(style.paddingBottom),
-                scrollbar: style.scrollbarWidth,
-                scrollbarTakesSpace:
-                  element.offsetHeight > element.clientHeight,
-                cardFills:
-                  Math.abs(card.top - bounds.top - 12) <= 1 &&
-                  Math.abs(
-                    card.bottom - bounds.top - element.clientHeight + 12,
-                  ) <= 1,
-              };
-            }, cardSelector),
-          )
-          .toEqual({
-            top: 12,
-            bottom: 12,
-            scrollbar: "auto",
-            scrollbarTakesSpace: mode === "classic",
-            cardFills: true,
-          });
-      };
-      for (const shape of ["portrait", "landscape", "square"]) {
-        await selectField(page, "image-shape", shape);
-        await openSidebarPanel(page, "Images");
-        await expect.poll(shelfHeight).toBeCloseTo(200, 0);
-        await checkRow(page.locator("#asset-library"), "[data-library-image]");
-      }
-      await openSidebarPanel(page, "Design");
-      await expect.poll(shelfHeight).toBeCloseTo(200, 0);
-      await openDesignSection(page, "Colors");
-      await page
-        .getByRole("button", { name: "Customize Colors", exact: true })
-        .click();
-      await expect
-        .poll(() =>
-          page.locator("[data-sidebar-panels]").evaluate((element) => ({
-            padding: getComputedStyle(element).paddingRight,
-            scrollbar: getComputedStyle(element).scrollbarWidth,
-            scrollable: element.scrollHeight > element.clientHeight,
-            scrollbarTakesSpace: element.offsetWidth > element.clientWidth,
-          })),
-        )
-        .toEqual({
-          padding: "0px",
-          scrollbar: "auto",
-          scrollable: true,
-          scrollbarTakesSpace: mode === "classic",
-        });
-      await setEditorViewport(page, { width: 390, height: 360 });
-      await expect.poll(shelfHeight).toBeCloseTo(108, 0);
-      const measureShelf = () =>
-        page.locator("[data-sidebar-panels]").evaluate((element) => {
+test("overlay scrollbars keep compact panels and modals gutter-free", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await useComicExample(page);
+  await setEditorViewport(page, { width: 390, height: 720 });
+  const shelfHeight = () =>
+    page
+      .locator("[data-editor-sidebar]")
+      .evaluate((element) => element.getBoundingClientRect().height);
+  const checkRow = async (row, cardSelector) => {
+    await expect(row).toBeVisible();
+    await expect
+      .poll(() =>
+        row.evaluate((element, selector) => {
+          const style = getComputedStyle(element);
           const bounds = element.getBoundingClientRect();
-          const builder = element
-            .querySelector('[role="tabpanel"]:not([hidden])')
-            .firstElementChild.getBoundingClientRect();
+          const card = element.querySelector(selector).getBoundingClientRect();
           return {
-            left: bounds.left,
-            width: bounds.width,
-            clientWidth: element.clientWidth,
-            contentLeft: builder.left,
-            contentRight: builder.right,
-            contentWidth: builder.width,
-            verticalOverflow: element.scrollHeight > element.clientHeight + 1,
-            tabPadding: getComputedStyle(
-              element.querySelector('[role="tabpanel"]:not([hidden])'),
-            ).paddingRight,
+            top: parseFloat(style.paddingTop),
+            bottom: parseFloat(style.paddingBottom),
+            scrollbar: style.scrollbarWidth,
+            scrollbarTakesSpace: element.offsetHeight > element.clientHeight,
+            cardFills:
+              Math.abs(card.top - bounds.top - 12) <= 1 &&
+              Math.abs(card.bottom - bounds.top - element.clientHeight + 12) <=
+                1,
           };
-        });
-      const beforeDialog = await measureShelf();
-      await page.locator("#export-grid-header").click();
-      const dialog = page.getByRole("dialog", {
-        name: "Export grid",
-        exact: true,
+        }, cardSelector),
+      )
+      .toEqual({
+        top: 12,
+        bottom: 12,
+        scrollbar: "none",
+        scrollbarTakesSpace: false,
+        cardFills: true,
       });
-      await expect(dialog).toBeVisible();
-      if (mode === "classic") {
-        await expect
-          .poll(() =>
-            page.evaluate(() =>
-              parseFloat(
-                getComputedStyle(document.documentElement).getPropertyValue(
-                  "--fixed-scrollbar-inset",
-                ),
-              ),
-            ),
-          )
-          .toBeGreaterThan(0);
-      }
-      await expect.poll(measureShelf).toEqual(beforeDialog);
-      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-      await expect.poll(measureShelf).toEqual(beforeDialog);
-      await openSidebarPanel(page, "Images");
-      await expect
-        .poll(() =>
-          page
-            .locator("[data-sidebar-panels]")
-            .evaluate(
-              (element) => element.scrollHeight > element.clientHeight + 1,
-            ),
-        )
-        .toBe(false);
-      const beforeImagesDialog = await measureShelf();
-      await page.locator("#export-grid-header").click();
-      await expect(dialog).toBeVisible();
-      const modalInset = () =>
-        page.evaluate(() =>
-          parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-              "--fixed-scrollbar-inset",
-            ),
-          ),
-        );
-      if (mode === "classic") await expect.poll(modalInset).toBeGreaterThan(0);
-      await expect
-        .poll(async () => {
-          const current = await measureShelf();
-          const inset = await modalInset();
-          return (
-            Math.abs(
-              beforeImagesDialog.contentWidth - current.contentWidth - inset,
-            ) < 1 &&
-            current.left === beforeImagesDialog.left &&
-            current.width === beforeImagesDialog.width
-          );
-        })
-        .toBe(true);
-      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-      await expect.poll(measureShelf).toEqual(beforeImagesDialog);
-    },
+  };
+  for (const shape of ["portrait", "landscape", "square"]) {
+    await selectField(page, "image-shape", shape);
+    await openSidebarPanel(page, "Images");
+    await expect.poll(shelfHeight).toBeCloseTo(200, 0);
+    await checkRow(page.locator("#asset-library"), "[data-library-image]");
+  }
+  await openSidebarPanel(page, "Design");
+  await expect.poll(shelfHeight).toBeCloseTo(200, 0);
+  await openDesignSection(page, "Colors");
+  await page
+    .getByRole("button", { name: "Customize Colors", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.locator("[data-sidebar-panels]").evaluate((element) => ({
+        padding: getComputedStyle(element).paddingRight,
+        scrollbar: getComputedStyle(element).scrollbarWidth,
+        scrollable: element.scrollHeight > element.clientHeight,
+        scrollbarTakesSpace: element.offsetWidth > element.clientWidth,
+      })),
+    )
+    .toEqual({
+      padding: "0px",
+      scrollbar: "none",
+      scrollable: true,
+      scrollbarTakesSpace: false,
+    });
+  await setEditorViewport(page, { width: 390, height: 360 });
+  await expect.poll(shelfHeight).toBeCloseTo(108, 0);
+  const measureShelf = () =>
+    page.locator("[data-sidebar-panels]").evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const builder = element
+        .querySelector('[role="tabpanel"]:not([hidden])')
+        .firstElementChild.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        width: bounds.width,
+        clientWidth: element.clientWidth,
+        contentLeft: builder.left,
+        contentRight: builder.right,
+        contentWidth: builder.width,
+        verticalOverflow: element.scrollHeight > element.clientHeight + 1,
+        tabPadding: getComputedStyle(
+          element.querySelector('[role="tabpanel"]:not([hidden])'),
+        ).paddingRight,
+      };
+    });
+  const beforeDialog = await measureShelf();
+  await page.locator("#export-grid-header").click();
+  const dialog = page.getByRole("dialog", {
+    name: "Export grid",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await expect.poll(measureShelf).toEqual(beforeDialog);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(measureShelf).toEqual(beforeDialog);
+  await openSidebarPanel(page, "Images");
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-sidebar-panels]")
+        .evaluate((element) => element.scrollHeight > element.clientHeight + 1),
+    )
+    .toBe(false);
+  const beforeImagesDialog = await measureShelf();
+  await page.locator("#export-grid-header").click();
+  await expect(dialog).toBeVisible();
+  await expect.poll(measureShelf).toEqual(beforeImagesDialog);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(measureShelf).toEqual(beforeImagesDialog);
+});
+
+test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 306 });
+  await page.goto("./");
+  await openSidebarPanel(page, "Reset");
+  const aside = page.locator("[data-editor-sidebar]");
+  const panels = aside.locator("[data-sidebar-panels]");
+  await expect(panels.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
+    "opacity",
+    "1",
   );
-}
+  await expect(panels).toHaveCSS("scrollbar-width", "none");
+  const sidebarHandle = panels.locator(
+    ":scope > .os-scrollbar-vertical .os-scrollbar-handle",
+  );
+  const stickyBounds = await aside
+    .locator("[data-sidebar-sticky]")
+    .boundingBox();
+  const sidebarHandleBounds = await sidebarHandle.boundingBox();
+  expect(sidebarHandleBounds.y).toBeGreaterThanOrEqual(
+    stickyBounds.y + stickyBounds.height,
+  );
+  expect(
+    await sidebarHandle.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return element.contains(
+        document.elementFromPoint(
+          bounds.x + bounds.width / 2,
+          bounds.y + bounds.height / 2,
+        ),
+      );
+    }),
+  ).toBe(true);
+  await sidebarHandle.hover();
+  await page.mouse.move(
+    sidebarHandleBounds.x + sidebarHandleBounds.width / 2,
+    sidebarHandleBounds.y + sidebarHandleBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    sidebarHandleBounds.x + sidebarHandleBounds.width / 2,
+    sidebarHandleBounds.y + sidebarHandleBounds.height / 2 + 30,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(() => panels.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await aside.locator("[data-sidebar-sticky]").boundingBox()).toEqual(
+    stickyBounds,
+  );
+  await page.setViewportSize({ width: 1440, height: 180 });
+  const headerBounds = await page.locator("[data-canvas-header]").boundingBox();
+  await page.locator("#export-grid-header").click();
+  const modal = page.locator("[data-modal-scroll]");
+  await expect(modal.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  expect(
+    await modal.evaluate(
+      (element) => element.offsetWidth - element.clientWidth,
+    ),
+  ).toBe(0);
+  expect(await page.locator("[data-canvas-header]").boundingBox()).toEqual(
+    headerBounds,
+  );
+  const handle = modal.locator(
+    ":scope > .os-scrollbar-vertical .os-scrollbar-handle",
+  );
+  await handle.hover();
+  const handleBounds = await handle.boundingBox();
+  await page.mouse.move(
+    handleBounds.x + handleBounds.width / 2,
+    handleBounds.y + handleBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBounds.x + handleBounds.width / 2,
+    handleBounds.y + handleBounds.height / 2 + 50,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(() => modal.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await page.screenshot({ path: testInfo.outputPath("overlay-modal.png") });
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 360 });
+  await openSidebarPanel(page, "Design");
+  await selectField(page, "heading-font", "Bangers");
+  await page.setViewportSize({ width: 1440, height: 240 });
+  await page.locator("#heading-font").click();
+  const listbox = page.getByRole("listbox");
+  await expect
+    .poll(() =>
+      listbox.evaluate((node) => node.scrollHeight > node.clientHeight),
+    )
+    .toBe(true);
+  await expect(listbox.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 180 });
+  await expect(page.locator("[data-editor-sidebar]")).toHaveCount(1);
+  const rail = page.locator("[data-panel-controls]");
+  await expect(rail.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  expect(
+    await rail.evaluate((element) => element.offsetWidth - element.clientWidth),
+  ).toBe(0);
+  await page.screenshot({ path: testInfo.outputPath("overlay-tab-rail.png") });
+  const missing = await page.evaluate(() =>
+    [...document.querySelectorAll("*")]
+      .filter((element) => {
+        if (
+          element.closest(".os-scrollbar") ||
+          element.matches("textarea, input")
+        )
+          return false;
+        const style = getComputedStyle(element);
+        return (
+          ((/auto|scroll/.test(style.overflowX) &&
+            element.scrollWidth > element.clientWidth + 1) ||
+            (/auto|scroll/.test(style.overflowY) &&
+              element.scrollHeight > element.clientHeight + 1)) &&
+          !element.hasAttribute("data-overlay-scroll")
+        );
+      })
+      .map((element) => element.id || element.className),
+  );
+  expect(missing).toEqual([]);
+});
 
 touchTest(
   "compact shelf keeps vertical tabs reachable beside images, design and reset",
@@ -2017,7 +2110,6 @@ scrollbarTest(
       await page
         .getByRole("button", { name: "Remove row", exact: true })
         .click();
-    await openSidebarPanel(page, "Settings");
     await selectField(page, "caption-position", "overlay-bottom");
     await closeSidebarPanel(page);
     const scroller = page.locator("[data-workspace-scroll]");
@@ -2049,22 +2141,14 @@ scrollbarTest(
       const overflow = await viewport.evaluate(
         (element) => element.scrollWidth - element.clientWidth,
       );
-      const gutter = await page.evaluate(() =>
-        parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--native-scrollbar-width",
-          ),
-        ),
-      );
-      expect(gutter).toBeGreaterThan(0);
-      if (width === narrowOverflowWidth) expect(overflow).toBeLessThan(gutter);
+      if (width === narrowOverflowWidth) expect(overflow).toBeLessThan(12);
       await expect
         .poll(() =>
           scroller.evaluate(
             (element) => element.offsetHeight - element.clientHeight,
           ),
         )
-        .toBeGreaterThan(0);
+        .toBe(0);
       expect(
         await viewport.evaluate(
           (element) => element.scrollHeight - element.clientHeight,
@@ -2225,16 +2309,16 @@ nativeTouchTest(
           });
         };
         await swipe(
-          { x: bounds.x + 4, y: bounds.y + 350 },
-          { x: bounds.x + 4, y: bounds.y + 180 },
+          { x: bounds.x + 4, y: bounds.y + bounds.height * 0.8 },
+          { x: bounds.x + 4, y: bounds.y + bounds.height * 0.35 },
         );
         const area = await scroller.evaluate((element) => ({
           width: element.clientWidth,
           height: element.clientHeight,
         }));
         await swipe(
-          { x: bounds.x + area.width * 0.8, y: bounds.y + area.height - 4 },
-          { x: bounds.x + area.width * 0.3, y: bounds.y + area.height - 4 },
+          { x: bounds.x + area.width * 0.8, y: bounds.y + 4 },
+          { x: bounds.x + area.width * 0.3, y: bounds.y + 4 },
         );
         await session.detach();
       }

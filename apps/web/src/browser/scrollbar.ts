@@ -1,77 +1,84 @@
-export function publishScrollbarWidth() {
-  const root = document.documentElement;
-  const previous = root.style.getPropertyValue("--scrollbar-width");
-  const previousNativeWidth = root.style.getPropertyValue(
-    "--native-scrollbar-width",
+import { OverlayScrollbars } from "overlayscrollbars";
+
+export function attachOverlayScrollbar(
+  target: HTMLElement,
+  axis: "x" | "y" | "both" = "both",
+) {
+  return OverlayScrollbars(
+    {
+      target,
+      elements: { viewport: target },
+      scrollbars: { slot: target },
+    },
+    {
+      overflow: {
+        x: axis === "y" ? "hidden" : "scroll",
+        y: axis === "x" ? "hidden" : "scroll",
+      },
+      scrollbars: {
+        theme: "os-theme-gridz",
+        autoHide: "never",
+        clickScroll: "instant",
+        pointers: ["mouse", "pen"],
+      },
+    },
   );
-  const probe = document.createElement("div");
-  probe.setAttribute("aria-hidden", "true");
-  probe.style.cssText =
-    "position:fixed;top:0;left:0;width:100%;height:0;visibility:hidden;pointer-events:none";
-  document.body.append(probe);
-  const scrollProbe = document.createElement("div");
-  scrollProbe.setAttribute("aria-hidden", "true");
-  scrollProbe.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:100px;height:100px;overflow:scroll;visibility:hidden;pointer-events:none";
-  document.body.append(scrollProbe);
+}
 
-  const publish = (name: string, value: string) => {
-    if (root.style.getPropertyValue(name) !== value)
-      root.style.setProperty(name, value);
+export function installOverlayScrollbars() {
+  const instances = new Map<
+    HTMLElement,
+    ReturnType<typeof attachOverlayScrollbar>
+  >();
+  const synchronize = (target: HTMLElement) => {
+    const axis = target.dataset.overlayScroll;
+    const existing = instances.get(target);
+    if (axis !== "x" && axis !== "y" && axis !== "both") {
+      existing?.destroy();
+      instances.delete(target);
+      return;
+    }
+    if (existing) {
+      existing.options({
+        overflow: {
+          x: axis === "y" ? "hidden" : "scroll",
+          y: axis === "x" ? "hidden" : "scroll",
+        },
+      });
+    } else {
+      instances.set(target, attachOverlayScrollbar(target, axis));
+    }
   };
-  const update = () => {
-    const viewportWidth = window.innerWidth;
-    const nativeWidth = Math.max(
-      0,
-      scrollProbe.offsetWidth - scrollProbe.clientWidth,
-    );
-    const modalScroll = document.querySelector<HTMLElement>(
-      "#headlessui-portal-root [data-modal-scroll]",
-    );
-    const modalInset = modalScroll
-      ? Math.max(0, modalScroll.offsetWidth - modalScroll.clientWidth)
-      : 0;
-    const modalOpen = document.querySelector(
-      '#headlessui-portal-root [role="dialog"][aria-modal="true"]',
-    );
-    const scrollbarWidth = modalOpen
-      ? null
-      : Math.max(
-          0,
-          viewportWidth -
-            probe.offsetWidth +
-            parseFloat(getComputedStyle(root).paddingRight),
-        );
-    publish("--native-scrollbar-width", `${nativeWidth}px`);
-    publish("--fixed-scrollbar-inset", `${modalInset}px`);
-    if (scrollbarWidth !== null)
-      publish("--scrollbar-width", `${scrollbarWidth}px`);
+  const discover = (node: Node) => {
+    if (!(node instanceof HTMLElement)) return;
+    if (node.hasAttribute("data-overlay-scroll")) synchronize(node);
+    node
+      .querySelectorAll<HTMLElement>("[data-overlay-scroll]")
+      .forEach(synchronize);
   };
-
-  update();
-  window.addEventListener("resize", update);
+  discover(document.body);
   const observer = new MutationObserver((records) => {
-    if (
-      records.some(
-        ({ target }) =>
-          target === document.body ||
-          (target instanceof Element &&
-            target.closest("#headlessui-portal-root")),
-      )
-    )
-      update();
+    for (const record of records) {
+      if (record.type === "attributes" && record.target instanceof HTMLElement)
+        synchronize(record.target);
+      for (const node of record.addedNodes) discover(node);
+    }
+    for (const [target, instance] of instances) {
+      if (!target.isConnected) {
+        instance.destroy();
+        instances.delete(target);
+      }
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
-
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-overlay-scroll"],
+  });
   return () => {
     observer.disconnect();
-    window.removeEventListener("resize", update);
-    probe.remove();
-    scrollProbe.remove();
-    if (previous) root.style.setProperty("--scrollbar-width", previous);
-    else root.style.removeProperty("--scrollbar-width");
-    if (previousNativeWidth)
-      root.style.setProperty("--native-scrollbar-width", previousNativeWidth);
-    else root.style.removeProperty("--native-scrollbar-width");
+    for (const instance of instances.values()) instance.destroy();
+    instances.clear();
   };
 }

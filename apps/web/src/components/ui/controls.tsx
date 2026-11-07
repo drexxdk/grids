@@ -344,6 +344,7 @@ export function SelectField({
         <ChevronDown aria-hidden="true" className="size-4 shrink-0" />
       </ListboxButton>
       <ListboxOptions
+        data-overlay-scroll="y"
         anchor="bottom"
         modal={false}
         className={clsx(
@@ -619,6 +620,7 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
     "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left text-[11px] no-underline [--control-hover-base:var(--panel)] not-data-disabled:hover:control-hover data-focus:control-hover data-disabled:opacity-50";
   return (
     <MenuItems
+      data-overlay-scroll="y"
       static
       modal={false}
       anchor="bottom end"

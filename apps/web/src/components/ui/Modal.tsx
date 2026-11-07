@@ -114,6 +114,7 @@ export function Modal({
           />
           <div
             data-modal-scroll
+            data-overlay-scroll="y"
             className={`fixed inset-0 overflow-y-auto overscroll-contain ${fullscreen ? "" : "p-4"}`}
           >
             <div className="flex min-h-full items-center justify-center">

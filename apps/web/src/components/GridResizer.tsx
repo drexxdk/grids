@@ -160,7 +160,7 @@ export function GridResizer({
         <span
           aria-hidden="true"
           data-image-canvas-background
-          className="pointer-events-none absolute top-(--frame-shift-y,0px) bottom-0 left-0 right-(--preview-scrollbar-width,0px) -z-10 bg-(--board-bg)"
+          className="pointer-events-none absolute top-(--frame-shift-y,0px) inset-x-0 bottom-0 -z-10 bg-(--board-bg)"
         />
         {heading && (
           <div className="relative z-10 translate-y-(--frame-shift-y,0px) px-(--canvas-inset,0px) pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">

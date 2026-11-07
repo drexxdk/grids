@@ -767,7 +767,7 @@ export default function App() {
   }
   return (
     <>
-      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_calc(350px-var(--native-scrollbar-width,0px))]! max-[901px]:flex! max-[901px]:flex-col!">
+      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_350px]! max-[901px]:flex! max-[901px]:flex-col!">
         <EditorLayout
           canvasControls={null}
           resetPanel={renderResetPanel()}
@@ -853,10 +853,11 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:block"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:*:shrink-0 max-[901px]:block"
               >
                 <div
                   id="asset-library"
+                  data-overlay-scroll="x"
                   className="asset-library @container/shelf max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:-m-3! max-[901px]:p-3!"
                 >
                   <UploadTile
@@ -929,7 +930,7 @@ export default function App() {
           )}
           {() => (
             <section
-              className="workspace relative flex h-full min-h-0 flex-1 flex-col overflow-hidden in-[.app-layout:not(:has([data-sidebar-open]))]:w-[calc(100%+var(--native-scrollbar-width,0px))]"
+              className="workspace relative flex h-full min-h-0 flex-1 flex-col overflow-hidden"
               aria-label={t("editor.region")}
             >
               {conflict && (

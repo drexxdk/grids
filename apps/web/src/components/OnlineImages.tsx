@@ -347,6 +347,7 @@ export function OnlineImages({
         {searchActions}
       </div>
       <div
+        data-overlay-scroll={compactRow ? "x" : "none"}
         className={
           compactRow
             ? "contents max-[901px]:col-start-2 max-[901px]:row-span-2 max-[901px]:row-start-1 max-[901px]:flex max-[901px]:h-28 max-[901px]:min-w-0 max-[901px]:items-stretch max-[901px]:gap-2 max-[901px]:overflow-x-scroll max-[901px]:overflow-y-hidden max-[901px]:scrollbar-safe-row max-[901px]:after:w-2 max-[901px]:after:shrink-0 max-[901px]:after:content-['']"

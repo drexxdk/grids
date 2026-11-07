@@ -9,7 +9,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import {
-  useCallback,
   useEffect,
   useEffectEvent,
   useId,
@@ -66,31 +65,6 @@ export function EditorLayout({
   }, [selectedPanel]);
   const panelOrder = [0, 2, 3] as const;
   const panelsId = useId();
-  const [sidebarPanels, setSidebarPanels] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const attachSidebarPanels = useCallback((element: HTMLDivElement | null) => {
-    if (!element) return;
-    setSidebarPanels(element);
-    return () =>
-      setSidebarPanels((current) => (current === element ? null : current));
-  }, []);
-  const [panelScrollsVertically, setPanelScrollsVertically] = useState(false);
-  useLayoutEffect(() => {
-    const panels = sidebarPanels;
-    if (!compact || !panels) return;
-    const measure = () => {
-      setPanelScrollsVertically(panels.scrollHeight > panels.clientHeight + 1);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(panels);
-    const activePanel = panels.querySelector<HTMLElement>(
-      '[role="tabpanel"]:not([hidden])',
-    );
-    if (activePanel) observer.observe(activePanel);
-    measure();
-    return () => observer.disconnect();
-  }, [compact, selectedPanel, sidebarPanels]);
   const panelScroll = useRef(
     new Map<number, Map<HTMLElement, [number, number]>>(),
   );
@@ -184,25 +158,10 @@ export function EditorLayout({
         ) +
         gap * Math.max(0, children.length - 1);
       // Width-based so the result does not depend on the current layout mode.
-      const inset =
-        parseFloat(
-          getComputedStyle(actions).getPropertyValue("--fixed-scrollbar-inset"),
-        ) || 0;
-      // Scroll layout already shrinks the header by the inset.
-      const headerWidth =
-        (headerElement.current?.clientWidth ?? 0) +
-        (headerLayout === "scroll" ? inset : 0);
-      const gutter = compact
-        ? 0
-        : parseFloat(
-            getComputedStyle(controls).getPropertyValue(
-              "--native-scrollbar-width",
-            ),
-          ) || 0;
-      const zoneWidth =
-        headerWidth - (!compact && sidebarOpen ? 350 : 0) - gutter;
+      const headerWidth = headerElement.current?.clientWidth ?? 0;
+      const zoneWidth = headerWidth - (!compact && sidebarOpen ? 350 : 0);
       const controlsRight = zoneWidth / 2 + controlsWidth / 2;
-      const actionsRight = headerWidth - 12 - inset;
+      const actionsRight = headerWidth - 12;
       const otherActionsWidth =
         actions.getBoundingClientRect().width -
         exportButton.getBoundingClientRect().width;
@@ -270,7 +229,8 @@ export function EditorLayout({
       <div
         ref={resizeControls}
         data-canvas-controls
-        className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-(--panel) py-3 pr-3" : `overflow-hidden pr-3 ${compact ? "" : "scrollbar-gutter-stable"} flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
+        data-overlay-scroll={headerLayout === "scroll" ? "x" : "none"}
+        className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-(--panel) py-3 pr-3" : `overflow-hidden pr-3 flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
       >
         {canvasControls}
       </div>
@@ -278,7 +238,7 @@ export function EditorLayout({
         ref={headerActions}
         role="group"
         aria-label={t("editor.panels")}
-        className={`flex items-center gap-2 ${headerLayout === "scroll" ? "relative mt-3 mb-[calc(12px+var(--native-scrollbar-width,0px))] shrink-0" : "absolute top-0 right-[calc(12px+var(--fixed-scrollbar-inset,0px))]"}`}
+        className={`flex items-center gap-2 ${headerLayout === "scroll" ? "relative my-3 shrink-0" : "absolute top-0 right-3"}`}
       >
         {actions}
         {!compact && (
@@ -312,7 +272,8 @@ export function EditorLayout({
       data-header-layout={headerLayout}
       data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={compactExport ? true : undefined}
-      className={`group/header relative col-span-full flex min-h-19 shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-(--line) bg-(--bg) [&_button:focus-visible]:-outline-offset-3! ${headerLayout === "scroll" ? "w-[calc(100%+var(--native-scrollbar-width,0px)-var(--fixed-scrollbar-inset,0px))]" : "w-[calc(100%+var(--native-scrollbar-width,0px))]"}`}
+      data-overlay-scroll={headerLayout === "scroll" ? "none" : "x"}
+      className={`group/header relative col-span-full flex min-h-19 w-full shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-(--line) bg-(--bg) [&_button:focus-visible]:-outline-offset-3!`}
     >
       {canvasActions}
     </header>
@@ -326,8 +287,8 @@ export function EditorLayout({
         data-sidebar-open={!compact && sidebarOpen ? "" : undefined}
         className={
           compact
-            ? "relative shrink-0 w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
-            : "relative h-full min-h-0 min-w-0 w-[calc(100%+var(--native-scrollbar-width,0px))] overflow-hidden"
+            ? "relative w-full shrink-0 overflow-hidden"
+            : "relative h-full min-h-0 min-w-0 w-full overflow-hidden"
         }
       >
         <AnimatePresence initial={false}>
@@ -350,8 +311,9 @@ export function EditorLayout({
               <aside
                 id={panelsId}
                 data-editor-sidebar
+                data-overlay-scroll="none"
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(200px,30dvh)] flex-row overflow-y-hidden border-t [--shelf-content-height:calc(min(200px,30dvh)-1px)]" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(200px,30dvh)] flex-row border-t [--shelf-content-height:calc(min(200px,30dvh)-1px)]" : "flex h-full flex-col border-l"}`}
               >
                 <div
                   data-sidebar-sticky
@@ -368,6 +330,7 @@ export function EditorLayout({
                   {
                     <div
                       data-panel-controls
+                      data-overlay-scroll={compact ? "y" : "none"}
                       className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full" : "px-4 py-4"}`}
                     >
                       <ImageTabs
@@ -397,15 +360,15 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  ref={attachSidebarPanels}
-                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 ${selectedPanel === 2 ? "p-0" : "p-3"} max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
+                  data-overlay-scroll="y"
+                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain ${selectedPanel === 2 ? "p-0" : "p-3"} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible!`}
                 >
                   <div
                     role="tabpanel"
                     id={`${panelsId}-panel-0`}
                     aria-labelledby={`${panelsId}-tab-0`}
                     hidden={selectedPanel !== 0}
-                    className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
+                    className="min-h-0"
                   >
                     {library(null, true)}
                   </div>
@@ -415,7 +378,7 @@ export function EditorLayout({
                       id={`${panelsId}-panel-1`}
                       aria-labelledby={`${panelsId}-tab-1`}
                       hidden={selectedPanel !== 2}
-                      className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
+                      className="min-h-0"
                     >
                       {themes()}
                     </div>
@@ -425,7 +388,7 @@ export function EditorLayout({
                     id={`${panelsId}-panel-2`}
                     aria-labelledby={`${panelsId}-tab-2`}
                     hidden={selectedPanel !== 3}
-                    className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
+                    className="min-h-0"
                   >
                     {resetPanel}
                   </div>
