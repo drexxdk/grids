@@ -359,6 +359,11 @@ export type GridPatch = Partial<
   GridStyle & Pick<GridContent, "name" | "heading">
 >;
 export type CellPatch = Partial<Pick<Cell, "title" | "fit">>;
+export type ResetSelection = {
+  canvas: boolean;
+  theme: boolean;
+  images: boolean;
+};
 export type DocumentCommand =
   | { type: "asset/title"; assetId: string; title: string }
   | { type: "asset/crop"; assetId: string; crop: ImageCrop | undefined }
@@ -393,7 +398,7 @@ export type DocumentCommand =
       newCells: Cell[];
     }
   | { type: "grid/reset"; defaults: Workspace }
-  | { type: "grid/reset-all"; defaults: Workspace }
+  | { type: "grid/reset-all"; defaults: Workspace; selection: ResetSelection }
   | {
       type: "assets/import";
       gridId: string;
@@ -820,10 +825,13 @@ export const createResetCommand = (): DocumentCommand => ({
   defaults: makeWorkspace(),
 });
 
-export const createResetGridCommand = (): DocumentCommand => {
+export const createResetGridCommand = (
+  selection: ResetSelection = { canvas: true, theme: true, images: true },
+): DocumentCommand => {
   const defaults = makeWorkspace();
   return {
     type: "grid/reset-all",
+    selection: { ...selection },
     defaults: {
       ...defaults,
       grid: { ...resizeBoard(defaults.grid, 2, 2), overflow: [] },
@@ -1052,8 +1060,44 @@ export function documentReducer(
       );
     case "grid/reset":
       return resetWorkspace(workspace, command.defaults);
-    case "grid/reset-all":
-      return command.defaults;
+    case "grid/reset-all": {
+      const { canvas, theme, images } = command.selection;
+      if (canvas && theme && images) return command.defaults;
+      if (!canvas && !theme && !images) return workspace;
+      const clearCell = (cell: Cell): Cell => ({
+        id: cell.id,
+        title: canvas ? "" : cell.title,
+        assetId: null,
+        fit: "cover",
+      });
+      let nextGrid = theme
+        ? applyGridStyle(grid, getEditorSettings(command.defaults).style)
+        : grid;
+      if (canvas) {
+        nextGrid = {
+          ...nextGrid,
+          id: command.defaults.grid.id,
+          name: command.defaults.grid.name,
+          heading: "",
+          cells: nextGrid.cells.map(clearCell),
+          overflow: [],
+        };
+      } else if (images) {
+        nextGrid = {
+          ...nextGrid,
+          cells: nextGrid.cells.map(clearCell),
+          overflow: nextGrid.overflow.map((entry) => ({
+            ...entry,
+            cell: clearCell(entry.cell),
+          })),
+        };
+      }
+      return {
+        ...workspace,
+        grid: nextGrid,
+        assets: images ? [] : workspace.assets,
+      };
+    }
     case "assets/import": {
       const assets = mergeAssets(workspace.assets, command.assets);
       const destination =

@@ -2645,6 +2645,61 @@ test("full reset clears content, overflow and all library media with stable defa
   expect(imported.grid).toBe(reset.grid);
 });
 
+test("selective reset preserves unselected canvas, theme, images and export settings", () => {
+  const workspace = localWorkspace();
+  workspace.grid.heading = "Keep heading";
+  workspace.grid.background = "#123456";
+  workspace.grid = model.resizeBoard(workspace.grid, 2, 2);
+  const previous = structuredClone(workspace);
+  for (const canvas of [false, true]) {
+    for (const theme of [false, true]) {
+      for (const images of [false, true]) {
+        const command = model.createResetGridCommand({ canvas, theme, images });
+        const reset = model.documentReducer(workspace, command);
+        expect(reset).toEqual(model.documentReducer(workspace, command));
+        expect(model.workspaceSchema.safeParse(reset).success).toBe(true);
+        if (canvas && theme && images) {
+          expect(reset).toEqual(command.defaults);
+          continue;
+        }
+        expect(reset.grid.rows).toBe(workspace.grid.rows);
+        expect(reset.grid.columns).toBe(workspace.grid.columns);
+        expect(reset.grid.heading).toBe(canvas ? "" : workspace.grid.heading);
+        expect(reset.grid.background).toBe(
+          theme ? command.defaults.grid.background : workspace.grid.background,
+        );
+        expect(reset.exportSettings).toBe(workspace.exportSettings);
+        expect(reset.assets).toEqual(images ? [] : workspace.assets);
+        if (canvas || images) {
+          expect(
+            reset.grid.cells.every((cell) => !cell.assetId && !cell.crop),
+          ).toBe(true);
+          expect(
+            reset.grid.overflow.every(
+              (entry) => !entry.cell.assetId && !entry.cell.crop,
+            ),
+          ).toBe(true);
+        } else {
+          expect(reset.grid.cells).toBe(workspace.grid.cells);
+          expect(reset.grid.overflow).toBe(workspace.grid.overflow);
+        }
+        if (canvas) {
+          expect(reset.grid.cells.every((cell) => !cell.title)).toBe(true);
+          expect(reset.grid.overflow).toEqual([]);
+        } else {
+          expect(reset.grid.cells.map((cell) => cell.title)).toEqual(
+            workspace.grid.cells.map((cell) => cell.title),
+          );
+          expect(reset.grid.overflow.map((entry) => entry.cell.title)).toEqual(
+            workspace.grid.overflow.map((entry) => entry.cell.title),
+          );
+        }
+      }
+    }
+  }
+  expect(workspace).toEqual(previous);
+});
+
 test("document import commands use latest cell IDs and retain media for stale destinations", () => {
   const workspace = model.makeWorkspace();
   const destination = workspace.grid.cells[3];

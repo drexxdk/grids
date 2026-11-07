@@ -62,6 +62,7 @@ import {
   type GridPatch,
   type ImageFormat,
   type ExportSettings,
+  type ResetSelection,
 } from "./model";
 import {
   createExport,
@@ -288,6 +289,13 @@ export default function App() {
   const replaceUpload = useRef<HTMLInputElement>(null);
   const resetGridButton = useRef<HTMLButtonElement>(null);
   const [resetGridOpen, setResetGridOpen] = useState(false);
+  const [resetSelection, setResetSelection] = useState<ResetSelection>({
+    canvas: false,
+    theme: false,
+    images: false,
+  });
+  const resetAll = Object.values(resetSelection).every(Boolean);
+  const resetSelected = Object.values(resetSelection).some(Boolean);
   const board = workspace.grid;
   useLayoutEffect(() => {
     const cleaned = removeCreditRequiredImages(workspace);
@@ -707,10 +715,13 @@ export default function App() {
     input.value = "";
   };
   const resetGrid = () => {
-    localStore.current?.scheduleImageDeletion(
-      workspace.assets.map((asset) => asset.id),
-    );
-    dispatchDocument(createResetGridCommand());
+    if (!resetSelected || importProgress !== null) return;
+    if (resetSelection.images) {
+      localStore.current?.scheduleImageDeletion(
+        workspace.assets.map((asset) => asset.id),
+      );
+    }
+    dispatchDocument(createResetGridCommand(resetSelection));
     setHeadingEditing(false);
     setImageTarget(null);
     setCardDrag(null);
@@ -761,7 +772,14 @@ export default function App() {
                 aria-label={t("editor.reset.title")}
                 title={t("editor.reset.tooltip")}
                 disabled={importProgress !== null || exporting}
-                onClick={() => setResetGridOpen(true)}
+                onClick={() => {
+                  setResetSelection({
+                    canvas: false,
+                    theme: false,
+                    images: false,
+                  });
+                  setResetGridOpen(true);
+                }}
               >
                 <RotateCcw aria-hidden="true" className="size-5!" />
               </Button>
@@ -1502,20 +1520,73 @@ export default function App() {
         title={t("editor.reset.title")}
         returnFocus={resetGridButton}
       >
-        <p>{t("editor.reset.prompt")}</p>
-        <p>{t("editor.reset.retention")}</p>
-        <div className="mt-4 mb-4 flex justify-end gap-2">
-          <Button onClick={() => setResetGridOpen(false)}>
-            {t("common.actions.cancel")}
-          </Button>
-          <Button
-            variant="danger"
-            disabled={importProgress !== null}
-            onClick={resetGrid}
-          >
-            <RotateCcw aria-hidden="true" />
-            {t("editor.reset.title")}
-          </Button>
+        <div className="flex flex-col gap-4">
+          <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+            <legend className="sr-only">{t("editor.reset.prompt")}</legend>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                className="size-5 shrink-0 accent-(--accent)"
+                checked={resetAll}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setResetSelection({
+                    canvas: checked,
+                    theme: checked,
+                    images: checked,
+                  });
+                }}
+              />
+              <span className="font-semibold">{t("editor.reset.all")}</span>
+            </label>
+            {(["canvas", "theme", "images"] as const).map((part) => (
+              <label
+                key={part}
+                className="flex min-h-11 cursor-pointer items-center gap-3"
+              >
+                <input
+                  type="checkbox"
+                  className="size-5 shrink-0 accent-(--accent)"
+                  checked={resetSelection[part]}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setResetSelection((selection) => ({
+                      ...selection,
+                      [part]: checked,
+                    }));
+                  }}
+                />
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="font-semibold">
+                    {t(`editor.reset.${part}`)}
+                  </span>
+                  <span className="text-sm text-(--muted)">
+                    {t(`editor.reset.${part}Description`)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <p aria-live="polite" className="m-0 text-sm text-(--muted)">
+            {resetAll
+              ? t("editor.reset.allWarning")
+              : resetSelection.images
+                ? t("editor.reset.imagesWarning")
+                : t("editor.reset.retention")}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={() => setResetGridOpen(false)}>
+              {t("common.actions.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={!resetSelected || importProgress !== null}
+              onClick={resetGrid}
+            >
+              <RotateCcw aria-hidden="true" />
+              {t("editor.reset.confirm")}
+            </Button>
+          </div>
         </div>
       </Modal>
     </>
