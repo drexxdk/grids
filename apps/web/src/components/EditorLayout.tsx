@@ -8,6 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -53,6 +54,31 @@ export function EditorLayout({
   const [selectedPanel, setSelectedPanel] = useEditorState("selectedPanel");
   const panelOrder = [0, 2] as const;
   const panelsId = useId();
+  const [sidebarPanels, setSidebarPanels] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const attachSidebarPanels = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return;
+    setSidebarPanels(element);
+    return () =>
+      setSidebarPanels((current) => (current === element ? null : current));
+  }, []);
+  const [panelScrollsVertically, setPanelScrollsVertically] = useState(false);
+  useLayoutEffect(() => {
+    const panels = sidebarPanels;
+    if (!compact || !panels) return;
+    const measure = () => {
+      setPanelScrollsVertically(panels.scrollHeight > panels.clientHeight + 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(panels);
+    const activePanel = panels.querySelector<HTMLElement>(
+      '[role="tabpanel"]:not([hidden])',
+    );
+    if (activePanel) observer.observe(activePanel);
+    measure();
+    return () => observer.disconnect();
+  }, [compact, selectedPanel, sidebarPanels]);
   const panelScroll = useRef(
     new Map<number, Map<HTMLElement, [number, number]>>(),
   );
@@ -352,14 +378,15 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  className="relative isolate z-0 min-h-0 min-w-0 flex-1 min-[901px]:pt-4 max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!"
+                  ref={attachSidebarPanels}
+                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 ${selectedPanel === 2 ? "p-0" : "p-3"} max-[901px]:overflow-x-hidden max-[901px]:overflow-y-auto max-[901px]:overscroll-contain **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible! **:data-sidebar-content:scrollbar-gutter-auto!`}
                 >
                   <div
                     role="tabpanel"
                     id={`${panelsId}-panel-0`}
                     aria-labelledby={`${panelsId}-tab-0`}
                     hidden={selectedPanel !== 0}
-                    className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
+                    className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
                   >
                     {library(null, true)}
                   </div>
@@ -369,7 +396,7 @@ export function EditorLayout({
                       id={`${panelsId}-panel-1`}
                       aria-labelledby={`${panelsId}-tab-1`}
                       hidden={selectedPanel !== 2}
-                      className="min-h-0 max-[901px]:pr-(--fixed-scrollbar-inset,0px)"
+                      className={`min-h-0 ${panelScrollsVertically ? "" : "max-[901px]:pr-(--fixed-scrollbar-inset,0px)"}`}
                     >
                       {themes()}
                     </div>

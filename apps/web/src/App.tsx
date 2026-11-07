@@ -840,11 +840,11 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:px-4 min-[901px]:pb-6.5 min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:block"
+                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:scrollbar-gutter-stable min-[901px]:*:shrink-0 max-[901px]:block"
               >
                 <div
                   id="asset-library"
-                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:m-0! max-[901px]:p-3!"
+                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:-m-3! max-[901px]:p-3!"
                 >
                   <UploadTile
                     ref={addImagesButton}

@@ -478,19 +478,32 @@ export function Toggle({
   );
 }
 
-function AccordionPanel({ children }: { children: ReactNode }) {
+export function AccordionPanel({
+  children,
+  onReveal,
+}: {
+  children: ReactNode;
+  onReveal?: (panel: HTMLDivElement) => void;
+}) {
   const present = useIsPresent();
   const reduced = useReducedMotion();
+  const panel = useRef<HTMLDivElement>(null);
+  const reveal = () => {
+    if (present && panel.current) onReveal?.(panel.current);
+  };
   return (
     <DisclosurePanel
       static
       as={MotionDiv}
+      ref={panel}
       inert={!present}
       aria-hidden={present ? undefined : true}
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: "auto", opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
       motionTransition={{ duration: reduced ? 0 : 0.18 }}
+      onUpdate={onReveal ? reveal : undefined}
+      onAnimationComplete={onReveal ? reveal : undefined}
       className="overflow-hidden"
     >
       {children}

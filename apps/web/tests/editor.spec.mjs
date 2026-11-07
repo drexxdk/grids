@@ -269,6 +269,17 @@ async function useComicExample(page, publisher = "dc") {
   if (panel) await openSidebarPanel(page, panel);
 }
 
+async function openDesignSection(page, title) {
+  const builder = page.locator("[data-theme-builder]");
+  const toggle = builder.getByRole("button", {
+    name: new RegExp(`^\\d ${title}`),
+  });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(builder.locator("fieldset[id^=theme-step-]")).toHaveCount(1);
+}
+
 async function selectField(page, id, value) {
   if (["image-shape", "caption-position"].includes(id)) {
     await expect(page.locator("#board-grid")).toBeVisible();
@@ -281,12 +292,10 @@ async function selectField(page, id, value) {
     const panel = (await selected.count()) ? await selected.innerText() : null;
     const openedTools = !panel && !!(await sidebarToggle(page, false).count());
     await openSidebarPanel(page, "Design");
-    await page
-      .locator("[data-theme-builder]")
-      .getByRole("button", {
-        name: id === "image-shape" ? /2 Layout/ : /4 Card headings/,
-      })
-      .click();
+    await openDesignSection(
+      page,
+      id === "image-shape" ? "Layout" : "Card headings",
+    );
     const radio = page
       .locator(`#${id}`)
       .locator(`[role="radio"][data-value="${value}"]`);
@@ -300,12 +309,10 @@ async function selectField(page, id, value) {
   }
   if (["heading-font", "cell-font"].includes(id)) {
     await openSidebarPanel(page, "Design");
-    await page
-      .locator("[data-theme-builder]")
-      .getByRole("button", {
-        name: id === "heading-font" ? /3 Canvas heading/ : /4 Card headings/,
-      })
-      .click();
+    await openDesignSection(
+      page,
+      id === "heading-font" ? "Canvas heading" : "Card headings",
+    );
   }
   await page.locator(`#${id}`).click();
   const option = page.getByRole("listbox").locator(`[data-value="${value}"]`);
@@ -623,11 +630,10 @@ for (const [mode, rowTest] of [
         await checkRow(page.locator("#asset-library"), "[data-library-image]");
       }
       await openSidebarPanel(page, "Design");
+      await openDesignSection(page, "Colors");
       await page
-        .locator("[data-theme-builder]")
-        .getByRole("button", { name: /1 Colors/ })
+        .getByRole("button", { name: "Customize Colors", exact: true })
         .click();
-      await page.locator("[data-theme-builder] summary").click();
       await expect
         .poll(() =>
           page.locator("[data-sidebar-panels]").evaluate((element) => ({
@@ -643,6 +649,85 @@ for (const [mode, rowTest] of [
           scrollable: true,
           scrollbarTakesSpace: mode === "classic",
         });
+      await setEditorViewport(page, { width: 390, height: 360 });
+      const measureShelf = () =>
+        page.locator("[data-sidebar-panels]").evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const builder = element
+            .querySelector('[role="tabpanel"]:not([hidden])')
+            .firstElementChild.getBoundingClientRect();
+          return {
+            left: bounds.left,
+            width: bounds.width,
+            clientWidth: element.clientWidth,
+            contentLeft: builder.left,
+            contentRight: builder.right,
+            contentWidth: builder.width,
+            verticalOverflow: element.scrollHeight > element.clientHeight + 1,
+            tabPadding: getComputedStyle(
+              element.querySelector('[role="tabpanel"]:not([hidden])'),
+            ).paddingRight,
+          };
+        });
+      const beforeDialog = await measureShelf();
+      await page.getByRole("button", { name: "Reset", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Reset", exact: true });
+      await expect(dialog).toBeVisible();
+      if (mode === "classic") {
+        await expect
+          .poll(() =>
+            page.evaluate(() =>
+              parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue(
+                  "--fixed-scrollbar-inset",
+                ),
+              ),
+            ),
+          )
+          .toBeGreaterThan(0);
+      }
+      await expect.poll(measureShelf).toEqual(beforeDialog);
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect.poll(measureShelf).toEqual(beforeDialog);
+      await openSidebarPanel(page, "Images");
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-sidebar-panels]")
+            .evaluate(
+              (element) => element.scrollHeight > element.clientHeight + 1,
+            ),
+        )
+        .toBe(false);
+      const beforeImagesDialog = await measureShelf();
+      await page.getByRole("button", { name: "Reset", exact: true }).click();
+      await expect(dialog).toBeVisible();
+      const modalInset = () =>
+        page.evaluate(() =>
+          parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+              "--fixed-scrollbar-inset",
+            ),
+          ),
+        );
+      if (mode === "classic") await expect.poll(modalInset).toBeGreaterThan(0);
+      await expect
+        .poll(async () => {
+          const current = await measureShelf();
+          const inset = await modalInset();
+          return (
+            Math.abs(
+              beforeImagesDialog.contentWidth - current.contentWidth - inset,
+            ) < 1 &&
+            current.left === beforeImagesDialog.left &&
+            current.width === beforeImagesDialog.width
+          );
+        })
+        .toBe(true);
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect.poll(measureShelf).toEqual(beforeImagesDialog);
     },
   );
 }
@@ -701,7 +786,7 @@ touchTest(
         .toBe(true);
       const builder = sidebar.locator("[data-theme-builder]");
       await builder.getByRole("button", { name: /1 Colors/ }).click();
-      await builder.locator("summary").click();
+      await builder.locator("[data-customize-toggle]").click();
       await page.locator("#background-value").fill("#112233");
       await page.locator("#background-value").press("Enter");
       await builder.getByRole("button", { name: /4 Card headings/ }).click();
@@ -737,7 +822,7 @@ touchTest(
       .locator("[data-theme-builder]")
       .getByRole("button", { name: /1 Colors/ })
       .click();
-    await page.locator("[data-theme-builder] summary").click();
+    await page.locator("[data-theme-builder] [data-customize-toggle]").click();
     await expect(page.locator("#background-value")).toHaveValue("#112233");
   },
 );
@@ -2120,11 +2205,11 @@ test("design identifies reset and modified color themes across navigation and re
   await openSidebarPanel(page, "Design");
   await expect(colors).toHaveText("1ColorsInk");
   await expect(ink).toBeChecked();
-  const customize = builder.locator("summary");
+  const customize = builder.locator("[data-customize-toggle]");
   await expect(customize).toHaveText("Customize Colors");
   const hierarchy = await customize.evaluate((element) => {
     const parent = element.closest("fieldset");
-    const details = element.closest("details");
+    const details = element.closest("[data-design-customize]");
     return {
       inset:
         element.getBoundingClientRect().left -
@@ -2212,7 +2297,7 @@ test("theme builder composes independent choices and detailed values without rep
   await expect(builder.getByRole("button", { name: /2 Layout/ })).toBeFocused();
   await builder.getByRole("radio", { name: "Landscape", exact: true }).click();
   await selectField(page, "builder-spacing", "compact");
-  await builder.locator("summary").click();
+  await builder.locator("[data-customize-toggle]").click();
   await page.locator("#gap").fill("25");
   await builder.getByRole("button", { name: /3 Canvas heading/ }).click();
   await selectField(page, "heading-font", "Bangers");
@@ -2238,9 +2323,12 @@ test("theme builder composes independent choices and detailed values without rep
   await expect(
     builder.getByRole("radio", { name: "Below image", exact: true }),
   ).toBeChecked();
-  await builder.getByRole("button", { name: /1 Colors/ }).click();
+  await openDesignSection(page, "Colors");
   await builder.getByRole("radio", { name: "Rose", exact: true }).click();
-  await builder.locator("summary").click();
+  await builder.locator("[data-customize-toggle]").click();
+  await page
+    .getByRole("textbox", { name: "Background hex value", exact: true })
+    .click();
   await page
     .getByRole("textbox", { name: "Background hex value", exact: true })
     .fill("#334455");
@@ -2299,16 +2387,16 @@ touchTest(
         "Canvas heading",
         "Card headings",
       ]) {
-        await builder
-          .getByRole("button", { name: new RegExp(`^\\d ${title}`) })
-          .click();
+        await openDesignSection(page, title);
         await expect(builder.locator("fieldset[id^=theme-step-]")).toHaveCount(
           1,
         );
-        const customize = builder.locator("summary");
+        const customize = builder.locator("[data-customize-toggle]");
         if (await customize.count()) {
           await customize.click();
-          const inputs = builder.locator("details[open] input");
+          const inputs = builder.locator(
+            "[data-design-customize] input:visible",
+          );
           if (await inputs.count()) {
             await inputs.last().scrollIntoViewIfNeeded();
             await expect(inputs.last()).toBeInViewport({ ratio: 1 });
@@ -2328,13 +2416,270 @@ touchTest(
           page.locator('input:not([type="range"]):focus, textarea:focus'),
         ).toHaveCount(0);
       }
-      await builder.getByRole("button", { name: /1 Colors/ }).click();
+      await openDesignSection(page, "Colors");
       await page.screenshot({
         path: testInfo.outputPath(`theme-builder-mobile-${width}.png`),
       });
     }
   },
 );
+
+test("Design disclosures provide linked panels, keyboard toggles and reduced-motion-aware animation", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await openSidebarPanel(page, "Design");
+  const builder = page.locator("[data-theme-builder]");
+  const colors = builder.getByRole("button", { name: /^1 Colors/ });
+  const customize = builder.getByRole("button", {
+    name: "Customize Colors",
+    exact: true,
+  });
+  for (const reducedMotion of ["no-preference", "reduce"]) {
+    await page.emulateMedia({ reducedMotion });
+    await customize.evaluate((element) => {
+      window.designAnimationFrames = [];
+      let frames = 0;
+      const sample = () => {
+        const panelId = element.getAttribute("aria-controls");
+        const panel = panelId ? document.getElementById(panelId) : null;
+        if (panel) {
+          window.designAnimationFrames.push({
+            height: panel.getBoundingClientRect().height,
+            opacity: Number(getComputedStyle(panel).opacity),
+          });
+        }
+        frames += 1;
+        if (frames < 40) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await customize.press("Enter");
+    await expect(customize).toHaveAttribute("aria-expanded", "true");
+    await expect(customize).toHaveAttribute("aria-controls", /.+/);
+    const panelId = await customize.getAttribute("aria-controls");
+    const panel = page.locator(`[id="${panelId}"]`);
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveCSS("opacity", "1");
+    if (reducedMotion === "no-preference") {
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.designAnimationFrames.some(
+              (frame) =>
+                frame.height > 0 && frame.opacity > 0 && frame.opacity < 1,
+            ),
+          ),
+        )
+        .toBe(true);
+    }
+    await customize.press("Space");
+    await expect(customize).toHaveAttribute("aria-expanded", "false");
+    await expect(panel).toHaveCount(0);
+    await expect(customize).toBeFocused();
+  }
+  await colors.press("Space");
+  await expect(colors).toHaveAttribute("aria-expanded", "false");
+  await expect(builder.locator("fieldset[id^=theme-step-]")).toHaveCount(0);
+  await colors.press("Enter");
+  await expect(colors).toHaveAttribute("aria-expanded", "true");
+  await expect(colors).toHaveAttribute("aria-controls", /.+/);
+  const panelId = await colors.getAttribute("aria-controls");
+  await expect(page.locator(`[id="${panelId}"]`)).toBeVisible();
+});
+
+test("opening Design accordions reveals their toggles and maximum content in the owning scroller", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  const builder = page.locator("[data-theme-builder]");
+  for (const viewport of [
+    { width: 1440, height: 1080 },
+    { width: 1440, height: 480 },
+    { width: 390, height: 640 },
+    { width: 260, height: 560 },
+  ]) {
+    await setEditorViewport(page, viewport);
+    for (const tab of ["Images", "Design"]) {
+      await openSidebarPanel(page, tab);
+      await expect(page.locator("[data-sidebar-panels]")).toHaveCSS(
+        "padding",
+        tab === "Design" ? "0px" : "12px",
+      );
+      const insets = await page
+        .locator("[data-sidebar-panels]")
+        .evaluate((element) => {
+          const content = element.querySelector(
+            '[role="tabpanel"]:not([hidden])',
+          );
+          const bounds = element.getBoundingClientRect();
+          const inner = content.getBoundingClientRect();
+          return {
+            left: inner.left - bounds.left,
+            right: bounds.left + element.clientWidth - inner.right,
+          };
+        });
+      expect(insets.left).toBeCloseTo(tab === "Design" ? 0 : 12, 0);
+      expect(insets.right).toBeCloseTo(tab === "Design" ? 0 : 12, 0);
+      if (tab === "Design") {
+        const trigger = builder.getByRole("button", { name: /^1 Colors/ });
+        await page.mouse.move(0, 0);
+        const idle = await trigger.evaluate(
+          (element) => getComputedStyle(element).backgroundColor,
+        );
+        await expect(trigger).toHaveCSS("padding", "12px 48px 12px 12px");
+        await trigger.hover();
+        await expect
+          .poll(() =>
+            trigger.evaluate(
+              (element) => getComputedStyle(element).backgroundColor,
+            ),
+          )
+          .not.toBe(idle);
+        const edges = await trigger.evaluate((element) => {
+          const row = element.getBoundingClientRect();
+          const arrow = element.querySelector("svg").getBoundingClientRect();
+          const panel = element
+            .closest('[role="tabpanel"]')
+            .getBoundingClientRect();
+          return {
+            left: row.left - panel.left,
+            right: panel.right - row.right,
+            arrowRight: row.right - arrow.right,
+            arrowTop: arrow.top - row.top,
+            arrowBottom: row.bottom - arrow.bottom,
+          };
+        });
+        expect(edges.left).toBeCloseTo(0, 0);
+        expect(edges.right).toBeCloseTo(0, 0);
+        expect(edges.arrowRight).toBeCloseTo(edges.arrowTop, 0);
+        expect(edges.arrowRight).toBeCloseTo(edges.arrowBottom, 0);
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `design-trigger-hover-${viewport.width}-${viewport.height}.png`,
+          ),
+        });
+      }
+      if (tab === "Images" && viewport.width < 901) {
+        const upload = page.locator("[data-upload-tile]");
+        await upload.hover();
+        await expect(upload).toHaveAttribute("data-image-hovered", "");
+        const frameVisible = await upload.evaluate((element) => {
+          const library = element.closest("#asset-library");
+          const bounds = library.getBoundingClientRect();
+          const frame = element
+            .querySelector("[data-cell-image-frame]")
+            .getBoundingClientRect();
+          return (
+            frame.left >= bounds.left &&
+            frame.top >= bounds.top &&
+            frame.right <= bounds.left + library.clientWidth &&
+            frame.bottom <= bounds.top + library.clientHeight
+          );
+        });
+        expect(frameVisible).toBe(true);
+        await page.screenshot({
+          path: testInfo.outputPath(`images-hover-${viewport.width}.png`),
+        });
+      }
+    }
+    const workspace = page.locator("[data-workspace-scroll]");
+    const before = await workspace.evaluate((element) => ({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      pageTop: window.scrollY,
+    }));
+    const checkReveal = async (target) => {
+      await expect(target).toHaveAttribute("aria-controls", /.+/);
+      const panelId = await target.getAttribute("aria-controls");
+      await expect(page.locator(`[id="${panelId}"]`)).toHaveCSS("opacity", "1");
+      await expect
+        .poll(() =>
+          target.evaluate((element) => {
+            const compact = innerWidth < 901;
+            const scroller = compact
+              ? element.closest("[data-sidebar-panels]")
+              : element.closest("[data-editor-sidebar]");
+            const viewport = scroller.getBoundingClientRect();
+            const sticky = compact
+              ? null
+              : scroller.querySelector("[data-sidebar-sticky]");
+            const padding = getComputedStyle(
+              element.closest("[data-sidebar-panels]"),
+            );
+            const top =
+              Math.max(
+                viewport.top + scroller.clientTop,
+                sticky?.getBoundingClientRect().bottom ?? viewport.top,
+              ) + parseFloat(padding.paddingTop);
+            const bottom =
+              viewport.top +
+              scroller.clientTop +
+              scroller.clientHeight -
+              parseFloat(padding.paddingBottom);
+            const toggle = element.getBoundingClientRect();
+            const accordion = element
+              .closest("[data-design-accordion]")
+              .getBoundingClientRect();
+            const visible = Math.max(
+              0,
+              Math.min(accordion.bottom, bottom) - Math.max(accordion.top, top),
+            );
+            return (
+              toggle.top >= top - 1 &&
+              toggle.bottom <= bottom + 1 &&
+              visible >= Math.min(accordion.height, bottom - top) - 1
+            );
+          }),
+        )
+        .toBe(true);
+    };
+    for (const title of [
+      "Layout",
+      "Card headings",
+      "Colors",
+      "Canvas heading",
+    ]) {
+      const toggle = builder.getByRole("button", {
+        name: new RegExp(`^\\d ${title}`),
+      });
+      await expect(toggle.locator("svg")).toHaveCSS("rotate", "none");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(toggle.locator("svg")).toHaveCSS("rotate", "180deg");
+      await expect(builder.locator("fieldset[id^=theme-step-]")).toHaveCount(1);
+      await checkReveal(toggle);
+      const customize = builder.locator("[data-customize-toggle]");
+      if (await customize.count()) {
+        if ((await customize.getAttribute("aria-expanded")) === "true") {
+          await customize.click();
+        }
+        await customize.focus();
+        await customize.press("Enter");
+        await expect(
+          builder.locator('[data-customize-toggle][aria-expanded="true"]'),
+        ).toHaveCount(1);
+        await checkReveal(customize);
+      }
+    }
+    expect(
+      await workspace.evaluate((element) => ({
+        top: element.scrollTop,
+        left: element.scrollLeft,
+        pageTop: window.scrollY,
+      })),
+    ).toEqual(before);
+    await expect(
+      page.locator('input:not([type="range"]):focus, textarea:focus'),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `accordion-reveal-${viewport.width}-${viewport.height}.png`,
+      ),
+      fullPage: true,
+    });
+  }
+});
 
 test("header reset confirms clearing the grid and all images at every screen size", async ({
   page,
@@ -4123,7 +4468,7 @@ test("captions share external bands and fit individual overlays across canvas, l
     .locator("[data-theme-builder]")
     .getByRole("button", { name: /2 Layout/ })
     .click();
-  await page.locator("#theme-step-1 summary").click();
+  await page.locator("#theme-step-1 [data-customize-toggle]").click();
   await page.locator("#gap").fill("10");
   await page.locator("#canvas-padding").fill("10");
   await selectField(page, "image-shape", "square");
@@ -7328,7 +7673,7 @@ test("single grid starts with refined dark defaults and uploaded content persist
   );
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
-  await expect(page).toHaveTitle("Gridz - Image Boards");
+  await expect(page).toHaveTitle("Gridz");
   await expect(
     page.getByRole("link", { name: "Gridz", exact: true }),
   ).toBeVisible();
@@ -8033,7 +8378,7 @@ test("guest reset clears images and removed placements and restores default sett
     .locator("[data-theme-builder]")
     .getByRole("button", { name: /2 Layout/ })
     .click();
-  await page.locator("#theme-step-1 summary").click();
+  await page.locator("#theme-step-1 [data-customize-toggle]").click();
   await page.locator("#gap").fill("25");
   await selectExportField(page, "format", "image/webp");
   await selectField(page, "resolution", "300");
@@ -8966,7 +9311,7 @@ test("page metadata assets resolve and desktop library keeps mouse dragging", as
   await expect(
     page.locator(".grid-cell").first().locator("img"),
   ).toHaveAttribute("alt", "Image 0");
-  await expect(page).toHaveTitle("Gridz - Image Boards");
+  await expect(page).toHaveTitle("Gridz");
   await expect(page.locator('meta[name="description"]')).toHaveAttribute(
     "content",
     /Create image grids/,
@@ -8974,8 +9319,8 @@ test("page metadata assets resolve and desktop library keeps mouse dragging", as
   for (const [selector, content] of [
     ['meta[name="apple-mobile-web-app-title"]', "Gridz"],
     ['meta[property="og:site_name"]', "Gridz"],
-    ['meta[property="og:title"]', "Gridz - Image Boards"],
-    ['meta[name="twitter:title"]', "Gridz - Image Boards"],
+    ['meta[property="og:title"]', "Gridz"],
+    ['meta[name="twitter:title"]', "Gridz"],
     [
       'meta[property="og:image:alt"]',
       "Gridz: four lime tiles on a dark background",
