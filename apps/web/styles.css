@@ -540,7 +540,6 @@ h1 {
   padding: var(--canvas-inset, 12px);
   padding-top: var(--grid-top-padding, var(--canvas-inset, 12px));
   background: var(--board-bg, #17191b);
-  box-shadow: 0 10px 45px #0005;
   container-type: inline-size;
 }
 .image-card {

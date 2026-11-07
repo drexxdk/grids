@@ -33,24 +33,32 @@ export function TextScrollbar({
     top: 0,
     height: 0,
     contentHeight: 0,
+    left: false,
   });
   const offset = useRef(0);
   useLayoutEffect(() => {
     const element = field.current;
     if (!element || !active) return;
-    const update = () =>
+    const update = () => {
+      const bounds = element.getBoundingClientRect();
       setScroll({
         top: element.scrollTop,
         height: element.clientHeight,
         contentHeight: element.scrollHeight,
+        left:
+          bounds.right + 12 > document.documentElement.clientWidth &&
+          bounds.left >= 12,
       });
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    element.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
     return () => {
       observer.disconnect();
-      element.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
     };
   }, [field, active, value]);
   const scrollTo = (pointerY: number, track: HTMLDivElement) => {
@@ -59,7 +67,10 @@ export function TextScrollbar({
     const bounds = track.getBoundingClientRect();
     const thumbHeight = Math.min(
       bounds.height,
-      Math.max(16, (bounds.height * element.clientHeight) / element.scrollHeight),
+      Math.max(
+        16,
+        (bounds.height * element.clientHeight) / element.scrollHeight,
+      ),
     );
     element.scrollTop =
       Math.max(
@@ -78,7 +89,7 @@ export function TextScrollbar({
       aria-hidden="true"
       data-caption-scrollbar={kind === "caption" || undefined}
       data-heading-scrollbar={kind === "heading" || undefined}
-      className="absolute -right-3 z-50 w-2 touch-none rounded-sm bg-(--line) cursor-default!"
+      className={`absolute z-50 w-2 touch-none rounded-sm bg-(--line) cursor-default! ${scroll.left ? "-left-3" : "-right-3"}`}
       style={style}
       onMouseDown={(event) => event.preventDefault()}
       onPointerDown={(event) => {

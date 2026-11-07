@@ -257,7 +257,7 @@ test("preset starters adapt to current layouts and sample previews stay separate
   expect(
     navigation.readNavigation(
       navigation.parseEditorState({}),
-      new URL("https://example.com/?panel=presets"),
+      new URL("https://example.com/?panel=design"),
     ).selectedPanel,
   ).toBe(2);
   expect(
@@ -2349,14 +2349,14 @@ test("grid appearance settings roundtrip and share cell geometry", () => {
   ).toBe(false);
   const defaults = model.getEditorSettings(model.makeWorkspace()).style;
   expect(defaults).toMatchObject({
-    imageAspect: "square",
+    imageAspect: "portrait",
     captionPlacement: "overlay",
     captionAlignment: "bottom",
   });
   expect(model.cellGeometry(defaults, 600)).toMatchObject({
-    imageHeight: 600,
-    captionTop: 458,
-    height: 600,
+    imageHeight: 800,
+    captionTop: 658,
+    height: 800,
   });
   const reset = model.resetWorkspace(workspace);
   expect(model.getEditorSettings(reset).style).toEqual(defaults);
@@ -2435,6 +2435,7 @@ test("settings boundary extracts only allowlisted configuration and detached val
     layout: { rows: 4, columns: 4 },
     style: {
       publisher: "none",
+      colorTheme: "Ink",
       headingVisible: true,
       headingFont: "Manrope",
       cellFont: "Manrope",
@@ -2575,7 +2576,7 @@ test("font weights roundtrip and reset without theme profiles", () => {
   }
 });
 
-test("settings boundary applies configuration while preserving local content and recoverable coordinates", () => {
+test("settings boundary applies configuration while preserving retained content and discarding removed coordinates", () => {
   const workspace = localWorkspace();
   const original = structuredClone(workspace);
   const defaults = model.getEditorSettings(model.makeWorkspace());
@@ -2586,16 +2587,20 @@ test("settings boundary applies configuration while preserving local content and
   expect(applied.grid.name).toBe(workspace.grid.name);
   expect(applied.grid.heading).toBe(workspace.grid.heading);
   expect(applied.grid.cells[0].id).toBe(workspace.grid.cells[0].id);
-  expect(
-    applied.grid.overflow.find((entry) => entry.row === 3 && entry.column === 3)
-      ?.cell,
-  ).toEqual(workspace.grid.cells[15]);
+  expect(applied.grid.overflow).toEqual([]);
+  expect(applied.grid.cells).not.toContainEqual(workspace.grid.cells[15]);
   expect(model.workspaceSchema.safeParse(applied).success).toBe(true);
   const restored = model.applyEditorSettings(
     applied,
     model.getEditorSettings(workspace),
   );
-  expect(restored.grid.cells).toEqual(workspace.grid.cells);
+  for (const [index, cell] of restored.grid.cells.entries()) {
+    const row = Math.floor(index / workspace.grid.columns);
+    const column = index % workspace.grid.columns;
+    if (row < defaults.layout.rows && column < defaults.layout.columns)
+      expect(cell).toEqual(workspace.grid.cells[index]);
+    else expect(cell).toMatchObject({ title: "", assetId: null });
+  }
   expect(restored.grid.overflow).toEqual([]);
   expect(workspace).toEqual(original);
   defaults.style.gap = 40;
@@ -2730,7 +2735,7 @@ test("panel and canvas image resets preserve the unselected image location", () 
   );
   expect(canvas.assets).toBe(workspace.assets);
   expect(canvas.grid.cells[15]).toMatchObject({
-    title: "Private caption",
+    title: "",
     assetId: null,
   });
   const both = model.documentReducer(
@@ -2744,7 +2749,7 @@ test("panel and canvas image resets preserve the unselected image location", () 
   );
   expect(both.assets).toEqual([]);
   expect(both.grid.cells[15]).toMatchObject({
-    title: "Private caption",
+    title: "",
     assetId: null,
   });
   expect(model.workspaceSchema.safeParse(panel).success).toBe(true);

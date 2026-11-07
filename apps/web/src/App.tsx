@@ -1086,7 +1086,7 @@ export default function App() {
           {() => (
             <ThemeBuilder
               board={board}
-              disabled={conflict || importProgress !== null || exporting}
+              disabled={conflict || exporting}
               onChange={(patch) => {
                 if (patch.headingVisible !== undefined)
                   setHeadingEditing(false);
