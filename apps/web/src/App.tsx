@@ -127,7 +127,7 @@ function BoardHeading({
           textShadow: board.publisher === "none" ? "none" : undefined,
           "--heading-feedback-color": contrastingColor(
             board.headingBackgroundColor ?? board.background,
-            "#d8f36a",
+            board.headingTextColor ?? "#eef1f3",
             3,
           ),
           "--heading-placeholder-color": contrastingColor(
@@ -1548,7 +1548,7 @@ export default function App() {
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
             <label
               data-reset-option="all"
-              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-[:focus-visible]:border-(--accent)"
+              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-focus-visible:border-(--accent)"
             >
               <input
                 type="checkbox"
@@ -1573,7 +1573,7 @@ export default function App() {
                 <div
                   key={part}
                   data-reset-option={part}
-                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-[input:focus-visible]:border-(--accent) [&_[role=radio]]:border-(--bg)! max-[360px]:p-2"
+                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors hover:bg-(--selected) has-[input:focus-visible]:border-(--accent) **:[[role=radio]]:border-(--bg)! max-[360px]:p-2"
                 >
                   <label className="flex min-w-0 cursor-pointer flex-col gap-2 outline-none!">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">

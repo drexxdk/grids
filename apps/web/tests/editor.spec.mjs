@@ -2023,8 +2023,7 @@ test("card border controls preserve geometry and export matching enabled and dis
   const original = await savedWorkspace(page);
   await openSidebarPanel(page, "Design");
   const builder = page.locator("[data-theme-builder]");
-  const step = async (label) =>
-    builder.getByRole("button", { name: new RegExp(`^\\d ${label}`) }).click();
+  const step = (label) => openDesignSection(page, label);
   await step("Canvas heading");
   const heading = builder.getByRole("switch", {
     name: "Show heading",
@@ -2126,8 +2125,8 @@ test("card border controls preserve geometry and export matching enabled and dis
   await expect(first).toHaveAttribute("data-image-hovered", "");
   expect(
     await first
-      .locator("[data-cell-image-frame] rect")
-      .evaluate((element) => getComputedStyle(element).stroke),
+      .locator("[data-cell-image-frame]")
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
   ).not.toBe("rgba(0, 0, 0, 0)");
   for (const pixel of await exportPixels())
     expect(pixel).not.toEqual([227, 69, 103, 255]);
@@ -2194,6 +2193,276 @@ touchTest(
     }
   },
 );
+
+test("theme feedback follows palette colors on cards headings and drop zones", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await setEditorViewport(page, { width: 1440, height: 1080 });
+  await uploadCellImage(page);
+  await page.locator(".grid-cell .cell-heading").first().fill("Theme caption");
+  await editHeading(page, "Theme heading");
+  const original = await savedWorkspace(page);
+  const dropColors = new Set();
+  const geometryOf = (card) =>
+    card.evaluate((element) => {
+      const bounds = (target) => {
+        const rectangle = target.getBoundingClientRect();
+        return {
+          x: rectangle.x,
+          y: rectangle.y,
+          width: rectangle.width,
+          height: rectangle.height,
+        };
+      };
+      return {
+        card: bounds(element),
+        image: bounds(
+          element.querySelector("[data-card-image]") ??
+            element.querySelector("[data-card-content]"),
+        ),
+        caption: element.querySelector(".cell-heading")
+          ? bounds(element.querySelector(".cell-heading"))
+          : null,
+      };
+    });
+  const checkCaptionInset = async (card) => {
+    const gaps = await card
+      .locator("[data-caption-feedback]")
+      .evaluate((element) => {
+        const border = element.getBoundingClientRect();
+        const caption = element
+          .closest(".image-card")
+          .querySelector(".cell-heading, .library-heading")
+          .getBoundingClientRect();
+        return [
+          border.left - caption.left,
+          border.top - caption.top,
+          caption.right - border.right,
+          caption.bottom - border.bottom,
+        ];
+      });
+    for (const gap of gaps) expect(gap).toBeCloseTo(-3, 1);
+    expect(
+      await card
+        .locator("[data-caption-feedback]")
+        .evaluate((element) => element.parentElement.matches(".image-card")),
+    ).toBe(true);
+  };
+  const checkOverlay = async (card, dotted = false, tinted = true) => {
+    const frame = card.locator("[data-cell-image-frame]");
+    await expect(frame).toHaveCSS("outline-style", dotted ? "none" : "solid");
+    await expect(frame).toHaveCSS("outline-offset", "2px");
+    await expect(frame).toHaveCSS("border-top-width", "0px");
+    const dots = frame.locator("[data-feedback-dots]");
+    if (dotted) {
+      await expect(dots).toBeVisible();
+      await expect(dots.locator("rect")).toHaveAttribute(
+        "stroke-dasharray",
+        "2 6",
+      );
+      await expect(dots.locator("rect")).not.toHaveCSS(
+        "stroke",
+        "rgba(0, 0, 0, 0)",
+      );
+      const bounds = await frame.boundingBox();
+      const dottedBounds = await dots.boundingBox();
+      expect(bounds.x - dottedBounds.x).toBeCloseTo(3, 1);
+      expect(dottedBounds.width - bounds.width).toBeCloseTo(6, 1);
+    } else {
+      await expect(dots).toBeHidden();
+    }
+    let metrics;
+    await expect
+      .poll(async () => {
+        metrics = await frame.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const cardBounds = element
+            .closest(".image-card")
+            .getBoundingClientRect();
+          const context = document.createElement("canvas").getContext("2d");
+          const style = getComputedStyle(element);
+          context.fillStyle = style.backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return {
+            aligned: ["left", "top", "right", "bottom"].every(
+              (edge) => Math.abs(bounds[edge] - cardBounds[edge]) < 0.5,
+            ),
+            tint: context.getImageData(0, 0, 1, 1).data[3],
+          };
+        });
+        return tinted ? metrics.tint : Number(metrics.aligned);
+      })
+      .toBeGreaterThan(0);
+    expect(metrics.aligned).toBe(true);
+    if (tinted) expect(metrics.tint).toBeGreaterThan(0);
+  };
+  for (const name of ["Rose", "Forest", "Snow", "Sun"]) {
+    await openSidebarPanel(page, "Design");
+    await page
+      .locator("[data-theme-builder]")
+      .getByRole("radio", { name, exact: true })
+      .click();
+    const palette = (await savedWorkspace(page)).grid;
+    const filled = page.locator(".grid-cell").first();
+    const empty = page.locator("[data-drop-placeholder]").first();
+    const heading = page.locator(".board-export-heading");
+    await expect(filled).toHaveCSS(
+      "--card-frame-hover-color",
+      palette.cellTextColor,
+    );
+    await expect(empty).toHaveCSS(
+      "--card-frame-hover-color",
+      palette.cellTextColor,
+    );
+    await expect(heading).toHaveCSS(
+      "--heading-feedback-color",
+      palette.headingTextColor,
+    );
+    const hoverColor = await filled
+      .locator(".cell-heading")
+      .evaluate((element) => getComputedStyle(element).color);
+    await page.mouse.move(0, 0);
+    const beforeHover = await geometryOf(filled);
+    await filled.locator(".cell-image-button").hover();
+    await checkOverlay(filled);
+    expect(await geometryOf(filled)).toEqual(beforeHover);
+    await filled.locator(".cell-heading").hover();
+    await expect(filled.locator("[data-caption-feedback]")).toHaveCSS(
+      "border-top-color",
+      hoverColor,
+    );
+    await checkCaptionInset(filled);
+    expect(await geometryOf(filled)).toEqual(beforeHover);
+    await filled.locator(".cell-heading").focus();
+    await expect(filled.locator("[data-caption-feedback]")).toHaveCSS(
+      "border-top-color",
+      hoverColor,
+    );
+    await checkCaptionInset(filled);
+    await filled.locator(".cell-heading").blur();
+    await heading.hover();
+    await expect
+      .poll(() =>
+        heading.evaluate(
+          (element) => getComputedStyle(element, "::after").borderTopColor,
+        ),
+      )
+      .toBe(hoverColor);
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File(["preview"], "preview.png", { type: "image/png" }),
+      );
+      return data;
+    });
+    const emptyContent = empty.locator("[data-card-content]");
+    const emptyBackground = await emptyContent.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    const beforeEmptyHover = await geometryOf(empty);
+    await empty.locator(".cell-image-button").hover();
+    await expect(emptyContent).not.toHaveCSS(
+      "background-color",
+      emptyBackground,
+    );
+    await checkOverlay(empty, true, false);
+    expect(await geometryOf(empty)).toEqual(beforeEmptyHover);
+    await empty.dispatchEvent("dragover", { dataTransfer: transfer });
+    await expect(empty).toHaveClass(/drag-over/);
+    const dropColor = await empty.evaluate((element) =>
+      getComputedStyle(element).getPropertyValue("--card-drop-color").trim(),
+    );
+    expect(dropColor).not.toBe("#80cab1");
+    dropColors.add(dropColor);
+    await expect(emptyContent).not.toHaveCSS(
+      "background-color",
+      emptyBackground,
+    );
+    await checkOverlay(empty, true, false);
+    expect(await geometryOf(empty)).toEqual(beforeEmptyHover);
+    await filled.dispatchEvent("dragover", { dataTransfer: transfer });
+    await checkOverlay(filled, true);
+    expect(await geometryOf(filled)).toEqual(beforeHover);
+    await filled.dispatchEvent("dragleave", { dataTransfer: transfer });
+    await empty.dispatchEvent("dragleave", { dataTransfer: transfer });
+    await transfer.dispose();
+    await openSidebarPanel(page, "Images");
+    const library = page.locator(".asset").first();
+    const libraryFeedback = await library.evaluate((element) => {
+      const context = document.createElement("canvas").getContext("2d");
+      const sample = (color) => {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      };
+      const luminance = (channels) =>
+        channels.reduce((sum, channel, index) => {
+          const value = channel / 255;
+          return (
+            sum +
+            [0.2126, 0.7152, 0.0722][index] *
+              (value <= 0.04045
+                ? value / 12.92
+                : ((value + 0.055) / 1.055) ** 2.4)
+          );
+        }, 0);
+      const style = getComputedStyle(element);
+      const feedback = sample(
+        style.getPropertyValue("--card-frame-hover-color"),
+      );
+      const foreground = luminance(feedback);
+      const background = luminance(sample(style.getPropertyValue("--panel")));
+      return {
+        color: `rgb(${feedback.join(", ")})`,
+        contrast:
+          (Math.max(foreground, background) + 0.05) /
+          (Math.min(foreground, background) + 0.05),
+      };
+    });
+    expect(libraryFeedback.contrast).toBeGreaterThanOrEqual(3);
+    const beforeLibraryHover = await geometryOf(library);
+    await library.locator(".library-image-button").hover();
+    await checkOverlay(library);
+    expect(await geometryOf(library)).toEqual(beforeLibraryHover);
+    await library.locator(".library-heading").hover();
+    await expect(library.locator("[data-caption-feedback]")).toHaveCSS(
+      "border-top-color",
+      hoverColor,
+    );
+    await checkCaptionInset(library);
+    expect(await geometryOf(library)).toEqual(beforeLibraryHover);
+    if (name === "Rose")
+      await library.screenshot({
+        path: testInfo.outputPath("caption-feedback-Rose.png"),
+      });
+    const upload = page.locator("[data-upload-tile]").first();
+    const beforeUploadHover = await geometryOf(upload);
+    const uploadContent = upload.locator("[data-card-content]");
+    const uploadBackground = await uploadContent.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    await upload.hover();
+    await expect(uploadContent).not.toHaveCSS(
+      "background-color",
+      uploadBackground,
+    );
+    await checkOverlay(upload, true, false);
+    expect(await geometryOf(upload)).toEqual(beforeUploadHover);
+    if (name === "Rose" || name === "Snow") {
+      await page.screenshot({
+        path: testInfo.outputPath(`theme-feedback-${name}.png`),
+        fullPage: true,
+      });
+    }
+  }
+  expect(dropColors.size).toBeGreaterThan(1);
+  const changed = await savedWorkspace(page);
+  expect(changed.grid.cells).toEqual(original.grid.cells);
+  expect(changed.grid.heading).toBe(original.grid.heading);
+  expect(changed.assets).toEqual(original.assets);
+  expect(changed.exportSettings).toEqual(original.exportSettings);
+});
 
 test("design identifies reset and modified color themes across navigation and reload", async ({
   page,
@@ -2777,7 +3046,7 @@ test("opening Design accordions reveals their toggles and maximum content in the
           const library = element.closest("#asset-library");
           const bounds = library.getBoundingClientRect();
           const frame = element
-            .querySelector("[data-cell-image-frame]")
+            .querySelector("[data-card-content]")
             .getBoundingClientRect();
           return (
             frame.left >= bounds.left &&

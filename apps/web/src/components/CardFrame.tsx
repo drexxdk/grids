@@ -16,34 +16,38 @@ export function CardBorder({ style }: { style: GridStyle }) {
   );
 }
 
-export function CardFrame({ dashed = true }: { dashed?: boolean }) {
+export function CardFrame({ dotted = false }: { dotted?: boolean }) {
   return (
     <span
       aria-hidden="true"
       data-cell-image-frame
-      className="pointer-events-none absolute inset-(--card-frame-inset) z-50 [--frame-color:var(--card-frame-color)]"
+      className="pointer-events-none absolute inset-0 z-50 rounded-[inherit] border-0 transition-colors"
+      style={{
+        outline: dotted ? "none" : "1px solid var(--card-frame-color)",
+        outlineOffset: "2px",
+        backgroundColor: dotted
+          ? "transparent"
+          : "color-mix(in srgb, var(--card-frame-color) 8%, transparent)",
+      }}
     >
       <svg
-        className="absolute inset-0 h-full! w-full! overflow-visible"
+        data-feedback-dots
         aria-hidden="true"
+        className={`absolute -inset-0.75 h-[calc(100%+6px)]! w-[calc(100%+6px)]! overflow-visible ${dotted ? "block" : "hidden"}`}
       >
         <rect
+          x="0.5"
+          y="0.5"
           fill="none"
-          stroke="var(--frame-color)"
-          strokeOpacity="var(--card-frame-opacity, 1)"
-          strokeWidth="var(--card-frame-stroke)"
-          strokeDasharray={
-            dashed
-              ? "var(--card-frame-dash) var(--card-frame-dash-gap)"
-              : "none"
-          }
+          stroke="var(--card-frame-color)"
+          strokeWidth="1"
+          strokeDasharray="2 6"
+          strokeLinecap="round"
           style={{
-            x: "calc(var(--card-frame-stroke) / 2)",
-            y: "calc(var(--card-frame-stroke) / 2)",
-            rx: "calc(var(--card-radius) + var(--card-frame-gap) + var(--card-frame-stroke) / 2)",
-            ry: "calc(var(--card-radius) + var(--card-frame-gap) + var(--card-frame-stroke) / 2)",
-            width: "calc(100% - var(--card-frame-stroke))",
-            height: "calc(100% - var(--card-frame-stroke))",
+            width: "calc(100% - 1px)",
+            height: "calc(100% - 1px)",
+            rx: "calc(var(--card-radius) + 2.5px)",
+            ry: "calc(var(--card-radius) + 2.5px)",
           }}
         />
       </svg>

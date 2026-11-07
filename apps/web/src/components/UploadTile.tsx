@@ -38,12 +38,18 @@ export function UploadTile({
         aria-label={t("common.actions.addImages", { count: 2 })}
         disabled={progress !== null}
         title={t("common.actions.addOrDropImages", { count: 2 })}
-        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:**:data-upload-label:text-xs" : ""}`}
+        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] focus-visible:[--card-frame-color:var(--card-frame-hover-color)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:**:data-upload-label:text-xs" : ""}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,
             "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
             "--upload-corner-radius": `${gridStyle.cornerRadius ?? 12.5}%`,
+            "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
+            "--card-frame-hover-color": contrastingColor(
+              gridStyle.cellBackgroundColor ?? "#111315",
+              gridStyle.cellBackgroundColor ?? "#111315",
+              3,
+            ),
             borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
             backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
             color: contrastingColor(
@@ -76,9 +82,10 @@ export function UploadTile({
         <span
           data-card-content
           style={{
-            backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
+            backgroundColor:
+              "color-mix(in srgb, var(--card-frame-color) 8%, var(--card-background))",
           }}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[inherit] [&_svg]:size-[18cqw]!"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[inherit] transition-colors [&_svg]:size-[18cqw]!"
         >
           {progress ? (
             <>
@@ -110,7 +117,7 @@ export function UploadTile({
           )}
         </span>
         <CardBorder style={gridStyle} />
-        <CardFrame />
+        <CardFrame dotted />
       </button>
     </div>
   );

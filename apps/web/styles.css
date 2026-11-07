@@ -513,14 +513,6 @@ h1 {
 }
 .image-card {
   --card-radius: var(--board-item-radius);
-  --card-frame-stroke: max(1px, 0.5cqw);
-  --card-frame-gap: 2cqw;
-  --card-frame-inset: calc(
-    -1px - var(--card-frame-gap) - var(--card-frame-stroke)
-  );
-  --card-frame-dash: clamp(3px, 1.5cqw, 6px);
-  --card-frame-dash-gap: clamp(4px, 2cqw, 8px);
-  --card-drop-stroke: max(1px, 1cqw);
 }
 .image-card[data-theme-tile] {
   --card-radius: var(--radius-lg);
@@ -550,11 +542,13 @@ h1 {
 }
 .grid-cell.drag-over {
   outline: none;
-  --card-frame-stroke: var(--card-drop-stroke);
   --card-frame-color: var(--card-drop-color, var(--mint)) !important;
 }
-.grid-cell.drag-over [data-cell-image-frame] rect {
-  stroke-dasharray: var(--card-frame-dash) var(--card-frame-dash-gap);
+.grid-cell.drag-over [data-cell-image-frame] {
+  outline: none !important;
+}
+.grid-cell.drag-over [data-feedback-dots] {
+  display: block;
 }
 .cell-image-button,
 .library-image-button,

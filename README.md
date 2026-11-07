@@ -59,7 +59,7 @@ Canvas images, library images and image pickers retain their external hover/focu
 
 Row and column controls remain in separate groups, with plain minus/plus icons and the same neutral button theme as Reset grid. Their accessible labels, minimum/maximum limits and resize behavior are unchanged.
 
-Empty-cell hover/focus frames and active drop outlines adapt to light preset backgrounds and stay at least one pixel thick, so drop targets remain visible in dense layouts as well as dark and pale canvases.
+Canvas card, caption and heading hover feedback uses the chosen theme's text colors; library/upload hover and active drop feedback derive from its surface colors. Drop zones change background color and show a spaced dotted border; image cards combine a background-tint overlay with a solid border. Feedback borders have a small 2px offset and do not affect content geometry. Dotted borders use 2px marks and 6px gaps. These editor-only colors do not alter the exported artwork.
 
 Each color palette coordinates the canvas, heading background, card surface and text. Light palettes use readable dark text instead of inheriting the editor's dark UI. The app toolbar and sidebar keep their own colors.
 

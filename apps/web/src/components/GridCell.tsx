@@ -163,7 +163,7 @@ export function GridCell({
         1.5,
       )
     : (gridStyle.cellBackgroundColor ?? "#111315");
-  const frameBackground = gridStyle.background;
+  const frameBackground = library ? cardBackground : gridStyle.background;
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
@@ -439,12 +439,25 @@ export function GridCell({
             cardBackground,
             "#eef1f3",
           ),
-          "--card-frame-hover-color": library
-            ? "var(--accent)"
-            : contrastingColor(frameBackground, "#d8f36a", 3),
-          "--card-drop-color": library
-            ? "var(--mint)"
-            : contrastingColor(frameBackground, "#80cab1", 3),
+          "--card-frame-hover-color": contrastingColor(
+            frameBackground,
+            library
+              ? (gridStyle.cellBackgroundColor ?? "#111315")
+              : (gridStyle.cellTextColor ?? "#eef1f3"),
+            3,
+          ),
+          "--card-drop-color": contrastingColor(
+            frameBackground,
+            gridStyle.cellBackgroundColor ?? "#111315",
+            3,
+          ),
+          "--card-caption-hover-color": contrastingColor(
+            overlay
+              ? (gridStyle.captionOverlayColor ?? cardBackground)
+              : cardBackground,
+            gridStyle.cellTextColor ?? "#eef1f3",
+            3,
+          ),
           backgroundColor: "var(--card-background)",
         } as React.CSSProperties
       }
@@ -491,7 +504,12 @@ export function GridCell({
           <div
             data-card-content
             className="absolute inset-0 overflow-hidden rounded-[inherit] bg-(--card-background)"
-            style={{ opacity: dragAffected ? 0.35 : 1 }}
+            style={{
+              opacity: dragAffected ? 0.35 : 1,
+              backgroundColor: dropPlaceholder
+                ? "color-mix(in srgb, var(--card-frame-color) 8%, var(--card-background))"
+                : undefined,
+            }}
           >
             <div
               data-card-image
@@ -959,39 +977,39 @@ export function GridCell({
                 {cell.title || t("editor.headingPlaceholder")}
               </span>
             </div>
-            <span
-              aria-hidden="true"
-              data-caption-feedback
-              className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent transition-colors peer-hover/caption:border-(--accent) peer-focus/caption:border-(--accent)`}
-              style={
-                {
-                  "--caption-feedback-inset": "0px",
-                  left: "var(--caption-feedback-inset)",
-                  right: "var(--caption-feedback-inset)",
-                  top: `calc(${(geometry.captionTop / geometry.height) * 100}% + var(--caption-feedback-inset))`,
-                  height: `max(0px, calc(${(geometry.captionHeight / geometry.height) * 100}% - 2 * var(--caption-feedback-inset)))`,
-                  borderTopLeftRadius:
-                    geometry.captionTop === 0
-                      ? "max(0px, calc(var(--card-radius) - 1px - var(--caption-feedback-inset)))"
-                      : 0,
-                  borderTopRightRadius:
-                    geometry.captionTop === 0
-                      ? "max(0px, calc(var(--card-radius) - 1px - var(--caption-feedback-inset)))"
-                      : 0,
-                  borderBottomLeftRadius:
-                    geometry.captionTop + geometry.captionHeight >=
-                    geometry.height - 0.01
-                      ? "max(0px, calc(var(--card-radius) - 1px - var(--caption-feedback-inset)))"
-                      : 0,
-                  borderBottomRightRadius:
-                    geometry.captionTop + geometry.captionHeight >=
-                    geometry.height - 0.01
-                      ? "max(0px, calc(var(--card-radius) - 1px - var(--caption-feedback-inset)))"
-                      : 0,
-                } as React.CSSProperties
-              }
-            />
           </div>
+          <span
+            aria-hidden="true"
+            data-caption-feedback
+            className={`${asset && gridStyle.titlesVisible !== false ? "" : "hidden!"} pointer-events-none absolute z-50 border border-solid border-transparent transition-colors in-[.image-card:has(textarea:hover)]:border-(--card-caption-hover-color) in-[.image-card:has(textarea:focus)]:border-(--card-caption-hover-color)`}
+            style={
+              {
+                "--caption-feedback-inset": "-3px",
+                left: "var(--caption-feedback-inset)",
+                right: "var(--caption-feedback-inset)",
+                top: `calc(${(geometry.captionTop / geometry.height) * 100}% + var(--caption-feedback-inset))`,
+                height: `max(0px, calc(${(geometry.captionHeight / geometry.height) * 100}% - 2 * var(--caption-feedback-inset)))`,
+                borderTopLeftRadius:
+                  geometry.captionTop === 0
+                    ? "max(0px, calc(var(--card-radius) - var(--caption-feedback-inset)))"
+                    : 0,
+                borderTopRightRadius:
+                  geometry.captionTop === 0
+                    ? "max(0px, calc(var(--card-radius) - var(--caption-feedback-inset)))"
+                    : 0,
+                borderBottomLeftRadius:
+                  geometry.captionTop + geometry.captionHeight >=
+                  geometry.height - 0.01
+                    ? "max(0px, calc(var(--card-radius) - var(--caption-feedback-inset)))"
+                    : 0,
+                borderBottomRightRadius:
+                  geometry.captionTop + geometry.captionHeight >=
+                  geometry.height - 0.01
+                    ? "max(0px, calc(var(--card-radius) - var(--caption-feedback-inset)))"
+                    : 0,
+              } as React.CSSProperties
+            }
+          />
           <TextScrollbar
             field={caption}
             active={captionFocused}
@@ -1002,7 +1020,7 @@ export function GridCell({
             }}
           />
           <CardBorder style={gridStyle} />
-          <CardFrame dashed={dropPlaceholder} />
+          <CardFrame dotted={dropPlaceholder} />
           {importing && (
             <span
               role="status"
