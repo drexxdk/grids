@@ -284,7 +284,7 @@ const buttonStyles = cva(
         primary:
           "border-ui-accent bg-ui-accent text-ui-on-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover",
         success:
-          "border-emerald-400 bg-emerald-600 text-white [--control-hover-base:var(--color-emerald-600)] enabled:hover:control-hover focus-visible:outline-emerald-400",
+          "border-emerald-400 bg-emerald-700 text-white [--control-hover-base:var(--color-emerald-700)] enabled:hover:control-hover focus-visible:outline-emerald-400",
         danger:
           "border-red-400/40 bg-red-500/10 text-red-300 [--control-hover-base:color-mix(in_srgb,var(--color-red-500)_10%,var(--panel))] enabled:hover:control-hover focus-visible:outline-red-400",
       },

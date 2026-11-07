@@ -2117,6 +2117,51 @@ test("window resizing reuses card content and canvas measurement contexts", asyn
   }
 });
 
+test("editor chrome uses Tailwind palette tokens independently of saved artwork colors", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await savedWorkspace(page);
+  const chrome = () =>
+    page.evaluate(() => {
+      const styles = getComputedStyle(document.documentElement);
+      return Object.fromEntries(
+        [
+          ["--bg", "--color-zinc-900"],
+          ["--panel", "--color-zinc-800"],
+          ["--text", "--color-zinc-100"],
+          ["--muted", "--color-zinc-400"],
+          ["--accent", "--color-lime-300"],
+          ["--mint", "--color-emerald-300"],
+        ].map(([role, palette]) => [
+          role,
+          [
+            styles.getPropertyValue(role).trim(),
+            styles.getPropertyValue(palette).trim(),
+          ],
+        ]),
+      );
+    });
+  const initialChrome = await chrome();
+  for (const [actual, palette] of Object.values(initialChrome)) {
+    expect(actual).not.toBe("");
+    expect(actual).toBe(palette);
+  }
+  await openSidebarPanel(page, "Design");
+  await openDesignSection(page, "Colors");
+  await page
+    .locator("[data-theme-builder]")
+    .getByRole("radio", { name: "Snow", exact: true })
+    .click();
+  const artwork = (await savedWorkspace(page)).grid;
+  for (const property of ["cellTextColor", "headingTextColor"])
+    expect(artwork[property]).toMatch(/^#[0-9a-f]{6}$/i);
+  expect(await chrome()).toEqual(initialChrome);
+  await page.reload();
+  expect((await savedWorkspace(page)).grid).toEqual(artwork);
+  expect(await chrome()).toEqual(initialChrome);
+});
+
 test("controls share quarter-strength background hover without changing borders", async ({
   page,
 }) => {

@@ -816,7 +816,7 @@ export default function App() {
         >
           {() => (
             <aside
-              className={`asset-panel p-0! panel-right:sticky panel-right:top-0 panel-right:h-dvh panel-right:self-start panel-right:overflow-hidden panel-right:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
+              className={`asset-panel p-0! panel-right:sticky panel-right:top-0 panel-right:h-dvh panel-right:self-start panel-right:overflow-hidden panel-right:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-ui-success" : ""}`}
               aria-label={t("library.dropZone")}
               aria-busy={importProgress !== null}
               onDragOver={(event) => {
