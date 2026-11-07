@@ -3,7 +3,7 @@ import { ImagePlus, LoaderCircle } from "lucide-react";
 import { useState, type CSSProperties, type Ref } from "react";
 import { cellGeometry, type GridStyle } from "../model";
 import { CardBorder, CardFrame } from "./CardFrame";
-import { isLightCanvasColor } from "../canvasTheme";
+import { contrastingColor } from "../canvasTheme";
 
 export function UploadTile({
   progress,
@@ -46,11 +46,10 @@ export function UploadTile({
             "--upload-corner-radius": `${gridStyle.cornerRadius ?? 12.5}%`,
             borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
             backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
-            color: isLightCanvasColor(
+            color: contrastingColor(
               gridStyle.cellBackgroundColor ?? "#111315",
-            )
-              ? "#202325"
-              : "#eef1f3",
+              "#eef1f3",
+            ),
           } as CSSProperties
         }
         data-image-hovered={hovered && !progress ? "" : undefined}

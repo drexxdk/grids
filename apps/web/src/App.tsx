@@ -37,7 +37,7 @@ import {
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
 import { ThemeBuilder } from "./components/PresetsPanel";
-import { isLightCanvasColor } from "./canvasTheme";
+import { contrastingColor } from "./canvasTheme";
 import {
   LibraryImage,
   LibraryImagePlaceholder,
@@ -90,7 +90,7 @@ function BoardHeading({
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const fieldClass =
-    "board-heading-text border-0! rounded-[inherit]! bg-transparent text-inherit [font:inherit] cursor-text! outline-none! hover:bg-white/8! focus:bg-white/12! placeholder:text-current placeholder:opacity-70";
+    "board-heading-text border-0! rounded-[inherit]! bg-transparent text-inherit [font:inherit] cursor-text! outline-none! hover:bg-[color-mix(in_srgb,var(--heading-feedback-color)_8%,transparent)]! focus:bg-[color-mix(in_srgb,var(--heading-feedback-color)_12%,transparent)]! placeholder:normal-case placeholder:text-(--heading-placeholder-color) placeholder:opacity-100";
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
@@ -124,11 +124,15 @@ function BoardHeading({
             board.headingFontWeight,
           ),
           textShadow: board.publisher === "none" ? "none" : undefined,
-          "--heading-feedback-color": isLightCanvasColor(
+          "--heading-feedback-color": contrastingColor(
             board.headingBackgroundColor ?? board.background,
-          )
-            ? "#202325"
-            : "var(--accent)",
+            "#d8f36a",
+            3,
+          ),
+          "--heading-placeholder-color": contrastingColor(
+            board.headingBackgroundColor ?? board.background,
+            "#92999c",
+          ),
           fontSize: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${(board.headingFontSize ?? 21) / 100})`,
           height: `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1, rows).height})`,
           "--heading-padding": `calc(var(--preview-cell-width, calc(100cqw / var(--columns))) * ${headingGeometry(board, 1).padding})`,
@@ -188,7 +192,7 @@ function BoardHeading({
           <span
             data-heading-preview
             data-heading-placeholder={!board.heading.trim() || undefined}
-            className={`mb-[-0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em] ${board.heading.trim() ? "" : "normal-case text-inherit opacity-70"}`}
+            className={`mb-[-0.15em] line-clamp-3 whitespace-pre-wrap wrap-anywhere pb-[0.15em] ${board.heading.trim() ? "" : "normal-case text-(--heading-placeholder-color)"}`}
           >
             {board.heading.trim()
               ? board.heading

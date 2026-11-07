@@ -82,7 +82,7 @@ const palettes = [
   {
     name: "Snow",
     background: "#ffffff",
-    surface: "#f1f3f2",
+    surface: "#d9dfdd",
     text: "#202325",
     overlay: "#ffffff",
   },
@@ -266,7 +266,7 @@ export function ThemeBuilder({
                               value={palette.name}
                               disabled={selectedPalette === palette}
                               title={t(`builder.palettes.${palette.name}`)}
-                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--accent)! data-hover:border-(--accent) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
+                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--line)! aria-checked:bg-(--selected)! data-hover:border-(--accent) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
                             >
                               <span
                                 aria-hidden="true"

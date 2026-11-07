@@ -10,6 +10,32 @@ let providers;
 let cache;
 let navigation;
 let presets;
+test("canvas feedback derives minimum contrast without changing readable colors", async () => {
+  const theme = await loadModule("../src/canvasTheme.ts");
+  for (const background of [
+    "#ffffff",
+    "#17191b",
+    "#808080",
+    "#f4ca36",
+    "#46215b",
+  ]) {
+    const surface = theme.contrastingColor(background, background, 1.5);
+    expect(theme.colorContrast(surface, background)).toBeGreaterThanOrEqual(
+      1.5,
+    );
+    expect(
+      theme.colorContrast(theme.contrastingColor(surface, "#eef1f3"), surface),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      theme.colorContrast(
+        theme.contrastingColor(background, "#d8f36a", 3),
+        background,
+      ),
+    ).toBeGreaterThanOrEqual(3);
+  }
+  expect(theme.contrastingColor("#ffffff", "#202325")).toBe("#202325");
+  expect(theme.contrastingColor("#17191b", "#d8f36a", 3)).toBe("#d8f36a");
+});
 async function loadModule(relativePath) {
   const result = await build({
     configFile: false,

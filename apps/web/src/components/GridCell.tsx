@@ -37,7 +37,7 @@ import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
 import { CardBorder, CardFrame } from "./CardFrame";
 import { centerTextArea, TextScrollbar } from "./TextScrollbar";
-import { isLightCanvasColor } from "../canvasTheme";
+import { contrastingColor } from "../canvasTheme";
 
 const cardToolButtonStyles = cva(
   "pointer-events-auto absolute p-0! rounded-[2cqw]! border-white/30! bg-black/60! text-white [&_svg]:size-[40%]!",
@@ -156,7 +156,14 @@ export function GridCell({
 }) {
   const coarsePointer = useCoarsePointer();
   const dropPlaceholder = !asset && !library;
-  const darkDropFrame = !library && isLightCanvasColor(gridStyle.background);
+  const cardBackground = dropPlaceholder
+    ? contrastingColor(
+        gridStyle.background,
+        gridStyle.cellBackgroundColor ?? "#111315",
+        1.5,
+      )
+    : (gridStyle.cellBackgroundColor ?? "#111315");
+  const frameBackground = gridStyle.background;
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
@@ -427,16 +434,17 @@ export function GridCell({
           aspectRatio: `600 / ${geometry.height}`,
           "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
           borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
-          "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
-          "--card-placeholder-color": isLightCanvasColor(
-            gridStyle.cellBackgroundColor ?? "#111315",
-          )
-            ? "#202325"
-            : "#eef1f3",
-          "--card-frame-hover-color": darkDropFrame
-            ? "#202325"
-            : "var(--accent)",
-          "--card-drop-color": darkDropFrame ? "#202325" : "var(--mint)",
+          "--card-background": cardBackground,
+          "--card-placeholder-color": contrastingColor(
+            cardBackground,
+            "#eef1f3",
+          ),
+          "--card-frame-hover-color": library
+            ? "var(--accent)"
+            : contrastingColor(frameBackground, "#d8f36a", 3),
+          "--card-drop-color": library
+            ? "var(--mint)"
+            : contrastingColor(frameBackground, "#80cab1", 3),
           backgroundColor: "var(--card-background)",
         } as React.CSSProperties
       }

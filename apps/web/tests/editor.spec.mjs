@@ -2200,6 +2200,46 @@ test("design identifies reset and modified color themes across navigation and re
   await expect(colors).toHaveText("1ColorsInk");
   await expect(ink).toBeChecked();
   await expect(ink).toBeDisabled();
+  const selectedBackground = await page
+    .getByRole("tab", { name: "Design", exact: true })
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  await expect(ink).toHaveCSS("background-color", selectedBackground);
+  const normalBorder = await builder
+    .getByRole("radio", { name: "Forest", exact: true })
+    .evaluate((element) => getComputedStyle(element).borderTopColor);
+  await expect(ink).toHaveCSS("border-top-color", normalBorder);
+  await ink.hover();
+  await expect(ink).toHaveCSS("border-top-color", normalBorder);
+  const checkHeadingPlaceholder = async () => {
+    const placeholder = page.locator("[data-heading-placeholder]");
+    await expect(placeholder).toHaveCSS("text-transform", "none");
+    const placeholderColor = await placeholder.evaluate(
+      (element) => getComputedStyle(element).color,
+    );
+    const headingColor = await placeholder.evaluate(
+      (element) => getComputedStyle(element.closest("h2")).color,
+    );
+    expect(placeholderColor).not.toBe(headingColor);
+    await placeholder.click();
+    const field = page.locator("textarea.board-heading-text");
+    await expect(field).toBeVisible();
+    expect(
+      await field.evaluate((element) => {
+        const style = getComputedStyle(element, "::placeholder");
+        return {
+          color: style.color,
+          transform: style.textTransform,
+          opacity: style.opacity,
+        };
+      }),
+    ).toEqual({ color: placeholderColor, transform: "none", opacity: "1" });
+    await field.fill("Actual heading");
+    await expect(field).toHaveCSS("color", headingColor);
+    await field.fill("");
+    await field.press("Escape");
+    await expect(placeholder).toHaveCSS("color", placeholderColor);
+  };
+  await checkHeadingPlaceholder();
   const paletteOrder = [
     "Ink",
     "Forest",
@@ -2215,7 +2255,7 @@ test("design identifies reset and modified color themes across navigation and re
       name,
     );
   }
-  for (const name of ["Cocoa", "Plum"]) {
+  for (const name of ["Cocoa", "Plum", "Snow"]) {
     await builder.getByRole("radio", { name, exact: true }).click();
     await expect(colors).toHaveText(`1Colors${name}`);
     await expect
@@ -2226,7 +2266,79 @@ test("design identifies reset and modified color themes across navigation and re
     await expect(
       builder.getByRole("radio", { name, exact: true }),
     ).toBeChecked();
+    await expect(builder.getByRole("radio", { name, exact: true })).toHaveCSS(
+      "background-color",
+      selectedBackground,
+    );
+    await expect(builder.getByRole("radio", { name, exact: true })).toHaveCSS(
+      "border-top-color",
+      normalBorder,
+    );
     await expect(colors).toHaveText(`1Colors${name}`);
+    if (name === "Snow") {
+      expect((await savedWorkspace(page)).grid).toMatchObject({
+        background: "#ffffff",
+        cellBackgroundColor: "#d9dfdd",
+      });
+      const contrast = await page
+        .locator("[data-drop-placeholder]")
+        .first()
+        .evaluate((element) => {
+          const context = document.createElement("canvas").getContext("2d");
+          const luminance = (color) => {
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            const channels = [...context.getImageData(0, 0, 1, 1).data]
+              .slice(0, 3)
+              .map((channel) => {
+                const value = channel / 255;
+                return value <= 0.04045
+                  ? value / 12.92
+                  : ((value + 0.055) / 1.055) ** 2.4;
+              });
+            return (
+              channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+            );
+          };
+          const ratio = (foreground, background) => {
+            const foregroundLuminance = luminance(foreground);
+            const backgroundLuminance = luminance(background);
+            return (
+              (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+              (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
+            );
+          };
+          const cardStyle = getComputedStyle(element);
+          const canvasColor = getComputedStyle(
+            element.closest("#board-grid"),
+          ).backgroundColor;
+          const heading = document.querySelector("[data-heading-placeholder]");
+          return {
+            surface: ratio(cardStyle.backgroundColor, canvasColor),
+            text: ratio(
+              getComputedStyle(element.querySelector(".empty-cell")).color,
+              cardStyle.backgroundColor,
+            ),
+            hover: ratio(
+              cardStyle.getPropertyValue("--card-frame-hover-color"),
+              canvasColor,
+            ),
+            heading: ratio(
+              getComputedStyle(heading).color,
+              getComputedStyle(heading.closest("h2")).backgroundColor,
+            ),
+          };
+        });
+      expect(contrast.surface).toBeGreaterThanOrEqual(1.5);
+      expect(contrast.text).toBeGreaterThanOrEqual(4.5);
+      expect(contrast.hover).toBeGreaterThanOrEqual(3);
+      expect(contrast.heading).toBeGreaterThanOrEqual(4.5);
+      await checkHeadingPlaceholder();
+      await page.screenshot({
+        path: testInfo.outputPath("snow-placeholder-contrast.png"),
+        fullPage: true,
+      });
+    }
   }
   await builder.getByRole("radio", { name: "Forest", exact: true }).click();
   await expect(colors).toHaveText("1ColorsForest");
@@ -2267,6 +2379,7 @@ test("design identifies reset and modified color themes across navigation and re
   await expect(colors).toHaveText("1ColorsInk · Modified");
   await expect(ink).not.toBeChecked();
   await expect(ink).toBeEnabled();
+  await expect(ink).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await openSidebarPanel(page, "Images");
   await openSidebarPanel(page, "Design");
   await expect(colors).toHaveText("1ColorsInk · Modified");
