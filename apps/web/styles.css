@@ -58,6 +58,7 @@
   font-display: swap;
 }
 :root {
+  --card-hover-strength: 25%;
   --board-item-radius: 12px;
   color-scheme: dark;
   --bg: var(--color-zinc-900);
@@ -405,6 +406,14 @@ h1 {
 }
 .grid-cell.drag-over [data-cell-image-frame] {
   outline: none !important;
+  background-color: color-mix(
+    in srgb,
+    var(--card-frame-color) var(--card-hover-strength),
+    transparent
+  ) !important;
+}
+.grid-cell.drag-over[data-drop-placeholder] [data-card-content] {
+  background-color: var(--card-background) !important;
 }
 .grid-cell.drag-over [data-feedback-dots] {
   display: block;

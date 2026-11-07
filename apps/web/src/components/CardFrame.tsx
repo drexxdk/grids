@@ -25,9 +25,7 @@ export function CardFrame({ dotted = false }: { dotted?: boolean }) {
       style={{
         outline: dotted ? "none" : "1px solid var(--card-frame-color)",
         outlineOffset: "2px",
-        backgroundColor: dotted
-          ? "transparent"
-          : "color-mix(in srgb, var(--card-frame-color) 8%, transparent)",
+        backgroundColor: "transparent",
       }}
     >
       <svg

@@ -625,7 +625,7 @@ export default function App() {
     }
     setCardDrag({
       source,
-      visual,
+      visual: source.kind === "asset" ? libraryDragVisual(visual) : visual,
       targetId:
         validTarget && (source.kind !== "cell" || source.cellId !== targetId)
           ? targetId
@@ -1397,6 +1397,20 @@ export default function App() {
     </>
   );
 
+  function libraryDragVisual(visual: CardDragVisual): CardDragVisual {
+    const bounds = document
+      .querySelector("#board-grid > .grid-cell")
+      ?.getBoundingClientRect();
+    if (!bounds?.width || !bounds.height) return visual;
+    return {
+      ...visual,
+      width: bounds.width,
+      height: bounds.height,
+      offsetX: (visual.offsetX / visual.width) * bounds.width,
+      offsetY: (visual.offsetY / visual.height) * bounds.height,
+    };
+  }
+
   function renderLibraryImages(selectionOnly = false) {
     return activeAssets.map((asset) => (
       <LibraryImage
@@ -1424,7 +1438,11 @@ export default function App() {
           selectionOnly
             ? undefined
             : (source, visual) =>
-                setCardDrag({ source, visual, targetId: null })
+                setCardDrag({
+                  source,
+                  visual: libraryDragVisual(visual),
+                  targetId: null,
+                })
         }
         onTouchDrag={selectionOnly ? undefined : touchDrag}
         onSelect={

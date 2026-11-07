@@ -3000,14 +3000,15 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
           caption.bottom - border.bottom,
         ];
       });
-    for (const gap of gaps) expect(gap).toBeCloseTo(-3, 1);
+    for (const [index, gap] of gaps.entries())
+      expect(gap).toBeCloseTo(index === 1 ? -1 : -3, 1);
     expect(
       await card
         .locator("[data-caption-feedback]")
         .evaluate((element) => element.parentElement.matches(".image-card")),
     ).toBe(true);
   };
-  const checkOverlay = async (card, dotted = false, tinted = true) => {
+  const checkOverlay = async (card, dotted = false, tinted = false) => {
     const frame = card.locator("[data-cell-image-frame]");
     await expect(frame).toHaveCSS("outline-style", dotted ? "none" : "solid");
     await expect(frame).toHaveCSS("outline-offset", "2px");
@@ -3049,7 +3050,9 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
             tint: context.getImageData(0, 0, 1, 1).data[3],
           };
         });
-        return tinted ? metrics.tint : Number(metrics.aligned);
+        return tinted
+          ? metrics.tint
+          : Number(metrics.aligned && metrics.tint === 0);
       })
       .toBeGreaterThan(0);
     expect(metrics.aligned).toBe(true);
@@ -3142,51 +3145,63 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
       "background-color",
       emptyBackground,
     );
-    await checkOverlay(empty, true, false);
+    await checkOverlay(empty, true, true);
     expect(await geometryOf(empty)).toEqual(beforeEmptyHover);
     await filled.dispatchEvent("dragover", { dataTransfer: transfer });
-    await checkOverlay(filled, true);
+    await checkOverlay(filled, true, true);
     expect(await geometryOf(filled)).toEqual(beforeHover);
     await filled.dispatchEvent("dragleave", { dataTransfer: transfer });
     await empty.dispatchEvent("dragleave", { dataTransfer: transfer });
     await transfer.dispose();
     await openSidebarPanel(page, "Images");
     const library = page.locator(".asset").first();
-    const libraryFeedback = await library.evaluate((element) => {
+    const canvasFeedback = await filled.evaluate((element) => {
       const context = document.createElement("canvas").getContext("2d");
+      const style = getComputedStyle(element);
       const sample = (color) => {
         context.fillStyle = color;
         context.fillRect(0, 0, 1, 1);
-        return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+        const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+        return `rgb(${channels.join(", ")})`;
       };
-      const luminance = (channels) =>
-        channels.reduce((sum, channel, index) => {
-          const value = channel / 255;
-          return (
-            sum +
-            [0.2126, 0.7152, 0.0722][index] *
-              (value <= 0.04045
-                ? value / 12.92
-                : ((value + 0.055) / 1.055) ** 2.4)
-          );
-        }, 0);
-      const style = getComputedStyle(element);
-      const feedback = sample(
-        style.getPropertyValue("--card-frame-hover-color"),
-      );
-      const foreground = luminance(feedback);
-      const background = luminance(sample(style.getPropertyValue("--panel")));
+      const imageToken = style
+        .getPropertyValue("--card-frame-hover-color")
+        .trim();
+      const captionToken = style
+        .getPropertyValue("--card-caption-hover-color")
+        .trim();
       return {
-        color: `rgb(${feedback.join(", ")})`,
-        contrast:
-          (Math.max(foreground, background) + 0.05) /
-          (Math.min(foreground, background) + 0.05),
+        imageToken,
+        captionToken,
+        image: sample(imageToken),
+        caption: sample(captionToken),
       };
     });
-    expect(libraryFeedback.contrast).toBeGreaterThanOrEqual(3);
+    await expect(library).toHaveCSS(
+      "--card-frame-hover-color",
+      canvasFeedback.imageToken,
+    );
+    await expect(library).toHaveCSS(
+      "--card-caption-hover-color",
+      canvasFeedback.captionToken,
+    );
     const beforeLibraryHover = await geometryOf(library);
     await library.locator(".library-image-button").hover();
     await checkOverlay(library);
+    await expect(library.locator("[data-cell-image-frame]")).toHaveCSS(
+      "outline-color",
+      canvasFeedback.image,
+    );
+    await expect
+      .poll(() =>
+        library.locator("[data-cell-image-frame]").evaluate((element) => {
+          const context = document.createElement("canvas").getContext("2d");
+          context.fillStyle = getComputedStyle(element).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3] / 255;
+        }),
+      )
+      .toBe(0);
     const clippedFrameEdges = await library.evaluate((element) => {
       const frame = element.getBoundingClientRect();
       const clipped = [];
@@ -3213,9 +3228,24 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
     expect(clippedFrameEdges).toEqual([]);
     expect(await geometryOf(library)).toEqual(beforeLibraryHover);
     await library.locator(".library-heading").hover();
+    await expect(library.locator("[data-cell-image-frame]")).toHaveCSS(
+      "outline-color",
+      "rgba(0, 0, 0, 0)",
+    );
     await expect(library.locator("[data-caption-feedback]")).toHaveCSS(
       "border-top-color",
-      hoverColor,
+      canvasFeedback.caption,
+    );
+    await checkCaptionInset(library);
+    await checkOverlay(library);
+    await library.locator(".library-heading").focus();
+    await expect(library.locator("[data-cell-image-frame]")).toHaveCSS(
+      "outline-color",
+      "rgba(0, 0, 0, 0)",
+    );
+    await expect(library.locator("[data-caption-feedback]")).toHaveCSS(
+      "border-top-color",
+      canvasFeedback.caption,
     );
     await checkCaptionInset(library);
     expect(await geometryOf(library)).toEqual(beforeLibraryHover);
@@ -3979,9 +4009,7 @@ test("reset tab confirms clearing the grid and all images at every screen size",
   await page
     .getByRole("button", { name: `Image options: ${firstTitle}`, exact: true })
     .hover();
-  await page
-    .getByRole("button", { name: `Delete ${firstTitle}`, exact: true })
-    .click();
+  await page.getByRole("button", { name: "Delete image", exact: true }).click();
   await editHeading(page, "Reset this heading");
   await openSidebarPanel(page, "Design");
   await openDesignSection(page, "Layout");
@@ -7311,7 +7339,7 @@ test("cell toolbar overlays the image and never selects a cell", async ({
   await expect(page.locator(".asset")).toHaveCount(1);
   await page.locator(".asset").hover();
   const libraryDelete = page.getByRole("button", {
-    name: "Delete overlay",
+    name: "Delete image",
     exact: true,
   });
   await libraryDelete.hover();
@@ -8078,7 +8106,7 @@ test("individual library deletion retains canvas images without confirmation", a
   await page.screenshot({
     path: testInfo.outputPath("library-delete-hover-desktop.png"),
   });
-  await page.getByRole("button", { name: "Delete used", exact: true }).click();
+  await page.getByRole("button", { name: "Delete image", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect
     .poll(
@@ -8119,7 +8147,7 @@ test("individual library deletion retains canvas images without confirmation", a
       .getByRole("button", { name: `Image options: ${title}`, exact: true })
       .hover();
     await page
-      .getByRole("button", { name: `Delete ${title}`, exact: true })
+      .getByRole("button", { name: "Delete image", exact: true })
       .click();
   }
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -8200,14 +8228,17 @@ test("touch library taps reveal delete and upload remains the first tile", async
   expect(addBox.width).toBeCloseTo(imageBox.width, 1);
   expect(addBox.height).toBeCloseTo(imageBox.height, 1);
   await expect(
-    page.getByRole("button", { name: "Delete first", exact: true }),
+    page.getByRole("button", { name: "Delete image", exact: true }),
   ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Image options: first", exact: true })
     .tap();
   await expect(
-    page.getByRole("button", { name: "Delete first", exact: true }),
+    page.getByRole("button", { name: "Delete image", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete image", exact: true }),
+  ).toHaveAttribute("title", "Delete image");
   expect(
     await page.evaluate(() =>
       document.activeElement?.matches("input,textarea"),
@@ -8216,13 +8247,13 @@ test("touch library taps reveal delete and upload remains the first tile", async
   await page.screenshot({
     path: testInfo.outputPath("library-delete-tap-mobile.png"),
   });
-  await page.getByRole("button", { name: "Delete first", exact: true }).tap();
+  await page.getByRole("button", { name: "Delete image", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Image options: second", exact: true })
     .tap();
-  await page.getByRole("button", { name: "Delete second", exact: true }).tap();
+  await page.getByRole("button", { name: "Delete image", exact: true }).tap();
   await expect(page.locator(".asset")).toHaveCount(0);
   await expect
     .poll(async () => (await localDatabase(page)).document?.assets.length)
@@ -8456,7 +8487,7 @@ test("unused-image deletion releases removed placements and protects visible med
       .getByRole("button", { name: `Image options: ${title}`, exact: true })
       .hover();
     await page
-      .getByRole("button", { name: `Delete ${title}`, exact: true })
+      .getByRole("button", { name: "Delete image", exact: true })
       .click();
   }
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -11027,7 +11058,7 @@ test("image picker keeps uploads reachable and separates deletion from placement
   }
   await picker.getByRole("button", { name: "Use Grid 7", exact: true }).hover();
   await picker
-    .getByRole("button", { name: "Delete Grid 7", exact: true })
+    .getByRole("button", { name: "Delete image", exact: true })
     .click();
   await expect(picker.locator("[data-library-image]")).toHaveCount(7);
   await expect(page.locator(".grid-cell").first().locator("img")).toHaveCount(
@@ -11159,7 +11190,78 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
     await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
   ).toBe(true);
   await expect(images.first()).toHaveAttribute("draggable", "true");
-  await images.first().dragTo(cells.nth(0).locator(".cell-image-button"));
+  const checkFloatingSize = async () => {
+    const boardCard = await cells.first().boundingBox();
+    const size = await page
+      .locator("[data-drag-floating]")
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          width: parseFloat(style.width),
+          height: parseFloat(style.height),
+        };
+      });
+    expect(size.width).toBeCloseTo(boardCard.width, 1);
+    expect(size.height).toBeCloseTo(boardCard.height, 1);
+  };
+  const checkDropFeedback = async (index) => {
+    const target = cells.nth(index);
+    await expect(target).toHaveClass(/drag-over/);
+    await expect(target.locator("[data-card-content]")).toHaveCSS(
+      "opacity",
+      "0.35",
+    );
+    const colors = await target.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        drop: style.getPropertyValue("--card-drop-color").trim(),
+        hover: style.getPropertyValue("--card-frame-hover-color").trim(),
+      };
+    });
+    expect(colors.drop).toBe(colors.hover);
+    const frame = target.locator("[data-cell-image-frame]");
+    await expect(frame).toHaveCSS("opacity", "1");
+    await expect
+      .poll(() =>
+        frame.evaluate((element) => {
+          const context = document.createElement("canvas").getContext("2d");
+          context.fillStyle = getComputedStyle(element).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3] / 255;
+        }),
+      )
+      .toBeCloseTo(0.25, 2);
+  };
+  const mouseCopy = async () => {
+    const sourceBounds = await images.first().boundingBox();
+    const targetBounds = await cells.first().boundingBox();
+    await page.mouse.move(sourceBounds.x + 8, sourceBounds.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(sourceBounds.x + 24, sourceBounds.y + 8, {
+      steps: 5,
+    });
+    await expect(page.locator("[data-drag-floating]")).toBeVisible();
+    await checkFloatingSize();
+    await page.mouse.move(targetBounds.x + 10, targetBounds.y + 10, {
+      steps: 5,
+    });
+    await page.mouse.move(targetBounds.x + 12, targetBounds.y + 12, {
+      steps: 2,
+    });
+    await checkDropFeedback(0);
+    await page.mouse.move(
+      targetBounds.x + targetBounds.width * 0.75,
+      targetBounds.y + targetBounds.height * 0.5,
+      { steps: 5 },
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `drop-tint-${await page.evaluate(() => innerWidth)}.png`,
+      ),
+    });
+    await page.mouse.up();
+  };
+  await mouseCopy();
   await expect(cells.nth(0).locator("img")).toHaveAttribute("alt", "Library A");
   await expect(images).toHaveCount(2);
   const session = await context.newCDPSession(page);
@@ -11184,7 +11286,7 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
       type: "touchStart",
       touchPoints: [{ ...start, id: 1 }],
     });
-    for (let step = 1; step <= 8; step++)
+    for (let step = 1; step <= 8; step++) {
       await session.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [
@@ -11195,7 +11297,13 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
           },
         ],
       });
+      if (step === 1) {
+        await expect(page.locator("[data-drag-floating]")).toBeVisible();
+        await checkFloatingSize();
+      }
+    }
     await expect(page.locator("[data-drag-floating]")).toBeVisible();
+    await checkDropFeedback(targetIndex);
 
     await session.send("Input.dispatchTouchEvent", {
       type: cancel ? "touchCancel" : "touchEnd",
@@ -11210,10 +11318,20 @@ test("library cards support mouse and touch copying on touch-capable desktops", 
   await expect(cells.nth(2).locator("img")).toHaveCount(0);
   await images.nth(1).tap({ position: { x: 5, y: 5 } });
   await expect(
-    page.getByRole("button", { name: "Delete Library B", exact: true }),
+    page.getByRole("button", { name: "Delete image", exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("touch-library-card.png"),
+  });
+  await setEditorViewport(page, { width: 780, height: 720 });
+  await expect(page.locator('[data-editor-layout="bottom"]')).toBeVisible();
+  await expect(page.locator("#asset-library")).toHaveCount(1);
+  await mouseCopy();
+  await touchCopy(2);
+  await expect(cells.nth(2).locator("img")).toHaveAttribute("alt", "Library B");
+  await expect(images).toHaveCount(2);
+  await page.screenshot({
+    path: testInfo.outputPath("bottom-library-board-sized-drag.png"),
   });
   await session.detach();
   await context.close();

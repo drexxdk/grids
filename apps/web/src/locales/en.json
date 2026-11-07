@@ -294,7 +294,7 @@
       "chooseImage": "Choose image",
       "replaceImage": "Replace image",
       "dragImage": "Drag image",
-      "deleteImage": "Delete {value1}",
+      "deleteImage": "Delete image",
       "clear": "Clear cell"
     },
     "caption": {

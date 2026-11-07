@@ -86,7 +86,7 @@ export function UploadTile({
           data-card-content
           style={{
             backgroundColor:
-              "color-mix(in srgb, var(--card-frame-color) 8%, var(--card-background))",
+              "color-mix(in srgb, var(--card-frame-color) var(--card-hover-strength), var(--card-background))",
           }}
           className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[inherit] transition-colors [&_svg]:size-[18cqw]!"
         >

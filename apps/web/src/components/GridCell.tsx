@@ -156,15 +156,16 @@ export function GridCell({
         1.5,
       )
     : (gridStyle.cellBackgroundColor ?? "#111315");
-  const frameBackground =
-    library || dropPlaceholder ? cardBackground : gridStyle.background;
+  const frameBackground = dropPlaceholder
+    ? cardBackground
+    : gridStyle.background;
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
   const primaryActionLabel = selectsLibraryImage
     ? t("cell.actions.useImage", { value1: asset?.title })
     : library
-      ? t("cell.actions.deleteImage", { value1: asset?.title })
+      ? t("cell.actions.deleteImage")
       : t("cell.actions.clear");
   const trigger = useRef<HTMLButtonElement>(null);
   const [failedImage, setFailedImage] = useState<string | null>(null);
@@ -435,7 +436,7 @@ export function GridCell({
           ),
           "--card-frame-hover-color": contrastingColor(
             frameBackground,
-            library || dropPlaceholder
+            dropPlaceholder
               ? cardBackground
               : (gridStyle.cellTextColor ?? "#eef1f3"),
             3,
@@ -444,7 +445,7 @@ export function GridCell({
             frameBackground,
             dropPlaceholder
               ? cardBackground
-              : (gridStyle.cellBackgroundColor ?? "#111315"),
+              : (gridStyle.cellTextColor ?? "#eef1f3"),
             3,
           ),
           "--card-caption-hover-color": contrastingColor(
@@ -503,7 +504,7 @@ export function GridCell({
             style={{
               opacity: dragAffected ? 0.35 : 1,
               backgroundColor: dropPlaceholder
-                ? "color-mix(in srgb, var(--card-frame-color) 8%, var(--card-background))"
+                ? "color-mix(in srgb, var(--card-frame-color) var(--card-hover-strength), var(--card-background))"
                 : undefined,
             }}
           >
@@ -982,10 +983,11 @@ export function GridCell({
             style={
               {
                 "--caption-feedback-inset": "-3px",
+                "--caption-feedback-top-inset": "-1px",
                 left: "var(--caption-feedback-inset)",
                 right: "var(--caption-feedback-inset)",
-                top: `calc(${(geometry.captionTop / geometry.height) * 100}% + var(--caption-feedback-inset))`,
-                height: `max(0px, calc(${(geometry.captionHeight / geometry.height) * 100}% - 2 * var(--caption-feedback-inset)))`,
+                top: `calc(${(geometry.captionTop / geometry.height) * 100}% + var(--caption-feedback-top-inset))`,
+                height: `max(0px, calc(${(geometry.captionHeight / geometry.height) * 100}% - var(--caption-feedback-inset) - var(--caption-feedback-top-inset)))`,
                 borderTopLeftRadius:
                   geometry.captionTop === 0
                     ? "max(0px, calc(var(--card-radius) - var(--caption-feedback-inset)))"
