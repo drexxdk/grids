@@ -130,8 +130,8 @@ export function Modal({
                   motionTransition={{ duration: reduced ? 0 : 0.18 }}
                   className={
                     fullscreen
-                      ? "flex h-dvh w-full flex-col bg-(--panel)"
-                      : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-(--line) bg-(--panel) p-5 shadow-xl`
+                      ? "flex h-dvh w-full flex-col bg-ui-panel"
+                      : `w-full ${size === "wide" ? "max-w-200" : "max-w-md"} rounded-lg border border-solid border-ui-border bg-ui-panel p-5 shadow-xl`
                   }
                 >
                   <InitialDialogFocus
@@ -161,7 +161,7 @@ export function Modal({
                   <DialogTitle className="sr-only">{title}</DialogTitle>
                   <span
                     role="status"
-                    className="flex items-center gap-2 text-sm text-(--text)"
+                    className="flex items-center gap-2 text-sm text-ui-text"
                   >
                     <LoaderCircle
                       aria-hidden="true"

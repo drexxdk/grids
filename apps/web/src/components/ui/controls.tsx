@@ -110,13 +110,13 @@ export function MotionDiv({
 }
 
 const buttonStyles = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent disabled:cursor-default disabled:opacity-50",
   {
     variants: {
       variant: {
         secondary: "",
         primary:
-          "border-(--accent) bg-(--accent) text-[#19200d] [--control-hover-base:var(--accent)] enabled:hover:control-hover",
+          "border-ui-accent bg-ui-accent text-ui-on-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover",
         success:
           "border-emerald-400 bg-emerald-600 text-white [--control-hover-base:var(--color-emerald-600)] enabled:hover:control-hover focus-visible:outline-emerald-400",
         danger:
@@ -128,7 +128,7 @@ const buttonStyles = cva(
       {
         variant: ["secondary", "icon"],
         className:
-          "border-(--line) bg-(--bg) text-(--text) enabled:hover:not-aria-pressed:control-hover!",
+          "border-ui-border bg-ui-background text-ui-text enabled:hover:not-aria-pressed:control-hover!",
       },
     ],
     defaultVariants: { variant: "secondary" },
@@ -170,7 +170,7 @@ export function ButtonGroup({
       aria-label={label}
       data-button-group={orientation}
       className={clsx(
-        "inline-flex gap-0 rounded-md bg-(--bg) [&>button]:relative [&>button]:rounded-none! [&>button]:bg-(--bg)! [&>button[aria-pressed=true]]:bg-(--selected)! [&>button[aria-pressed=true]:enabled:hover]:border-(--line)! [&>button[aria-pressed=true]]:cursor-default! [&>button:not([aria-pressed=true]):hover]:z-10 [&>button:focus-visible]:z-20",
+        "inline-flex gap-0 rounded-md bg-ui-background [&>button]:relative [&>button]:rounded-none! [&>button]:bg-ui-background! [&>button[aria-pressed=true]]:bg-ui-selected! [&>button[aria-pressed=true]:enabled:hover]:border-ui-border! [&>button[aria-pressed=true]]:cursor-default! [&>button:not([aria-pressed=true]):hover]:z-10 [&>button:focus-visible]:z-20",
         orientation === "vertical"
           ? "flex-col [&>button+button]:-mt-px [&>button:first-child]:rounded-t-md! [&>button:last-child]:rounded-b-md!"
           : "[&>button+button]:-ml-px [&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!",
@@ -220,7 +220,7 @@ export function IconRadioField({
       <Label className={hideLabel ? "sr-only" : "field-label"}>{label}</Label>
       <div
         className={clsx(
-          "isolate grid gap-0 rounded-md bg-(--bg)",
+          "isolate grid gap-0 rounded-md bg-ui-background",
           columns === 3
             ? "grid-cols-3 @max-[260px]/radio:grid-cols-2"
             : "grid-cols-2",
@@ -239,7 +239,7 @@ export function IconRadioField({
               disabled={optionValue === value}
               data-value={optionValue}
               className={clsx(
-                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-(--line) bg-(--bg) px-1 py-2 text-(--muted) [--control-hover-base:var(--bg)] data-hover:z-10 enabled:data-hover:control-hover data-checked:bg-(--selected) data-checked:text-(--accent) data-checked:cursor-default! data-checked:opacity-100! focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent)",
+                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-ui-border bg-ui-background px-1 py-2 text-ui-muted [--control-hover-base:var(--bg)] data-hover:z-10 enabled:data-hover:control-hover data-checked:bg-ui-selected data-checked:text-ui-accent data-checked:cursor-default! data-checked:opacity-100! focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ui-accent",
                 optionIndex % columns !== 0 && "-ml-px",
                 optionIndex >= columns && "-mt-px",
                 optionIndex === 0 && "rounded-tl-md",
@@ -317,7 +317,7 @@ export function SelectField({
             : undefined
         }
         className={clsx(
-          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left enabled:data-hover:control-hover focus-visible:-outline-offset-3!",
+          "flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-solid border-ui-border bg-ui-background px-3 py-2 text-left enabled:data-hover:control-hover focus-visible:-outline-offset-3!",
           largeFontPreview && "py-0!",
           compact && "h-11 px-2! py-0!",
         )}
@@ -348,7 +348,7 @@ export function SelectField({
         anchor="bottom"
         modal={false}
         className={clsx(
-          "z-70 w-(--button-width) max-w-[calc(100vw-24px)] rounded-sm border border-solid border-(--line) bg-(--panel) p-1 [--anchor-gap:4px] [--anchor-padding:12px]",
+          "z-70 w-(--button-width) max-w-[calc(100vw-24px)] rounded-sm border border-solid border-ui-border bg-ui-panel p-1 [--anchor-gap:4px] [--anchor-padding:12px]",
           compact && "min-w-42.5",
         )}
       >
@@ -370,7 +370,7 @@ export function SelectField({
                 fontWeight: option.fontWeight,
               }}
               className={clsx(
-                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word [--control-hover-base:var(--panel)] enabled:hover:control-hover enabled:data-focus:control-hover data-selected:bg-(--selected) data-selected:text-(--accent) data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
+                "flex min-h-11 w-full items-center gap-2 rounded-none border-0 bg-transparent text-left cursor-pointer px-3 py-2 text-sm! wrap-break-word [--control-hover-base:var(--panel)] enabled:hover:control-hover enabled:data-focus:control-hover data-selected:bg-ui-selected data-selected:text-ui-accent data-disabled:cursor-default! data-disabled:opacity-50 data-disabled:data-selected:opacity-100!",
                 largeFontPreview && "py-0! text-[20px]! leading-7",
               )}
             >
@@ -410,7 +410,7 @@ export function ColorField({
       </label>
       <DataInteractive
         as="div"
-        className="flex w-full min-w-0 items-center rounded-sm border border-solid border-(--line) bg-(--bg) focus-within:border-(--accent) transition-colors"
+        className="flex w-full min-w-0 items-center rounded-sm border border-solid border-ui-border bg-ui-background focus-within:border-ui-accent transition-colors"
       >
         <DataInteractive
           as="input"
@@ -431,7 +431,7 @@ export function ColorField({
           spellCheck={false}
           autoComplete="off"
           maxLength={7}
-          className="h-11! w-full min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-2 text-(--text) outline-none data-hover:control-hover! transition-colors"
+          className="h-11! w-full min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-2 text-ui-text outline-none data-hover:control-hover! transition-colors"
           onChange={(event) => {
             setDraft(event.target.value);
             const color = normalize(event.target.value);
@@ -471,10 +471,10 @@ export function Toggle({
         onChange={onChange}
         aria-label={label}
         className={clsx(
-          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) transition-colors motion-reduce:transition-none",
+          "relative h-6 w-11 shrink-0 rounded-full border-0 p-0 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent transition-colors motion-reduce:transition-none",
           checked
-            ? "bg-(--accent) [--control-hover-base:var(--accent)] enabled:hover:control-hover enabled:data-hover:control-hover"
-            : "bg-(--selected) [--control-hover-base:var(--selected)] [--control-hover-tint:var(--text)] enabled:hover:control-hover enabled:data-hover:control-hover",
+            ? "bg-ui-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover enabled:data-hover:control-hover"
+            : "bg-ui-selected [--control-hover-base:var(--selected)] [--control-hover-tint:var(--text)] enabled:hover:control-hover enabled:data-hover:control-hover",
         )}
       >
         <m.span
@@ -482,7 +482,7 @@ export function Toggle({
           initial={false}
           animate={{ x: checked ? 20 : 0 }}
           transition={{ duration: reduced ? 0 : 0.16 }}
-          className="absolute top-1 left-1 size-4 rounded-full bg-(--panel)"
+          className="absolute top-1 left-1 size-4 rounded-full bg-ui-panel"
         />
       </Switch>
     </div>
@@ -574,7 +574,7 @@ export function TemplateAccordion({
     <Disclosure
       as="section"
       defaultOpen={expanded}
-      className="border-0 border-b border-solid border-(--line)"
+      className="border-0 border-b border-solid border-ui-border"
     >
       {({ open }) => (
         <>
@@ -586,7 +586,7 @@ export function TemplateAccordion({
                 trigger.current?.getAttribute("aria-expanded") !== "true";
               if (next !== expanded) onToggle(next);
             }}
-            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-(--accent) [--control-hover-base:var(--panel)] enabled:hover:control-hover transition-colors"
+            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-ui-accent [--control-hover-base:var(--panel)] enabled:hover:control-hover transition-colors"
           >
             <span>{title}</span>
             <ChevronDown
@@ -631,7 +631,7 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
       motionTransition={{ duration: reduced ? 0 : 0.14 }}
-      className="z-50 w-48 max-w-[calc(100vw-2rem)] rounded-md border border-solid border-(--line) bg-(--panel) p-1 shadow-xl outline-none [--anchor-gap:8px]"
+      className="z-50 w-48 max-w-[calc(100vw-2rem)] rounded-md border border-solid border-ui-border bg-ui-panel p-1 shadow-xl outline-none [--anchor-gap:8px]"
     >
       {actions.map(({ label, icon: Icon, onSelect, disabled }) => (
         <MenuItem key={label} disabled={disabled}>

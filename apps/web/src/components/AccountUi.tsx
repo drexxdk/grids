@@ -56,7 +56,7 @@ type ProviderTileProps = {
 
 export function ProviderTile(props: ProviderTileProps) {
   const className =
-    "relative inline-flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-solid border-(--line) bg-(--bg) px-0 text-(--text) no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:cursor-default disabled:opacity-50 aria-pressed:border-(--accent) aria-pressed:bg-(--selected) aria-pressed:disabled:opacity-100!";
+    "relative inline-flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-solid border-ui-border bg-ui-background px-0 text-ui-text no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent disabled:cursor-default disabled:opacity-50 aria-pressed:border-ui-accent aria-pressed:bg-ui-selected aria-pressed:disabled:opacity-100!";
   const content = (
     <>
       <ProviderMark provider={props.provider} />
@@ -66,7 +66,7 @@ export function ProviderTile(props: ProviderTileProps) {
       {props.connected && (
         <Check
           aria-hidden="true"
-          className="absolute top-1 right-1 size-3 text-(--accent)"
+          className="absolute top-1 right-1 size-3 text-ui-accent"
         />
       )}
     </>
@@ -151,7 +151,7 @@ export function AccountFeedback({
       {busy && (
         <p
           role="status"
-          className="flex items-center gap-2 text-sm text-(--muted)"
+          className="flex items-center gap-2 text-sm text-ui-muted"
         >
           <LoaderCircle
             aria-hidden="true"
@@ -194,18 +194,18 @@ export function AccountConfirmationCard({
 }) {
   return (
     <div
-      className="flex flex-col items-start gap-3 rounded-xl border border-solid border-(--line) bg-(--bg) p-4"
+      className="flex flex-col items-start gap-3 rounded-xl border border-solid border-ui-border bg-ui-background p-4"
       role="group"
       aria-label={title}
     >
       <h3 className="m-0 flex items-center gap-2 text-base font-semibold">
         <Icon
           aria-hidden="true"
-          className={`size-5 shrink-0 ${destructive ? "text-red-300" : "text-(--accent)"}`}
+          className={`size-5 shrink-0 ${destructive ? "text-red-300" : "text-ui-accent"}`}
         />
         {title}
       </h3>
-      <p className="m-0 text-sm leading-relaxed text-(--muted)">{message}</p>
+      <p className="m-0 text-sm leading-relaxed text-ui-muted">{message}</p>
       <div className="flex w-full flex-wrap gap-2">{children}</div>
     </div>
   );

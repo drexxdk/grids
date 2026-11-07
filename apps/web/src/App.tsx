@@ -842,7 +842,7 @@ export default function App() {
             >
               <div
                 data-sidebar-header
-                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 panel-bottom:hidden"
+                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-ui-border px-4 py-4 panel-bottom:hidden"
               >
                 <a className="brand" href="./">
                   <span className="brand-mark">
@@ -936,7 +936,7 @@ export default function App() {
               {conflict && (
                 <div
                   role="alert"
-                  className="flex flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-(--line) p-4"
+                  className="flex flex-wrap items-center justify-between gap-3 border-0 border-b border-solid border-ui-border p-4"
                 >
                   <p className="m-0 min-w-0 text-sm">{t("save.conflict")}</p>
                   <Button
@@ -1402,7 +1402,7 @@ export default function App() {
               onChange={(quality) => patchExport({ quality })}
             />
           )}
-          <p className="text-sm text-(--muted)">
+          <p className="text-sm text-ui-muted">
             {size.width} × {size.height}
             {t("export.pixelUnit")}
           </p>
@@ -1535,18 +1535,18 @@ export default function App() {
     return (
       <section aria-label={t("editor.reset.title")}>
         <div className="flex flex-col gap-4">
-          <p data-reset-description className="m-0 text-sm text-(--muted)">
+          <p data-reset-description className="m-0 text-sm text-ui-muted">
             {t("editor.reset.description")}
           </p>
           <fieldset className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0 max-[360px]:grid-cols-1">
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
             <label
               data-reset-option="all"
-              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-focus-visible:border-(--accent)"
+              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-ui-border p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-focus-visible:border-ui-accent"
             >
               <input
                 type="checkbox"
-                className="size-5 shrink-0 accent-(--accent) outline-none!"
+                className="size-5 shrink-0 accent-ui-accent outline-none!"
                 checked={resetAll}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
@@ -1567,13 +1567,13 @@ export default function App() {
                 <div
                   key={part}
                   data-reset-option={part}
-                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-(--line) p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-[input:focus-visible]:border-(--accent) **:[[role=radio]]:border-(--bg)! max-[360px]:p-2"
+                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-ui-border p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-[input:focus-visible]:border-ui-accent **:[[role=radio]]:border-ui-background! max-[360px]:p-2"
                 >
                   <label className="flex min-w-0 cursor-pointer flex-col gap-2 outline-none!">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
                       <input
                         type="checkbox"
-                        className="size-5 shrink-0 accent-(--accent) outline-none!"
+                        className="size-5 shrink-0 accent-ui-accent outline-none!"
                         aria-label={t(`editor.reset.${part}`)}
                         aria-describedby={`reset-${part}-description`}
                         checked={
@@ -1603,7 +1603,7 @@ export default function App() {
                     </span>
                     <span
                       id={`reset-${part}-description`}
-                      className="text-sm text-(--muted) wrap-anywhere max-[360px]:text-xs"
+                      className="text-sm text-ui-muted wrap-anywhere max-[360px]:text-xs"
                     >
                       {t(`editor.reset.${part}Description`)}
                     </span>
@@ -1639,7 +1639,7 @@ export default function App() {
               ),
             )}
           </fieldset>
-          <p aria-live="polite" className="m-0 text-sm text-(--muted)">
+          <p aria-live="polite" className="m-0 text-sm text-ui-muted">
             {resetAll
               ? t("editor.reset.allWarning")
               : resetSelection.images

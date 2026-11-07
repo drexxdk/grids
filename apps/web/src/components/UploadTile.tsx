@@ -43,7 +43,7 @@ export function UploadTile({
         aria-label={t("common.actions.addImages", { count: 2 })}
         disabled={progress !== null}
         title={t("common.actions.addOrDropImages", { count: 2 })}
-        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] focus-visible:[--card-frame-color:var(--card-frame-hover-color)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "panel-bottom:aspect-square! panel-bottom:rounded-(--upload-corner-radius)!" : ""}`}
+        className={`image-card @container relative size-full border-0! p-0! text-ui-muted outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] focus-visible:[--card-frame-color:var(--card-frame-hover-color)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "panel-bottom:aspect-square! panel-bottom:rounded-(--upload-corner-radius)!" : ""}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,

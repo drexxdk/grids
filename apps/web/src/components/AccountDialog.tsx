@@ -59,16 +59,16 @@ export function AccountDialog({
       <div className="flex min-w-0 flex-col gap-5 data-connecting:[&_button:disabled]:opacity-100! [&_button]:min-h-11 [&_button]:text-sm" data-connecting={connecting || undefined} aria-busy={busy || loading}>
         <AccountFeedback busy={(busy || loading) && !connecting} error={error || sessionError} onRetry={() => void run(async () => { await onRefresh(); })} />
         {session?.user && <>
-          <div role="group" aria-label={t("account.identityTitle")} className="flex min-w-0 items-center gap-3 rounded-xl border border-solid border-(--line) bg-(--bg) p-4">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-solid border-(--line) bg-(--panel)">
+          <div role="group" aria-label={t("account.identityTitle")} className="flex min-w-0 items-center gap-3 rounded-xl border border-solid border-ui-border bg-ui-background p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-solid border-ui-border bg-ui-panel">
               <UserRound aria-hidden="true" className="size-5" />
             </span>
             <div className="min-w-0">
               <p className="m-0 wrap-anywhere font-semibold">{session.user.name}</p>
-              <p className="m-0 text-sm text-(--muted)">{t("account.identityTitle")}</p>
+              <p className="m-0 text-sm text-ui-muted">{t("account.identityTitle")}</p>
             </div>
           </div>
-          {pendingMerge && <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-(--accent) bg-(--bg) p-4" aria-label={t("account.mergeTitle")}>
+          {pendingMerge && <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-ui-accent bg-ui-background p-4" aria-label={t("account.mergeTitle")}>
             <h3 className="m-0 flex items-center gap-2 text-base font-semibold">
               <Link2 aria-hidden="true" className="size-5" />{t("account.mergeTitle")}
             </h3>
@@ -78,7 +78,7 @@ export function AccountDialog({
               value3: pendingMerge.grids,
               value4: pendingMerge.presets,
             })}</p>
-            <p className="m-0 text-xs leading-relaxed text-(--muted)">{t("account.mergeHelp")}</p>
+            <p className="m-0 text-xs leading-relaxed text-ui-muted">{t("account.mergeHelp")}</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" disabled={busy || loading} onClick={() => void run(async () => {
                 await apiRequest("/account/merge", z.undefined(), { method: "POST", body: { id: pendingMerge.id } });

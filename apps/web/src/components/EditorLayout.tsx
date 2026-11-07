@@ -231,7 +231,7 @@ export function EditorLayout({
         ref={resizeControls}
         data-canvas-controls
         data-overlay-scroll={headerLayout === "scroll" ? "x" : "none"}
-        className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-(--panel) py-3 pr-3" : `overflow-hidden pr-3 flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
+        className={`flex min-h-11 min-w-0 items-center gap-2 pl-3 ${headerLayout === "scroll" ? "min-w-0 flex-1 flex-nowrap justify-start self-stretch overflow-x-auto overflow-y-hidden bg-ui-panel py-3 pr-3" : `overflow-hidden pr-3 flex-wrap justify-center ${headerLayout === "shifted" ? "justify-start!" : ""} ${!compact && sidebarOpen ? "w-[calc(100%-350px)]" : "w-full"}`}`}
       >
         {canvasControls}
       </div>
@@ -274,7 +274,7 @@ export function EditorLayout({
       data-brand-placement={brandInHeader ? "header" : "aside"}
       data-compact-export={compactExport ? true : undefined}
       data-overlay-scroll={headerLayout === "scroll" ? "none" : "x"}
-      className={`group/header relative col-span-full flex min-h-19 w-full shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-(--line) bg-(--bg) [&_button:focus-visible]:-outline-offset-3!`}
+      className={`group/header relative col-span-full flex min-h-19 w-full shrink-0 overflow-y-hidden ${headerLayout === "scroll" ? "items-stretch overflow-x-hidden" : "items-center overflow-x-auto py-3"} border-0 border-b border-solid border-ui-border bg-ui-background [&_button:focus-visible]:-outline-offset-3!`}
     >
       {canvasActions}
     </header>
@@ -315,16 +315,16 @@ export function EditorLayout({
                 data-editor-sidebar
                 data-overlay-scroll={compact ? "y" : "none"}
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(150px,30dvh)] flex-row items-start overflow-x-hidden overflow-y-auto overscroll-contain border-t [--shelf-content-height:149px]" : "flex h-full flex-col overflow-hidden border-l"}`}
+                className={`min-h-0 min-w-0 w-full border-0 border-solid border-ui-border bg-ui-panel ${compact ? "flex h-[min(150px,30dvh)] flex-row items-start overflow-x-hidden overflow-y-auto overscroll-contain border-t [--shelf-content-height:149px]" : "flex h-full flex-col overflow-hidden border-l"}`}
               >
                 <div
                   data-sidebar-sticky
-                  className={`z-20 shrink-0 bg-(--panel) ${compact ? "relative h-(--shelf-content-height) w-11" : "sticky top-0"}`}
+                  className={`z-20 shrink-0 bg-ui-panel ${compact ? "relative h-(--shelf-content-height) w-11" : "sticky top-0"}`}
                 >
                   {!brandInHeader && !compact && (
                     <div
                       data-sidebar-brand
-                      className="flex min-h-19 items-center border-0 border-b border-solid border-(--line) px-4 py-3"
+                      className="flex min-h-19 items-center border-0 border-b border-solid border-ui-border px-4 py-3"
                     >
                       {brand}
                     </div>

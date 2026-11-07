@@ -146,10 +146,10 @@ export function SavedGridsDialog({
     }
   }
   const presetRows = (items: PresetSummary[]) => items.map((item) => (
-    <li key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-solid border-(--line) bg-(--bg) p-3">
+    <li key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-solid border-ui-border bg-ui-background p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="min-w-0 flex-1 wrap-anywhere font-semibold">{item.name}</span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-(--selected) px-2 py-1 text-xs text-(--muted)">
+        <span className="inline-flex items-center gap-1 rounded-full bg-ui-selected px-2 py-1 text-xs text-ui-muted">
           {item.public ? <Globe2 aria-hidden="true" className="size-3" /> : <Lock aria-hidden="true" className="size-3" />}
           {t(item.public ? "account.public" : "account.private")}
         </span>
@@ -179,22 +179,22 @@ export function SavedGridsDialog({
         })} />
         {confirmation ? <AccountConfirmation actions={actions} /> : <>
           {session?.user ? <>
-            <form className="flex min-w-0 flex-col gap-4 rounded-xl border border-solid border-(--line) p-4 sm:p-5" onSubmit={(event) => {
+            <form className="flex min-w-0 flex-col gap-4 rounded-xl border border-solid border-ui-border p-4 sm:p-5" onSubmit={(event) => {
               event.preventDefault();
               void run(() => saveGrid());
             }}>
               <div className="flex items-start gap-3">
-                <Save aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-(--accent)" />
+                <Save aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-ui-accent" />
                 <div>
                   <h3 className="m-0 text-base font-semibold">{t("account.saveTitle")}</h3>
-                  <p className="mt-1 mb-0 text-sm leading-relaxed text-(--muted)">{t("account.saveDescription")}</p>
+                  <p className="mt-1 mb-0 text-sm leading-relaxed text-ui-muted">{t("account.saveDescription")}</p>
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold" htmlFor="cloud-save-name">{t("account.name")}</label>
                 <input
                   id="cloud-save-name"
-                  className="min-h-12 placeholder:text-(--muted)"
+                  className="min-h-12 placeholder:text-ui-muted"
                   placeholder={t("account.namePlaceholder")}
                   aria-describedby="cloud-save-name-help"
                   value={name}
@@ -203,7 +203,7 @@ export function SavedGridsDialog({
                   required
                   disabled={busy}
                 />
-                <p id="cloud-save-name-help" className="m-0 text-xs text-(--muted)">{t("account.nameHelp")}</p>
+                <p id="cloud-save-name-help" className="m-0 text-xs text-ui-muted">{t("account.nameHelp")}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="primary" type="submit" disabled={busy || !name.trim()}>
@@ -218,10 +218,10 @@ export function SavedGridsDialog({
                   setRefresh((value) => value + 1);
                 })}><Palette aria-hidden="true" />{t("account.savePreset")}</Button>
               </div>
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-solid border-(--line) bg-(--bg) p-3 text-sm leading-relaxed">
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-solid border-ui-border bg-ui-background p-3 text-sm leading-relaxed">
                 <input
                   type="checkbox"
-                  className="m-0 mt-1 size-4 shrink-0 accent-(--accent)"
+                  className="m-0 mt-1 size-4 shrink-0 accent-ui-accent"
                   checked={publish}
                   onChange={(event) => setPublish(event.target.checked)}
                   aria-describedby="cloud-publish-help"
@@ -229,17 +229,17 @@ export function SavedGridsDialog({
                 />
                 <span>{t("account.publish")}</span>
               </label>
-              <p id="cloud-publish-help" className="-mt-2 mb-0 text-xs leading-relaxed text-(--muted)">{t("account.publishHelp")}</p>
+              <p id="cloud-publish-help" className="-mt-2 mb-0 text-xs leading-relaxed text-ui-muted">{t("account.publishHelp")}</p>
             </form>
             <div className="grid min-w-0 gap-5 md:grid-cols-2">
             <section className="flex min-w-0 flex-col gap-3" aria-label={t("account.myGrids")}>
               <h3 className="m-0 flex items-center gap-2 text-sm font-semibold">
-                <LayoutGrid aria-hidden="true" className="size-4 text-(--muted)" />{t("account.myGrids")}
-                <span aria-hidden="true" className="ml-auto rounded-full bg-(--selected) px-2 py-0.5 text-xs text-(--muted)">{grids.length}</span>
+                <LayoutGrid aria-hidden="true" className="size-4 text-ui-muted" />{t("account.myGrids")}
+                <span aria-hidden="true" className="ml-auto rounded-full bg-ui-selected px-2 py-0.5 text-xs text-ui-muted">{grids.length}</span>
               </h3>
-              {!grids.length && <p className="m-0 rounded-lg border border-dashed border-(--line) bg-(--bg) p-5 text-sm text-(--muted)">{t("account.empty")}</p>}
+              {!grids.length && <p className="m-0 rounded-lg border border-dashed border-ui-border bg-ui-background p-5 text-sm text-ui-muted">{t("account.empty")}</p>}
               <ul className="m-0 flex list-none flex-col gap-3 p-0">{grids.map((item) => (
-                <li key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-solid border-(--line) bg-(--bg) p-3">
+                <li key={item.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-solid border-ui-border bg-ui-background p-3">
                   <span className="wrap-anywhere font-semibold">{item.name}</span>
                   <div className="flex flex-wrap gap-2">
                     <Button disabled={busy} onClick={() => confirm(t("account.confirmLoad"), () => loadGrid(item))}>
@@ -260,25 +260,25 @@ export function SavedGridsDialog({
             </section>
             <section className="flex min-w-0 flex-col gap-3" aria-label={t("account.myPresets")}>
               <h3 className="m-0 flex items-center gap-2 text-sm font-semibold">
-                <Palette aria-hidden="true" className="size-4 text-(--muted)" />{t("account.myPresets")}
-                <span aria-hidden="true" className="ml-auto rounded-full bg-(--selected) px-2 py-0.5 text-xs text-(--muted)">{presets.length}</span>
+                <Palette aria-hidden="true" className="size-4 text-ui-muted" />{t("account.myPresets")}
+                <span aria-hidden="true" className="ml-auto rounded-full bg-ui-selected px-2 py-0.5 text-xs text-ui-muted">{presets.length}</span>
               </h3>
-              {!presets.length && <p className="m-0 rounded-lg border border-dashed border-(--line) bg-(--bg) p-5 text-sm text-(--muted)">{t("account.empty")}</p>}
+              {!presets.length && <p className="m-0 rounded-lg border border-dashed border-ui-border bg-ui-background p-5 text-sm text-ui-muted">{t("account.empty")}</p>}
               <ul className="m-0 flex list-none flex-col gap-3 p-0">{presetRows(presets)}</ul>
               {pages.presets !== null && <Button disabled={busy} onClick={() => void run(() => loadMore("presets"))}>
                 <ChevronDown aria-hidden="true" />{t("account.more")}
               </Button>}
             </section>
             </div>
-          </> : session && <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-(--line) bg-(--bg) p-4">
-            <p className="m-0 text-sm text-(--muted)">{t("account.libraryGuest")}</p>
+          </> : session && <section className="flex flex-col items-start gap-3 rounded-xl border border-solid border-ui-border bg-ui-background p-4">
+            <p className="m-0 text-sm text-ui-muted">{t("account.libraryGuest")}</p>
             <Button onClick={onLogin}><LogIn aria-hidden="true" />{t("account.login")}</Button>
           </section>}
           <section className="flex min-w-0 flex-col gap-3" aria-label={t("account.publicPresets")}>
             <h3 className="m-0 flex items-center gap-2 text-sm font-semibold">
-              <Globe2 aria-hidden="true" className="size-4 text-(--muted)" />{t("account.publicPresets")}
+              <Globe2 aria-hidden="true" className="size-4 text-ui-muted" />{t("account.publicPresets")}
             </h3>
-            {!shared.length && <p className="m-0 rounded-lg border border-dashed border-(--line) bg-(--bg) p-5 text-sm text-(--muted)">{t("account.empty")}</p>}
+            {!shared.length && <p className="m-0 rounded-lg border border-dashed border-ui-border bg-ui-background p-5 text-sm text-ui-muted">{t("account.empty")}</p>}
             <ul className="m-0 flex list-none flex-col gap-3 p-0">{presetRows(shared)}</ul>
             {pages.shared !== null && <Button disabled={busy} onClick={() => void run(() => loadMore("shared"))}>
               <ChevronDown aria-hidden="true" />{t("account.more")}

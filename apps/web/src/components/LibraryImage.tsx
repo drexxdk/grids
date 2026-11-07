@@ -43,7 +43,7 @@ export function LibraryImagePlaceholder({
         }
       >
         {loading && (
-          <LoaderCircle className="size-[18cqw]! animate-spin text-(--muted) motion-reduce:animate-none" />
+          <LoaderCircle className="size-[18cqw]! animate-spin text-ui-muted motion-reduce:animate-none" />
         )}
         <CardBorder style={gridStyle} />
       </div>

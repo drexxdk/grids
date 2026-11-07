@@ -22,7 +22,7 @@ export function LoginDialog({
   return (
     <Modal open={open} ready={!loading} onClose={onClose} onExited={onExited} title={t("account.login")} returnFocus={returnFocus}>
       <div className="flex min-w-0 flex-col gap-5">
-        <p className="m-0 text-sm leading-relaxed text-(--muted)">{t("account.loginDescription")}</p>
+        <p className="m-0 text-sm leading-relaxed text-ui-muted">{t("account.loginDescription")}</p>
         <AccountFeedback busy={loading} error={error} onRetry={onRetry} />
         {!error && session && !session.user && <div className="grid auto-cols-fr grid-flow-col gap-0.5 min-[320px]:gap-2">
           {session.providers.map((provider) => (
@@ -38,7 +38,7 @@ export function LoginDialog({
               }}
             />
           ))}
-          {!session.providers.length && <p className="m-0 flex items-start gap-2 text-sm text-(--muted)">
+          {!session.providers.length && <p className="m-0 flex items-start gap-2 text-sm text-ui-muted">
             <LogIn aria-hidden="true" className="size-5 shrink-0" />{t("account.noProviders")}
           </p>}
         </div>}

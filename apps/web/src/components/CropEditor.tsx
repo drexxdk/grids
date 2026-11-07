@@ -57,7 +57,7 @@ export function CropEditor({
       returnFocus={returnFocus}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 flex-1 bg-(--bg)" data-crop-stage>
+        <div className="relative min-h-0 flex-1 bg-ui-background" data-crop-stage>
           <Cropper
             image={asset.src}
             crop={position}
@@ -85,7 +85,7 @@ export function CropEditor({
             </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-(--line) bg-(--panel) p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-ui-border bg-ui-panel p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
           <div className="flex min-w-40 flex-1 items-center gap-3 max-[600px]:basis-full">
             <label htmlFor="crop-zoom" className="shrink-0">
               {t("crop.zoom")}

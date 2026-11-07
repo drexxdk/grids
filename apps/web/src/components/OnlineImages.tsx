@@ -327,7 +327,7 @@ export function OnlineImages({
         <div className="relative min-w-0">
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3 size-4! -translate-y-1/2 text-(--muted)"
+            className="pointer-events-none absolute top-1/2 left-3 size-4! -translate-y-1/2 text-ui-muted"
           />
           <input
             type="search"
@@ -341,7 +341,7 @@ export function OnlineImages({
               setFiltering(true);
               setError("");
             }}
-            className="min-h-11 w-full min-w-0 pl-10! focus:outline-none! focus:border-(--accent)"
+            className="min-h-11 w-full min-w-0 pl-10! focus:outline-none! focus:border-ui-accent"
           />
         </div>
         {searchActions}
@@ -368,7 +368,7 @@ export function OnlineImages({
                   title={t(`library.browse.${topic.id ?? "all"}`)}
                   aria-pressed={selectedTopic === topic.id}
                   disabled={selectedTopic === topic.id && !error}
-                  className={`size-8! p-0! ${compactRow ? "max-[901px]:size-7!" : ""} aria-pressed:bg-(--selected)! aria-pressed:text-(--accent) disabled:opacity-100! [&_svg]:size-4!`}
+                  className={`size-8! p-0! ${compactRow ? "max-[901px]:size-7!" : ""} aria-pressed:bg-ui-selected! aria-pressed:text-ui-accent disabled:opacity-100! [&_svg]:size-4!`}
                   onClick={() => {
                     setFiltering(false);
                     setBrowsing({
@@ -469,7 +469,7 @@ export function OnlineImages({
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
               <p
                 role={error ? "alert" : "status"}
-                className="max-w-full rounded-md bg-(--panel)/95 px-3 py-2 text-center text-sm wrap-break-word"
+                className="max-w-full rounded-md bg-ui-panel/95 px-3 py-2 text-center text-sm wrap-break-word"
               >
                 {message}
               </p>

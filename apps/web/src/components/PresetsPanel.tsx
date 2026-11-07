@@ -143,7 +143,7 @@ export function ThemeBuilder({
           key={item.title}
           defaultOpen={index === 0}
           data-design-accordion
-          className="min-w-0 border-0 border-b border-solid border-(--line) last:border-b-0"
+          className="min-w-0 border-0 border-b border-solid border-ui-border last:border-b-0"
         >
           {({ open, close }) => (
             <>
@@ -162,13 +162,13 @@ export function ThemeBuilder({
                   className="relative flex min-h-14 w-full items-center gap-3 rounded-none! border-0! bg-transparent! py-3! pr-12! pl-3! text-left text-sm! [--control-hover-base:var(--panel)] data-hover:control-hover! focus-visible:-outline-offset-3!"
                 >
                   <span
-                    className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${open ? "bg-(--accent) text-(--bg)" : "bg-(--selected) text-(--muted)"}`}
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${open ? "bg-ui-accent text-ui-background" : "bg-ui-selected text-ui-muted"}`}
                   >
                     {index + 1}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span>{item.title}</span>
-                    <span className="truncate text-xs font-normal text-(--muted)">
+                    <span className="truncate text-xs font-normal text-ui-muted">
                       {item.summary}
                     </span>
                   </span>
@@ -220,7 +220,7 @@ export function ThemeBuilder({
                                 }
                               }}
                               title={t(`builder.palettes.${palette.name}`)}
-                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-(--line) bg-transparent! p-2! text-xs! aria-checked:border-(--line)! aria-checked:bg-(--selected)! [--control-hover-base:var(--panel)] enabled:data-hover:not-aria-checked:control-hover! focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-100!"
+                              className="group flex min-h-18 min-w-0 flex-col items-center gap-2 rounded-md border border-solid border-ui-border bg-transparent! p-2! text-xs! aria-checked:border-ui-border! aria-checked:bg-ui-selected! [--control-hover-base:var(--panel)] enabled:data-hover:not-aria-checked:control-hover! focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ui-accent disabled:opacity-100!"
                             >
                               <span
                                 aria-hidden="true"
@@ -465,13 +465,13 @@ export function ThemeBuilder({
                           key={index}
                           data-design-accordion
                           data-design-customize
-                          className="min-w-0 border-0 border-l-2 border-solid border-(--line) pl-3"
+                          className="min-w-0 border-0 border-l-2 border-solid border-ui-border pl-3"
                         >
                           {({ open: customOpen }) => (
                             <>
                               <DisclosureButton
                                 data-customize-toggle
-                                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-sm border border-solid border-(--line) bg-(--bg) px-3 py-2 text-left text-xs text-(--muted) data-hover:control-hover hover:text-(--text) data-open:text-(--text) focus-visible:-outline-offset-3!"
+                                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-sm border border-solid border-ui-border bg-ui-background px-3 py-2 text-left text-xs text-ui-muted data-hover:control-hover hover:text-ui-text data-open:text-ui-text focus-visible:-outline-offset-3!"
                               >
                                 <SlidersHorizontal
                                   aria-hidden="true"

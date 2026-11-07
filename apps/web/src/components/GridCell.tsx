@@ -748,7 +748,7 @@ export function GridCell({
                   {failedImage === asset.src && (
                     <span
                       role="status"
-                      className="absolute inset-0 grid place-items-center bg-(--panel) p-2 text-sm text-(--text)"
+                      className="absolute inset-0 grid place-items-center bg-ui-panel p-2 text-sm text-ui-text"
                     >
                       {t("account.imageUnavailable")}
                     </span>

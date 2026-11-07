@@ -89,7 +89,7 @@ export function TextScrollbar({
       aria-hidden="true"
       data-caption-scrollbar={kind === "caption" || undefined}
       data-heading-scrollbar={kind === "heading" || undefined}
-      className={`absolute z-50 w-2 touch-none rounded-sm bg-(--line) cursor-default! ${scroll.left ? "-left-3" : "-right-3"}`}
+      className={`absolute z-50 w-2 touch-none rounded-sm bg-ui-border cursor-default! ${scroll.left ? "-left-3" : "-right-3"}`}
       style={style}
       onMouseDown={(event) => event.preventDefault()}
       onPointerDown={(event) => {
@@ -112,7 +112,7 @@ export function TextScrollbar({
       }
     >
       <div
-        className="absolute inset-x-0 rounded-sm bg-(--accent)"
+        className="absolute inset-x-0 rounded-sm bg-ui-accent"
         style={{
           height: `min(100%, max(16px, ${(scroll.height / scroll.contentHeight) * 100}%))`,
           top: `calc((100% - min(100%, max(16px, ${(scroll.height / scroll.contentHeight) * 100}%))) * ${scroll.top / (scroll.contentHeight - scroll.height)})`,
