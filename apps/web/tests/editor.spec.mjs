@@ -3920,10 +3920,19 @@ test("opening Design accordions reveals their toggles and maximum content in the
       const toggle = builder.getByRole("button", {
         name: new RegExp(`^\\d ${title}`),
       });
-      await expect(toggle.locator("svg")).toHaveCSS("rotate", "none");
+      const chevronAngle = () =>
+        toggle.locator("svg").evaluate((chevron) => {
+          const transform = new DOMMatrix(
+            getComputedStyle(chevron.parentElement).transform,
+          );
+          return Math.round(
+            Math.abs((Math.atan2(transform.b, transform.a) * 180) / Math.PI),
+          );
+        });
+      await expect.poll(chevronAngle).toBe(0);
       await toggle.click();
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
-      await expect(toggle.locator("svg")).toHaveCSS("rotate", "180deg");
+      await expect.poll(chevronAngle).toBe(180);
       await expect(builder.locator("fieldset[id^=theme-step-]")).toHaveCount(1);
       await checkReveal(toggle);
       const customize = builder.locator("[data-customize-toggle]");
