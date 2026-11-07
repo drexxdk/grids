@@ -6,7 +6,7 @@ Keep Tailwind, Headless UI, Motion and CVA as the existing foundation. Consolida
 
 Prefer Tailwind's built-in palette for ordinary editor chrome and feedback where it suits the design. Expose colors through semantic Tailwind theme names so components do not depend on particular palette steps. Keep intentional brand colors and user-authored artwork colors separate. Introduce semantic aliases without changing appearance first; evaluate any palette changes in a separate visual pass.
 
-This is a design reference, not a second progress tracker. Implementation status remains in [../docs/roadmap.md](../docs/roadmap.md). No application refactor has been performed as part of this audit.
+This is an audit/design reference, not a second progress tracker. Implementation status remains in [../docs/roadmap.md](../docs/roadmap.md). The findings below describe the pre-migration source; the implementation follows the staged sequence while preserving the documented domain boundaries.
 
 ## Audit Scope
 
@@ -18,7 +18,7 @@ There are two CVA definitions: the shared button recipe and the canvas tool-butt
 
 This was a source audit, not a new visual/accessibility certification. No browser suites were rerun for planning.
 
-## Colors Today
+## Colors At Audit
 
 We are using Tailwind utilities, but most editor chrome is **not using Tailwind's default color palette**.
 

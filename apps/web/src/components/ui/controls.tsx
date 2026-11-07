@@ -4,7 +4,6 @@ import {
   DataInteractive,
   Description,
   Field,
-  Disclosure,
   DisclosureButton,
   DisclosurePanel,
   Listbox,
@@ -13,10 +12,6 @@ import {
   ListboxOption,
   ListboxOptions,
   Label,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
   Radio,
   RadioGroup,
   Switch,
@@ -26,15 +21,12 @@ import clsx from "clsx";
 import {
   ChevronDown,
   LoaderCircle,
-  MoreHorizontal,
   type LucideIcon,
   type LucideProps,
 } from "lucide-react";
 import {
-  AnimatePresence,
   m,
   useIsPresent,
-  useReducedMotion,
   type HTMLMotionProps,
   type Transition,
 } from "motion/react";
@@ -836,164 +828,5 @@ export function AccordionPanel({
     >
       {children}
     </DisclosurePanel>
-  );
-}
-
-export function Accordion({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const reduced = useReducedMotion();
-  return (
-    <Disclosure as="section" defaultOpen className="settings-section">
-      {({ open }) => (
-        <>
-          <DisclosureButton className="flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left [--control-hover-base:var(--panel)] data-hover:control-hover">
-            <span className="eyebrow">{title}</span>
-            <m.span
-              animate={{ rotate: open ? 180 : 0 }}
-              transition={{ duration: reduced ? 0 : 0.18 }}
-            >
-              <ChevronDown aria-hidden="true" />
-            </m.span>
-          </DisclosureButton>
-          <AnimatePresence initial={false}>
-            {open && <AccordionPanel key="panel">{children}</AccordionPanel>}
-          </AnimatePresence>
-        </>
-      )}
-    </Disclosure>
-  );
-}
-
-export function TemplateAccordion({
-  title,
-  selected,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  selected: boolean;
-  expanded: boolean;
-  onToggle: (expanded: boolean) => void;
-  children: ReactNode;
-}) {
-  const trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const open = trigger.current?.getAttribute("aria-expanded") === "true";
-    if (open !== expanded) trigger.current?.click();
-  }, [expanded]);
-  return (
-    <Disclosure
-      as="section"
-      defaultOpen={expanded}
-      className="border-0 border-b border-solid border-ui-border"
-    >
-      {({ open }) => (
-        <>
-          <DisclosureButton
-            ref={trigger}
-            aria-pressed={selected}
-            onClick={() => {
-              const next =
-                trigger.current?.getAttribute("aria-expanded") !== "true";
-              if (next !== expanded) onToggle(next);
-            }}
-            className="flex min-h-11 w-full items-center justify-between gap-2 border-0 bg-transparent px-2 py-3 text-left text-sm aria-pressed:text-ui-accent [--control-hover-base:var(--panel)] enabled:hover:control-hover transition-colors"
-          >
-            <span>{title}</span>
-            <ChevronDown
-              aria-hidden="true"
-              className={clsx(
-                "size-4 transition-transform",
-                open && "rotate-180",
-              )}
-            />
-          </DisclosureButton>
-          {open && expanded && (
-            <DisclosurePanel className="px-2 pb-4">{children}</DisclosurePanel>
-          )}
-        </>
-      )}
-    </Disclosure>
-  );
-}
-
-type MenuAction = {
-  label: string;
-  icon: LucideIcon;
-  onSelect: () => void;
-  disabled?: boolean;
-};
-
-function ActionItems({ actions }: { actions: MenuAction[] }) {
-  const present = useIsPresent();
-  const reduced = useReducedMotion();
-  const itemClass =
-    "flex min-h-11 w-full items-center gap-2 rounded border-0 bg-transparent px-3 py-2 text-left text-[11px] no-underline [--control-hover-base:var(--panel)] not-data-disabled:hover:control-hover data-focus:control-hover data-disabled:opacity-50";
-  return (
-    <MenuItems
-      data-overlay-scroll="y"
-      static
-      modal={false}
-      anchor="bottom end"
-      as={MotionDiv}
-      inert={!present}
-      aria-hidden={present ? undefined : true}
-      initial={{ opacity: 0, y: -4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
-      motionTransition={{ duration: reduced ? 0 : 0.14 }}
-      className="z-50 w-48 max-w-[calc(100vw-2rem)] rounded-md border border-solid border-ui-border bg-ui-panel p-1 shadow-xl outline-none [--anchor-gap:8px]"
-    >
-      {actions.map(({ label, icon: Icon, onSelect, disabled }) => (
-        <MenuItem key={label} disabled={disabled}>
-          <button type="button" onClick={onSelect} className={itemClass}>
-            <Icon aria-hidden="true" />
-            {label}
-          </button>
-        </MenuItem>
-      ))}
-    </MenuItems>
-  );
-}
-
-export function ActionMenu({
-  actions,
-  buttonRef,
-  label = t("editor.actions"),
-  icon: Icon = MoreHorizontal,
-  disabled = false,
-}: {
-  actions: MenuAction[];
-  buttonRef: Ref<HTMLButtonElement>;
-  label?: string;
-  icon?: LucideIcon;
-  disabled?: boolean;
-}) {
-  return (
-    <Menu>
-      {({ open }) => (
-        <>
-          <MenuButton
-            as={Button}
-            presentation="icon"
-            ref={buttonRef}
-            aria-label={label}
-            title={label}
-            disabled={disabled}
-          >
-            <Icon aria-hidden="true" />
-          </MenuButton>
-          <AnimatePresence>
-            {open && <ActionItems key="actions" actions={actions} />}
-          </AnimatePresence>
-        </>
-      )}
-    </Menu>
   );
 }

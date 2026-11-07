@@ -28,6 +28,8 @@ Open the localhost URL printed in the terminal, normally http://localhost:5837. 
 
 The frontend no longer uses account/session APIs or offers sign-in, account management or cloud collections. The API, database migrations and existing cloud data remain intact for compatibility. The setup below describes that retained backend, not features available in the editor.
 
+AccountDialog, AccountUi, LoginDialog, OnlineImages, SavedGridsDialog and ThemeThumbnail are retained frontend modules, deliberately disconnected from the application entry point. Shared-control maintenance does not reactivate them. Restoring any of these features requires a separate product decision; existing provider-reference compatibility remains independent of search/sign-in UI. Unused generic accordion and action-menu exports have been removed rather than maintained as a second control framework.
+
 1. Copy `.env.example` to the root `.env` (preserve any existing credentials). Set `POSTGRES_PASSWORD` and the matching URL-encoded password in `DATABASE_URL`.
 2. Start Docker Desktop, then run `npm run db:up`. Postgres 16 uses a named persistent volume and binds only to localhost port **5433**, leaving Chatter's port 5432 alone.
 3. Configure both credentials for each desired sign-in provider in the root `.env`. Unconfigured providers are hidden; partially configured providers fail startup explicitly. No OAuth secrets enter the frontend build.
