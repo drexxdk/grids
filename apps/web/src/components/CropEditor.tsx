@@ -4,7 +4,7 @@ import { Check, Grid3X3, RotateCcw } from "lucide-react";
 import { useState, type RefObject } from "react";
 import { cropSchema, type Asset, type ImageCrop } from "../model";
 import { Modal } from "./ui/Modal";
-import { Button } from "./ui/controls";
+import { Button, RangeField } from "./ui/controls";
 
 export function CropEditor({
   asset,
@@ -89,24 +89,18 @@ export function CropEditor({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-ui-border bg-ui-panel p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="flex min-w-40 flex-1 items-center gap-3 max-[600px]:basis-full">
-            <label htmlFor="crop-zoom" className="shrink-0">
-              {t("crop.zoom")}
-            </label>
-            <input
-              id="crop-zoom"
-              className="h-11 min-w-0 flex-1"
-              type="range"
-              min="1"
-              max="8"
-              step="0.01"
-              value={zoom}
-              onChange={(event) => setZoom(Number(event.target.value))}
-            />
-            <output className="w-12 shrink-0 text-right">
-              {Math.round(zoom * 100)}%
-            </output>
-          </div>
+          <RangeField
+            id="crop-zoom"
+            label={t("crop.zoom")}
+            layout="inline"
+            className="min-w-40 flex-1 max-[600px]:basis-full"
+            min={1}
+            max={8}
+            step={0.01}
+            value={zoom}
+            output={`${Math.round(zoom * 100)}%`}
+            onChange={setZoom}
+          />
           <div className="flex shrink-0 items-center gap-3 max-[600px]:w-full max-[600px]:justify-end">
             <Button
               presentation="icon"
@@ -133,7 +127,6 @@ export function CropEditor({
               {t("common.actions.cancel")}
             </Button>
             <Button
-              className="min-h-11"
               intent="primary"
               disabled={!ready || error || !draft}
               onClick={() => {

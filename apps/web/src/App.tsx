@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  CheckboxField,
   ColorField,
   IconRadioField,
   PercentField,
@@ -37,7 +38,7 @@ import {
   type CardDragVisual,
 } from "./components/GridCell";
 import { EditorLayout } from "./components/EditorLayout";
-import { ThemeBuilder } from "./components/PresetsPanel";
+import { FontWeightField, ThemeBuilder } from "./components/PresetsPanel";
 import { contrastingColor } from "./canvasTheme";
 import {
   LibraryImage,
@@ -45,7 +46,6 @@ import {
 } from "./components/LibraryImage";
 import { UploadTile } from "./components/UploadTile";
 import {
-  fontWeightOptions,
   previewCardMinWidth,
   previewCardMaxWidth,
   resolveFontWeight,
@@ -1170,30 +1170,10 @@ export default function App() {
                 {board.headingVisible && (
                   <>
                     <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                      <PercentField
+                      <FontWeightField
                         id="heading-font-weight"
-                        label={t("settings.fields.fontWeight")}
-                        outputValue={resolveFontWeight(
-                          board.headingFont,
-                          board.headingFontWeight,
-                        )}
-                        min={board.headingFont === "Manrope" ? 100 : 400}
-                        max={board.headingFont === "Manrope" ? 900 : 700}
-                        step={board.headingFont === "Manrope" ? 100 : 300}
-                        value={resolveFontWeight(
-                          board.headingFont,
-                          board.headingFontWeight,
-                        )}
-                        valueText={
-                          fontWeightOptions(board.headingFont).find(
-                            (option) =>
-                              option.value ===
-                              resolveFontWeight(
-                                board.headingFont,
-                                board.headingFontWeight,
-                              ),
-                          )?.label
-                        }
+                        font={board.headingFont}
+                        value={board.headingFontWeight}
                         onChange={(headingFontWeight) =>
                           patchBoard({ headingFontWeight })
                         }
@@ -1228,30 +1208,10 @@ export default function App() {
                 {board.titlesVisible !== false && (
                   <>
                     <div className="grid grid-cols-2 gap-4 @max-[260px]/settings:grid-cols-1">
-                      <PercentField
+                      <FontWeightField
                         id="cell-font-weight"
-                        label={t("settings.fields.fontWeight")}
-                        outputValue={resolveFontWeight(
-                          board.cellFont,
-                          board.cellFontWeight,
-                        )}
-                        min={board.cellFont === "Manrope" ? 100 : 400}
-                        max={board.cellFont === "Manrope" ? 900 : 700}
-                        step={board.cellFont === "Manrope" ? 100 : 300}
-                        value={resolveFontWeight(
-                          board.cellFont,
-                          board.cellFontWeight,
-                        )}
-                        valueText={
-                          fontWeightOptions(board.cellFont).find(
-                            (option) =>
-                              option.value ===
-                              resolveFontWeight(
-                                board.cellFont,
-                                board.cellFontWeight,
-                              ),
-                          )?.label
-                        }
+                        font={board.cellFont}
+                        value={board.cellFontWeight}
                         onChange={(cellFontWeight) =>
                           patchBoard({ cellFontWeight })
                         }
@@ -1276,27 +1236,14 @@ export default function App() {
                           patchBoard({ captionOverlayColor })
                         }
                       />
-                      <div className="flex flex-col gap-2">
-                        <label
-                          className="field-label"
-                          htmlFor="caption-opacity"
-                        >
-                          {t("settings.fields.overlayOpacity")}{" "}
-                          <output>{board.captionOverlayOpacity ?? 60}%</output>
-                        </label>
-                        <input
-                          id="caption-opacity"
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={board.captionOverlayOpacity ?? 60}
-                          onChange={(event) =>
-                            patchBoard({
-                              captionOverlayOpacity: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </div>
+                      <PercentField
+                        id="caption-opacity"
+                        label={t("settings.fields.overlayOpacity")}
+                        value={board.captionOverlayOpacity ?? 60}
+                        onChange={(captionOverlayOpacity) =>
+                          patchBoard({ captionOverlayOpacity })
+                        }
+                      />
                     </div>
                   </>
                 )}
@@ -1540,74 +1487,50 @@ export default function App() {
           </p>
           <fieldset className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0 max-[360px]:grid-cols-1">
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
-            <label
+            <CheckboxField
+              id="reset-all"
+              label={t("editor.reset.all")}
               data-reset-option="all"
-              className="col-span-full flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-solid border-ui-border p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-focus-visible:border-ui-accent"
-            >
-              <input
-                type="checkbox"
-                className="size-5 shrink-0 accent-ui-accent outline-none!"
-                checked={resetAll}
-                onChange={(event) => {
-                  const checked = event.currentTarget.checked;
-                  if (checked) setResetThemeTarget("default");
-                  setResetSelection({
-                    canvas: checked,
-                    theme: false,
-                    defaultTheme: checked,
-                    images: checked,
-                    placements: checked,
-                  });
-                }}
-              />
-              <span className="font-semibold">{t("editor.reset.all")}</span>
-            </label>
+              className="col-span-full"
+              checked={resetAll}
+              onChange={(checked) => {
+                if (checked) setResetThemeTarget("default");
+                setResetSelection({
+                  canvas: checked,
+                  theme: false,
+                  defaultTheme: checked,
+                  images: checked,
+                  placements: checked,
+                });
+              }}
+            />
             {(["canvas", "theme", "placements", "images"] as const).map(
               (part) => (
-                <div
+                <CheckboxField
                   key={part}
+                  id={`reset-${part}`}
                   data-reset-option={part}
-                  className="flex min-h-11 min-w-0 flex-col gap-2 rounded-md border border-solid border-ui-border p-3 outline-none! transition-colors [--control-hover-base:var(--panel)] hover:control-hover has-[input:focus-visible]:border-ui-accent **:[[role=radio]]:border-ui-background! max-[360px]:p-2"
+                  className="**:[[role=radio]]:border-ui-background!"
+                  label={t(`editor.reset.${part}`)}
+                  description={t(`editor.reset.${part}Description`)}
+                  checked={
+                    part === "theme"
+                      ? resetSelection.theme || resetSelection.defaultTheme
+                      : resetSelection[part]
+                  }
+                  onChange={(checked) => {
+                    setResetSelection((selection) => ({
+                      ...selection,
+                      ...(part === "theme"
+                        ? {
+                            theme: checked && resetThemeTarget === "current",
+                            defaultTheme:
+                              checked && resetThemeTarget === "default",
+                          }
+                        : { [part]: checked }),
+                    }));
+                  }}
                 >
-                  <label className="flex min-w-0 cursor-pointer flex-col gap-2 outline-none!">
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="size-5 shrink-0 accent-ui-accent outline-none!"
-                        aria-label={t(`editor.reset.${part}`)}
-                        aria-describedby={`reset-${part}-description`}
-                        checked={
-                          part === "theme"
-                            ? resetSelection.theme ||
-                              resetSelection.defaultTheme
-                            : resetSelection[part]
-                        }
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked;
-                          setResetSelection((selection) => ({
-                            ...selection,
-                            ...(part === "theme"
-                              ? {
-                                  theme:
-                                    checked && resetThemeTarget === "current",
-                                  defaultTheme:
-                                    checked && resetThemeTarget === "default",
-                                }
-                              : { [part]: checked }),
-                          }));
-                        }}
-                      />
-                      <span className="min-w-0 text-sm font-semibold wrap-anywhere">
-                        {t(`editor.reset.${part}`)}
-                      </span>
-                    </span>
-                    <span
-                      id={`reset-${part}-description`}
-                      className="text-sm text-ui-muted wrap-anywhere max-[360px]:text-xs"
-                    >
-                      {t(`editor.reset.${part}Description`)}
-                    </span>
-                  </label>
                   {part === "theme" && (
                     <IconRadioField
                       id="reset-theme-target"
@@ -1635,7 +1558,7 @@ export default function App() {
                       }}
                     />
                   )}
-                </div>
+                </CheckboxField>
               ),
             )}
           </fieldset>

@@ -21,6 +21,7 @@ import {
   colorPalettes as palettes,
   colorPaletteStyle,
   fontOptions,
+  fontWeightOptions,
   resolveFontWeight,
   type Board,
 } from "../model";
@@ -75,6 +76,36 @@ function revealAccordion(accordion: HTMLElement) {
 function revealDesignPanel(panel: HTMLDivElement) {
   const accordion = panel.closest<HTMLElement>("[data-design-accordion]");
   if (accordion) revealAccordion(accordion);
+}
+
+export function FontWeightField({
+  id,
+  font,
+  value,
+  onChange,
+}: {
+  id: string;
+  font: Board["headingFont"];
+  value?: number;
+  onChange: (weight: number) => void;
+}) {
+  const weight = resolveFontWeight(font, value);
+  return (
+    <PercentField
+      id={id}
+      label={t("settings.fields.fontWeight")}
+      outputId={`${id}-value`}
+      outputValue={weight}
+      min={font === "Manrope" ? 100 : 400}
+      max={font === "Manrope" ? 900 : 700}
+      step={font === "Manrope" ? 100 : 300}
+      value={weight}
+      valueText={
+        fontWeightOptions(font).find((option) => option.value === weight)?.label
+      }
+      onChange={onChange}
+    />
+  );
 }
 
 export function ThemeBuilder({

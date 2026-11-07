@@ -1,6 +1,8 @@
 import { t } from "../../i18n";
 import {
   DataInteractive,
+  Description,
+  Field,
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
@@ -39,6 +41,163 @@ import {
   type Ref,
 } from "react";
 
+const rangeFieldStyles = cva("flex", {
+  variants: {
+    layout: { stacked: "flex-col gap-2", inline: "items-center gap-3" },
+  },
+  defaultVariants: { layout: "stacked" },
+});
+
+export function RangeField({
+  id,
+  label,
+  output,
+  outputId,
+  value,
+  min = 0,
+  max = 100,
+  step = 1,
+  disabled,
+  valueText,
+  layout = "stacked",
+  className,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  output: ReactNode;
+  outputId?: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  valueText?: string;
+  layout?: "stacked" | "inline";
+  className?: string;
+  onChange: (value: number) => void;
+}) {
+  const result = (
+    <output
+      id={outputId}
+      htmlFor={id}
+      className={layout === "inline" ? "w-12 shrink-0 text-right" : undefined}
+    >
+      {output}
+    </output>
+  );
+  return (
+    <Field
+      disabled={disabled}
+      className={rangeFieldStyles({ layout, className })}
+    >
+      <Label
+        htmlFor={id}
+        className={layout === "inline" ? "shrink-0" : "field-label"}
+      >
+        {label}
+        {layout === "stacked" && <> {result}</>}
+      </Label>
+      <input
+        id={id}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        aria-valuetext={valueText}
+        className={layout === "inline" ? "h-11 min-w-0 flex-1" : undefined}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+      />
+      {layout === "inline" && result}
+    </Field>
+  );
+}
+
+const checkboxFieldStyles = cva(
+  "min-h-11 min-w-0 rounded-md border border-solid border-ui-border p-3 outline-none! transition-colors motion-reduce:transition-none [--control-hover-base:var(--panel)] hover:control-hover has-[input:focus-visible]:border-ui-accent",
+  {
+    variants: {
+      presentation: {
+        inline: "flex cursor-pointer items-center gap-3",
+        option: "flex flex-col gap-2 max-[360px]:p-2",
+      },
+    },
+    defaultVariants: { presentation: "inline" },
+  },
+);
+
+export function CheckboxField({
+  id,
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+  className,
+  children,
+  "data-reset-option": resetOption,
+}: {
+  id: string;
+  label: string;
+  description?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+  className?: string;
+  children?: ReactNode;
+  "data-reset-option"?: string;
+}) {
+  const input = (
+    <input
+      id={id}
+      type="checkbox"
+      className="size-5 shrink-0 accent-ui-accent outline-none!"
+      aria-label={label}
+      aria-describedby={description ? `${id}-description` : undefined}
+      checked={checked}
+      disabled={disabled}
+      onChange={(event) => onChange(event.currentTarget.checked)}
+    />
+  );
+  return (
+    <Field
+      as={description ? "div" : "label"}
+      disabled={disabled}
+      data-reset-option={resetOption}
+      className={checkboxFieldStyles({
+        presentation: description ? "option" : "inline",
+        className,
+      })}
+    >
+      {description ? (
+        <label className="flex min-w-0 cursor-pointer flex-col gap-2 outline-none!">
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            {input}
+            <span className="min-w-0 text-sm font-semibold wrap-anywhere">
+              {label}
+            </span>
+          </span>
+          <Description
+            as="span"
+            id={`${id}-description`}
+            className="text-sm text-ui-muted wrap-anywhere max-[360px]:text-xs"
+          >
+            {description}
+          </Description>
+        </label>
+      ) : (
+        <>
+          {input}
+          <span className="font-semibold">{label}</span>
+        </>
+      )}
+      {children}
+    </Field>
+  );
+}
+
 export function PercentField({
   id,
   label,
@@ -69,33 +228,19 @@ export function PercentField({
     Math.min(100, ((value - min) / (max - min)) * 100),
   );
   return (
-    <div className="flex flex-col gap-2">
-      <label className="field-label" htmlFor={id}>
-        {label}{" "}
-        <output id={outputId}>
-          {outputValue ?? `${Number(percent.toFixed(1))}%`}
-        </output>
-      </label>
-      <input
-        id={id}
-        type="range"
-        min="0"
-        max="100"
-        step={step === undefined ? 1 : (step / (max - min)) * 100}
-        value={percent}
-        disabled={disabled}
-        aria-valuetext={valueText}
-        onChange={(event) =>
-          onChange(
-            Number(
-              (min + (Number(event.target.value) / 100) * (max - min)).toFixed(
-                6,
-              ),
-            ),
-          )
-        }
-      />
-    </div>
+    <RangeField
+      id={id}
+      label={label}
+      outputId={outputId}
+      output={outputValue ?? `${Number(percent.toFixed(1))}%`}
+      step={step === undefined ? 1 : (step / (max - min)) * 100}
+      value={percent}
+      disabled={disabled}
+      valueText={valueText}
+      onChange={(next) =>
+        onChange(Number((min + (next / 100) * (max - min)).toFixed(6)))
+      }
+    />
   );
 }
 
