@@ -19,6 +19,9 @@
     "compact": "Compact",
     "airy": "Spacious",
     "rounded": "Rounded corners",
+    "borders": "Show borders",
+    "borderColor": "Border color",
+    "borderThickness": "Border thickness",
     "typography": "Typography",
     "customize": "Customize",
     "headingBackground": "Heading background",
@@ -28,7 +31,7 @@
     "next": "Next"
   },
   "presets": {
-    "title": "Themes",
+    "title": "Design",
     "starters": "Starting points",
     "withHeading": "With heading",
     "withoutHeading": "Without heading",

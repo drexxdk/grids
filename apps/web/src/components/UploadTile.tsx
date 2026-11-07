@@ -2,7 +2,7 @@ import { t } from "../i18n";
 import { ImagePlus, LoaderCircle } from "lucide-react";
 import { useState, type CSSProperties, type Ref } from "react";
 import { cellGeometry, type GridStyle } from "../model";
-import { CardFrame } from "./CardFrame";
+import { CardBorder, CardFrame } from "./CardFrame";
 import { isLightCanvasColor } from "../canvasTheme";
 
 export function UploadTile({
@@ -38,7 +38,7 @@ export function UploadTile({
         aria-label={t("common.actions.addImages", { count: 2 })}
         disabled={progress !== null}
         title={t("common.actions.addOrDropImages", { count: 2 })}
-        className={`image-card @container relative size-full border! border-solid! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:[&_[data-upload-label]]:text-xs" : ""}`}
+        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--accent)] focus-visible:[--card-frame-color:var(--accent)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:**:data-upload-label:text-xs" : ""}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,
@@ -51,7 +51,6 @@ export function UploadTile({
             )
               ? "#202325"
               : "#eef1f3",
-            borderColor: "var(--line)",
           } as CSSProperties
         }
         data-image-hovered={hovered && !progress ? "" : undefined}
@@ -80,7 +79,7 @@ export function UploadTile({
           style={{
             backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
           }}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[calc(var(--card-radius)-1px)] [&_svg]:size-[18cqw]!"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqw] overflow-hidden rounded-[inherit] [&_svg]:size-[18cqw]!"
         >
           {progress ? (
             <>
@@ -111,6 +110,7 @@ export function UploadTile({
             </>
           )}
         </span>
+        <CardBorder style={gridStyle} />
         <CardFrame />
       </button>
     </div>

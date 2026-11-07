@@ -147,7 +147,8 @@ export function layoutHeading(
   context: CanvasRenderingContext2D,
   item: Board,
   size: number,
-  width = item.columns * size + (item.columns - 1) * gridSpacing(item, size).gap,
+  width = item.columns * size +
+    (item.columns - 1) * gridSpacing(item, size).gap,
 ) {
   return layoutText(
     context,
@@ -378,35 +379,47 @@ export async function createExport(
       );
       context.restore();
     }
-    if (item.titlesVisible === false || !entry.title.trim()) {
+    if (item.titlesVisible !== false && entry.title.trim()) {
+      const captionTop = top + geometry.captionTop;
+      context.save();
+      context.fillStyle =
+        item.captionPlacement === "overlay"
+          ? (item.captionOverlayColor ?? "#000000")
+          : (item.cellBackgroundColor ?? publisher.caption);
+      if (item.captionPlacement === "overlay")
+        context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
+      context.fillRect(left, captionTop, size, geometry.captionHeight);
       context.restore();
-      return;
+      drawTitle(
+        context,
+        entry.title,
+        item.cellFont,
+        size * 0.11,
+        left,
+        captionTop,
+        size,
+        geometry.captionHeight,
+        item.cellTextColor ?? "#f4f4ef",
+        resolveFontWeight(item.cellFont, item.cellFontWeight),
+        captionPadding(size),
+        true,
+        item.cellFontSize,
+      );
     }
-    const captionTop = top + geometry.captionTop;
-    context.save();
-    context.fillStyle =
-      item.captionPlacement === "overlay"
-        ? (item.captionOverlayColor ?? "#000000")
-        : (item.cellBackgroundColor ?? publisher.caption);
-    if (item.captionPlacement === "overlay")
-      context.globalAlpha = (item.captionOverlayOpacity ?? 60) / 100;
-    context.fillRect(left, captionTop, size, geometry.captionHeight);
-    context.restore();
-    drawTitle(
-      context,
-      entry.title,
-      item.cellFont,
-      size * 0.11,
-      left,
-      captionTop,
-      size,
-      geometry.captionHeight,
-      item.cellTextColor ?? "#f4f4ef",
-      resolveFontWeight(item.cellFont, item.cellFontWeight),
-      captionPadding(size),
-      true,
-      item.cellFontSize,
-    );
+    if (item.cardBorderVisible && (item.cardBorderWidth ?? 0.5) > 0) {
+      const border = (size * (item.cardBorderWidth ?? 0.5)) / 100;
+      context.beginPath();
+      context.roundRect(
+        left + border / 2,
+        top + border / 2,
+        size - border,
+        geometry.height - border,
+        Math.max(0, ((item.cornerRadius ?? 12.5) * size) / 100 - border / 2),
+      );
+      context.lineWidth = border;
+      context.strokeStyle = item.cardBorderColor ?? "#eef1f3";
+      context.stroke();
+    }
     context.restore();
   });
   const blob = await new Promise<Blob | null>((resolve) =>

@@ -22,7 +22,10 @@ export const gridLimit = 12;
 export type Publisher = "none" | "dc" | "marvel";
 export type ImageFormat = "image/png" | "image/jpeg" | "image/webp";
 export const providerHosts = {
-  commons: { source: ["commons.wikimedia.org"], image: ["upload.wikimedia.org"] },
+  commons: {
+    source: ["commons.wikimedia.org"],
+    image: ["upload.wikimedia.org"],
+  },
   met: { source: ["www.metmuseum.org"], image: ["images.metmuseum.org"] },
   smk: { source: ["open.smk.dk"], image: ["iip.smk.dk"] },
   inaturalist: {
@@ -34,31 +37,56 @@ export const providerHosts = {
     image: ["live.staticflickr.com", "upload.wikimedia.org"],
   },
   rijksmuseum: { source: ["id.rijksmuseum.nl"], image: ["iiif.micr.io"] },
-  wellcome: { source: ["wellcomecollection.org"], image: ["iiif.wellcomecollection.org"] },
+  wellcome: {
+    source: ["wellcomecollection.org"],
+    image: ["iiif.wellcomecollection.org"],
+  },
 } as const;
 export const imageLicenseSchema = z.enum(["CC0", "Public domain"]);
-export function isProviderUrl(provider: keyof typeof providerHosts, kind: "source" | "image", value: string) {
+export function isProviderUrl(
+  provider: keyof typeof providerHosts,
+  kind: "source" | "image",
+  value: string,
+) {
   try {
     const url = new URL(value);
     const hosts: readonly string[] = providerHosts[provider][kind];
-    return url.protocol === "https:" && hosts.includes(url.hostname) &&
-      !url.username && !url.password && !url.port && !url.hash;
+    return (
+      url.protocol === "https:" &&
+      hosts.includes(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      !url.hash
+    );
   } catch {
     return false;
   }
 }
 export const provenanceSchema = z
   .strictObject({
-    provider: z.enum(["commons", "met", "smk", "inaturalist", "openverse", "rijksmuseum", "wellcome"]),
-    entityId: z.string().min(1).max(100).regex(/^[A-Za-z0-9._ -]+$/),
+    provider: z.enum([
+      "commons",
+      "met",
+      "smk",
+      "inaturalist",
+      "openverse",
+      "rijksmuseum",
+      "wellcome",
+    ]),
+    entityId: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[A-Za-z0-9._ -]+$/),
     sourcePage: z.url({ protocol: /^https$/ }).max(1000),
     originalUrl: z.url({ protocol: /^https$/ }).max(2000),
     creator: z.string().max(1000),
     title: z.string().trim().min(1).max(1000).optional(),
     // Legacy CC BY references remain readable so they can be removed without losing other content.
-    license: imageLicenseSchema.or(z.enum([
-      "CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0",
-    ])),
+    license: imageLicenseSchema.or(
+      z.enum(["CC BY 1.0", "CC BY 2.0", "CC BY 2.5", "CC BY 3.0", "CC BY 4.0"]),
+    ),
     licenseUrl: z.url({
       protocol: /^https$/,
       hostname: /^(creativecommons\.org|commons\.wikimedia\.org)$/,
@@ -71,14 +99,24 @@ export const provenanceSchema = z
       return (
         isProviderUrl(value.provider, "source", value.sourcePage) &&
         isProviderUrl(value.provider, "image", value.originalUrl) &&
-        (!["commons", "met", "inaturalist", "rijksmuseum"].includes(value.provider) || /^\d+$/.test(value.entityId)) &&
-        (value.provider !== "wellcome" || /^[a-z0-9]{8}$/.test(value.entityId)) &&
-        (value.provider !== "openverse" || z.uuid().safeParse(value.entityId).success) &&
-        !license.username && !license.password && !license.port && !license.hash &&
-        (!attributed || Boolean(value.title && value.creator.trim()) &&
-          license.hostname === "creativecommons.org" &&
-          license.pathname.replace(/\/$/, "") === `/licenses/by/${value.license.slice(6)}` &&
-          !license.search)
+        (!["commons", "met", "inaturalist", "rijksmuseum"].includes(
+          value.provider,
+        ) ||
+          /^\d+$/.test(value.entityId)) &&
+        (value.provider !== "wellcome" ||
+          /^[a-z0-9]{8}$/.test(value.entityId)) &&
+        (value.provider !== "openverse" ||
+          z.uuid().safeParse(value.entityId).success) &&
+        !license.username &&
+        !license.password &&
+        !license.port &&
+        !license.hash &&
+        (!attributed ||
+          (Boolean(value.title && value.creator.trim()) &&
+            license.hostname === "creativecommons.org" &&
+            license.pathname.replace(/\/$/, "") ===
+              `/licenses/by/${value.license.slice(6)}` &&
+            !license.search))
       );
     } catch {
       return false;
@@ -96,20 +134,30 @@ export interface Asset {
   crop?: ImageCrop;
 }
 export function removeCreditRequiredImages(workspace: Workspace): Workspace {
-  const removed = new Set(workspace.assets
-    .filter((asset) => asset.provenance && !imageLicenseSchema.safeParse(asset.provenance.license).success)
-    .map((asset) => asset.id));
+  const removed = new Set(
+    workspace.assets
+      .filter(
+        (asset) =>
+          asset.provenance &&
+          !imageLicenseSchema.safeParse(asset.provenance.license).success,
+      )
+      .map((asset) => asset.id),
+  );
   if (!removed.size) return workspace;
-  const cleanCell = (cell: Cell): Cell => cell.assetId && removed.has(cell.assetId)
-    ? { ...cell, assetId: null, title: "", crop: undefined }
-    : cell;
+  const cleanCell = (cell: Cell): Cell =>
+    cell.assetId && removed.has(cell.assetId)
+      ? { ...cell, assetId: null, title: "", crop: undefined }
+      : cell;
   return {
     ...workspace,
     assets: workspace.assets.filter((asset) => !removed.has(asset.id)),
     grid: {
       ...workspace.grid,
       cells: workspace.grid.cells.map(cleanCell),
-      overflow: workspace.grid.overflow.map((entry) => ({ ...entry, cell: cleanCell(entry.cell) })),
+      overflow: workspace.grid.overflow.map((entry) => ({
+        ...entry,
+        cell: cleanCell(entry.cell),
+      })),
     },
   };
 }
@@ -189,6 +237,9 @@ export interface GridStyle {
   cellTextColor?: string;
   headingBackgroundColor?: string;
   cellBackgroundColor?: string;
+  cardBorderVisible?: boolean;
+  cardBorderColor?: string;
+  cardBorderWidth?: number;
   gap: number;
   canvasPadding?: number;
   canvasBackgroundColor?: string;
@@ -221,12 +272,18 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
         : 1;
   const imageHeight = Math.round(width / aspectRatio);
   const placement = style.captionPlacement ?? "below";
-  const maximumOverlayHeight = Math.max(0, imageHeight - Math.ceil(width * 0.5));
+  const maximumOverlayHeight = Math.max(
+    0,
+    imageHeight - Math.ceil(width * 0.5),
+  );
   if (placement === "overlay" && width > 0 && captionRows > 0) {
     const lineHeight = width * ((style.cellFontSize ?? 12) / 100) * 1.05;
     const visibleRows = Math.max(
       1,
-      Math.floor((maximumOverlayHeight - captionPadding(width).vertical * 2) / lineHeight),
+      Math.floor(
+        (maximumOverlayHeight - captionPadding(width).vertical * 2) /
+          lineHeight,
+      ),
     );
     captionRows = Math.min(captionRows, visibleRows);
   }
@@ -242,10 +299,7 @@ export function cellGeometry(style: GridStyle, width: number, captionRows = 1) {
         );
   const captionHeight =
     placement === "overlay"
-      ? Math.min(
-          requestedCaptionHeight,
-          maximumOverlayHeight,
-        )
+      ? Math.min(requestedCaptionHeight, maximumOverlayHeight)
       : requestedCaptionHeight;
   const overlayHeight = imageHeight;
   const captionTop =
@@ -482,6 +536,12 @@ const styleSchema = z.strictObject({
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
     .optional(),
+  cardBorderVisible: z.boolean().optional(),
+  cardBorderColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  cardBorderWidth: z.number().min(0).max(5).optional(),
   gap: z.number().min(0).max(120),
   canvasPadding: z.number().min(0).max(120).optional(),
   canvasBackgroundColor: z
@@ -558,6 +618,15 @@ export function getEditorSettings(workspace: Workspace): EditorSettings {
       ...(grid.cellBackgroundColor !== undefined
         ? { cellBackgroundColor: grid.cellBackgroundColor }
         : {}),
+      ...(grid.cardBorderVisible !== undefined
+        ? { cardBorderVisible: grid.cardBorderVisible }
+        : {}),
+      ...(grid.cardBorderColor !== undefined
+        ? { cardBorderColor: grid.cardBorderColor }
+        : {}),
+      ...(grid.cardBorderWidth !== undefined
+        ? { cardBorderWidth: grid.cardBorderWidth }
+        : {}),
       gap: grid.gap,
       ...(grid.canvasPadding !== undefined
         ? { canvasPadding: grid.canvasPadding }
@@ -612,6 +681,9 @@ function applyGridStyle(grid: Board, style: GridStyle): Board {
     cellTextColor: style.cellTextColor,
     headingBackgroundColor: style.headingBackgroundColor,
     cellBackgroundColor: style.cellBackgroundColor,
+    cardBorderVisible: style.cardBorderVisible,
+    cardBorderColor: style.cardBorderColor,
+    cardBorderWidth: style.cardBorderWidth,
     canvasPadding: style.canvasPadding,
     canvasBackgroundColor: style.canvasBackgroundColor,
     ...style,
@@ -809,15 +881,21 @@ export function documentReducer(
     case "asset/crop": {
       if (
         !workspace.assets.some(
-          (asset) => asset.id === command.assetId && asset.trashedAt === undefined && !asset.libraryHidden,
+          (asset) =>
+            asset.id === command.assetId &&
+            asset.trashedAt === undefined &&
+            !asset.libraryHidden,
         ) ||
-        (command.crop !== undefined && !cropSchema.safeParse(command.crop).success)
+        (command.crop !== undefined &&
+          !cropSchema.safeParse(command.crop).success)
       )
         return workspace;
       return {
         ...workspace,
         assets: workspace.assets.map((asset) =>
-          asset.id === command.assetId ? { ...asset, crop: command.crop } : asset,
+          asset.id === command.assetId
+            ? { ...asset, crop: command.crop }
+            : asset,
         ),
       };
     }
@@ -903,7 +981,10 @@ export function documentReducer(
         exportSettings: { ...workspace.exportSettings, ...command.patch },
       };
     case "cell/patch":
-      return updateCell(command.cellId, (cell) => ({ ...cell, ...command.patch }));
+      return updateCell(command.cellId, (cell) => ({
+        ...cell,
+        ...command.patch,
+      }));
     case "cell/crop": {
       const target = grid.cells.find((cell) => cell.id === command.cellId);
       if (!target || target.assetId !== command.assetId) return workspace;

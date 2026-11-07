@@ -1,3 +1,21 @@
+import type { GridStyle } from "../model";
+
+export function CardBorder({ style }: { style: GridStyle }) {
+  if (!style.cardBorderVisible || (style.cardBorderWidth ?? 0.5) === 0)
+    return null;
+  return (
+    <span
+      aria-hidden="true"
+      data-card-border
+      className="pointer-events-none absolute inset-0 z-45 rounded-[inherit] border-solid"
+      style={{
+        borderColor: style.cardBorderColor ?? "#eef1f3",
+        borderWidth: `${style.cardBorderWidth ?? 0.5}cqw`,
+      }}
+    />
+  );
+}
+
 export function CardFrame({ dashed = true }: { dashed?: boolean }) {
   return (
     <span
@@ -14,7 +32,11 @@ export function CardFrame({ dashed = true }: { dashed?: boolean }) {
           stroke="var(--frame-color)"
           strokeOpacity="var(--card-frame-opacity, 1)"
           strokeWidth="var(--card-frame-stroke)"
-          strokeDasharray={dashed ? "var(--card-frame-dash) var(--card-frame-dash-gap)" : "none"}
+          strokeDasharray={
+            dashed
+              ? "var(--card-frame-dash) var(--card-frame-dash-gap)"
+              : "none"
+          }
           style={{
             x: "calc(var(--card-frame-stroke) / 2)",
             y: "calc(var(--card-frame-stroke) / 2)",

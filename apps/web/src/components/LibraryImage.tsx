@@ -1,8 +1,15 @@
-import { cellGeometry, type Asset, type Cell, type GridStyle, type ImageCrop } from "../model";
+import {
+  cellGeometry,
+  type Asset,
+  type Cell,
+  type GridStyle,
+  type ImageCrop,
+} from "../model";
 import { captionMaxLength } from "../config";
 import type { CSSProperties, Ref } from "react";
 import { LoaderCircle } from "lucide-react";
 import { GridCell, type CardDragSource, type CardDragVisual } from "./GridCell";
+import { CardBorder } from "./CardFrame";
 
 export function LibraryImagePlaceholder({
   gridStyle,
@@ -25,7 +32,7 @@ export function LibraryImagePlaceholder({
       style={{ aspectRatio: `600 / ${geometry.height}` }}
     >
       <div
-        className={`image-card @container flex w-full items-center justify-center border border-solid border-(--line) ${loading ? "" : "opacity-25"}`}
+        className={`image-card @container relative flex w-full items-center justify-center border-0! ${loading ? "" : "opacity-25"}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,
@@ -38,6 +45,7 @@ export function LibraryImagePlaceholder({
         {loading && (
           <LoaderCircle className="size-[18cqw]! animate-spin text-(--muted) motion-reduce:animate-none" />
         )}
+        <CardBorder style={gridStyle} />
       </div>
     </div>
   );
@@ -109,7 +117,11 @@ export function LibraryImage({
       <GridCell
         cell={
           cell
-            ? { ...cell, title: asset.title.slice(0, captionMaxLength), crop: asset.crop }
+            ? {
+                ...cell,
+                title: asset.title.slice(0, captionMaxLength),
+                crop: asset.crop,
+              }
             : {
                 id: asset.id,
                 assetId: asset.id,

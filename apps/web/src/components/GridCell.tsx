@@ -35,7 +35,7 @@ import {
 import { layoutCaption } from "../export";
 import { Button } from "./ui/controls";
 import { CropEditor } from "./CropEditor";
-import { CardFrame } from "./CardFrame";
+import { CardBorder, CardFrame } from "./CardFrame";
 import { centerTextArea, TextScrollbar } from "./TextScrollbar";
 import { isLightCanvasColor } from "../canvasTheme";
 
@@ -408,7 +408,7 @@ export function GridCell({
   return (
     <Popover
       ref={card}
-      className={`image-card @container relative min-w-0 border! border-solid! -outline-offset-2 [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--card-frame-hover-color)] ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
+      className={`image-card @container relative min-w-0 border-0! -outline-offset-2 [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] has-[[data-card-image]_button:focus-visible]:[--card-frame-color:var(--card-frame-hover-color)] ${previewOnly ? "drag-preview-card h-full w-full" : library ? `asset ${library.onSelect ? "cursor-pointer" : "cursor-move"} w-full!` : "grid-cell"}${!library && dragAffected && !dragSource ? " drag-over" : ""}`}
       style={
         {
           aspectRatio: `600 / ${geometry.height}`,
@@ -425,7 +425,6 @@ export function GridCell({
             : "var(--accent)",
           "--card-drop-color": darkDropFrame ? "#202325" : "var(--mint)",
           backgroundColor: "var(--card-background)",
-          borderColor: "var(--line)",
         } as React.CSSProperties
       }
       data-index={index}
@@ -470,7 +469,7 @@ export function GridCell({
         <>
           <div
             data-card-content
-            className="absolute inset-0 overflow-hidden rounded-[calc(var(--card-radius)-1px)] bg-(--card-background)"
+            className="absolute inset-0 overflow-hidden rounded-[inherit] bg-(--card-background)"
             style={{ opacity: dragAffected ? 0.35 : 1 }}
           >
             <div
@@ -764,7 +763,10 @@ export function GridCell({
               )}
               {asset && (
                 <PopoverPanel
-                  static={hoverTools || Boolean(coarsePointer && library?.onSelect && onCrop)}
+                  static={
+                    hoverTools ||
+                    Boolean(coarsePointer && library?.onSelect && onCrop)
+                  }
                   role="group"
                   aria-label={t("cell.actions.tools")}
                   className="pointer-events-none absolute inset-0 z-10"
@@ -978,6 +980,7 @@ export function GridCell({
               height: `${(geometry.captionHeight / geometry.height) * 100}%`,
             }}
           />
+          <CardBorder style={gridStyle} />
           <CardFrame dashed={dropPlaceholder} />
           {importing && (
             <span

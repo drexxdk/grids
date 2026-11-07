@@ -280,7 +280,7 @@ async function selectField(page, id, value) {
     );
     const panel = (await selected.count()) ? await selected.innerText() : null;
     const openedTools = !panel && !!(await sidebarToggle(page, false).count());
-    await openSidebarPanel(page, "Themes");
+    await openSidebarPanel(page, "Design");
     await page
       .locator("[data-theme-builder]")
       .getByRole("button", {
@@ -299,7 +299,7 @@ async function selectField(page, id, value) {
     return;
   }
   if (["heading-font", "cell-font"].includes(id)) {
-    await openSidebarPanel(page, "Themes");
+    await openSidebarPanel(page, "Design");
     await page
       .locator("[data-theme-builder]")
       .getByRole("button", {
@@ -622,7 +622,7 @@ for (const [mode, rowTest] of [
         await openSidebarPanel(page, "Images");
         await checkRow(page.locator("#asset-library"), "[data-library-image]");
       }
-      await openSidebarPanel(page, "Themes");
+      await openSidebarPanel(page, "Design");
       await page
         .locator("[data-theme-builder]")
         .getByRole("button", { name: /1 Colors/ })
@@ -657,7 +657,7 @@ touchTest(
       name: "Editor panels",
       exact: true,
     });
-    const themes = tabs.getByRole("tab", { name: "Themes", exact: true });
+    const themes = tabs.getByRole("tab", { name: "Design", exact: true });
     const images = tabs.getByRole("tab", { name: "Images", exact: true });
     await expect(tabs.getByRole("tab")).toHaveCount(2);
     for (const width of [260, 390, 780, 900]) {
@@ -682,7 +682,7 @@ touchTest(
       await themes.press("Enter");
       await expect(themes).toBeDisabled();
       await expect(
-        sidebar.getByRole("tabpanel", { name: "Themes", exact: true }),
+        sidebar.getByRole("tabpanel", { name: "Design", exact: true }),
       ).toBeVisible();
       await expect
         .poll(() =>
@@ -1873,6 +1873,186 @@ nativeTouchTest(
   },
 );
 
+test("card border controls preserve geometry and export matching enabled and disabled edges", async ({
+  page,
+}, testInfo) => {
+  await page.goto("./");
+  await uploadCellImage(page);
+  const original = await savedWorkspace(page);
+  await openSidebarPanel(page, "Design");
+  const builder = page.locator("[data-theme-builder]");
+  const step = async (label) =>
+    builder.getByRole("button", { name: new RegExp(`^\\d ${label}`) }).click();
+  await step("Canvas heading");
+  const heading = builder.getByRole("switch", {
+    name: "Show heading",
+    exact: true,
+  });
+  if (await heading.isChecked()) await heading.click();
+  await step("Card headings");
+  const titles = builder.getByRole("switch", {
+    name: "Show titles",
+    exact: true,
+  });
+  if (await titles.isChecked()) await titles.click();
+  await step("Layout");
+  const square = builder.getByRole("radio", { name: "Square", exact: true });
+  if (!(await square.isChecked())) await square.click();
+  const rounding = builder.getByRole("switch", {
+    name: "Rounded corners",
+    exact: true,
+  });
+  if (await rounding.isChecked()) await rounding.click();
+  const borders = builder.getByRole("switch", {
+    name: "Show borders",
+    exact: true,
+  });
+  await expect(borders).not.toBeChecked();
+  await expect(page.locator("[data-card-border]")).toHaveCount(0);
+  const first = page.locator(".grid-cell").first();
+  const geometry = await first.boundingBox();
+  const content = await first.locator("[data-card-content]").boundingBox();
+  await borders.click();
+  await page.locator("#card-border-color-value").fill("#e34567");
+  await page.locator("#card-border-color-value").press("Tab");
+  await page.locator("#card-border-width").fill("80");
+  await expect
+    .poll(async () => (await localDatabase(page)).document.grid)
+    .toMatchObject({
+      cardBorderVisible: true,
+      cardBorderColor: "#e34567",
+      cardBorderWidth: 4,
+    });
+  expect(await first.boundingBox()).toEqual(geometry);
+  expect(await first.locator("[data-card-content]").boundingBox()).toEqual(
+    content,
+  );
+  for (const selector of [".grid-cell", ".asset", "[data-upload-tile]"]) {
+    await openSidebarPanel(
+      page,
+      selector === ".grid-cell" ? "Design" : "Images",
+    );
+    const border = page.locator(selector).first().locator("[data-card-border]");
+    await expect(border).toBeVisible();
+    await expect(border).toHaveCSS("border-top-color", "rgb(227, 69, 103)");
+    const measured = await border.evaluate((element) => ({
+      width: element.parentElement.getBoundingClientRect().width,
+      stroke: parseFloat(getComputedStyle(element).borderTopWidth),
+    }));
+    expect(Math.abs(measured.stroke - measured.width * 0.04)).toBeLessThan(1);
+  }
+  await openSidebarPanel(page, "Design");
+  await page.screenshot({
+    path: testInfo.outputPath("card-borders-desktop.png"),
+  });
+  await selectExportField(page, "resolution", "150");
+  const exportPixels = async () => {
+    const grid = (await savedWorkspace(page)).grid;
+    const download = await downloadBoard(page);
+    const bytes = (await readFile(await download.path())).toString("base64");
+    return page.evaluate(
+      async ({ bytes, grid }) => {
+        const bitmap = await createImageBitmap(
+          await (await fetch(`data:image/png;base64,${bytes}`)).blob(),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const padding = Math.round(((grid.canvasPadding ?? 12) * 150) / 600);
+        return [
+          [padding + 1, padding + 75],
+          [padding + 148, padding + 75],
+          [padding + 75, padding + 1],
+          [padding + 75, padding + 148],
+        ].map(([left, top]) => [...context.getImageData(left, top, 1, 1).data]);
+      },
+      { bytes, grid },
+    );
+  };
+  expect(await exportPixels()).toEqual(Array(4).fill([227, 69, 103, 255]));
+  await step("Layout");
+  await borders.click();
+  await expect(
+    page.locator("#card-border-width, #card-border-color"),
+  ).toHaveCount(0);
+  await expect(page.locator("[data-card-border]")).toHaveCount(0);
+  expect(await first.boundingBox()).toEqual(geometry);
+  await first.locator("[data-card-image]").hover();
+  await expect(first).toHaveAttribute("data-image-hovered", "");
+  expect(
+    await first
+      .locator("[data-cell-image-frame] rect")
+      .evaluate((element) => getComputedStyle(element).stroke),
+  ).not.toBe("rgba(0, 0, 0, 0)");
+  for (const pixel of await exportPixels())
+    expect(pixel).not.toEqual([227, 69, 103, 255]);
+  await expect
+    .poll(
+      async () => (await localDatabase(page)).document.grid.cardBorderVisible,
+    )
+    .toBe(false);
+  await reloadWorkspace(page);
+  await step("Layout");
+  await expect(borders).not.toBeChecked();
+  await borders.click();
+  await expect(page.locator("#card-border-color-value")).toHaveValue("#E34567");
+  await expect(page.locator("#card-border-width")).toHaveValue("80");
+  await expect
+    .poll(
+      async () => (await localDatabase(page)).document.grid.cardBorderVisible,
+    )
+    .toBe(true);
+  await step("Card headings");
+  await builder
+    .getByRole("switch", { name: "Show titles", exact: true })
+    .click();
+  expect(await exportPixels()).toEqual(Array(4).fill([227, 69, 103, 255]));
+  const saved = await savedWorkspace(page);
+  expect(saved.grid.cells).toEqual(original.grid.cells);
+  expect(saved.grid.overflow).toEqual(original.grid.overflow);
+  expect(saved.assets).toEqual(original.assets);
+});
+
+touchTest(
+  "card border controls fit narrow screens and can be disabled completely",
+  async ({ page }, testInfo) => {
+    await page.goto("./");
+    await openSidebarPanel(page, "Design");
+    const builder = page.locator("[data-theme-builder]");
+    await builder.getByRole("button", { name: /2 Layout/ }).click();
+    const borders = builder.getByRole("switch", {
+      name: "Show borders",
+      exact: true,
+    });
+    for (const width of [390, 260]) {
+      await setEditorViewport(page, { width, height: 844 });
+      await borders.click();
+      await page.locator("#card-border-width").fill("100");
+      await expect(page.locator("#card-border-color-value")).toBeVisible();
+      await page.locator("#card-border-width").scrollIntoViewIfNeeded();
+      await expect(page.locator("#card-border-width")).toBeInViewport({
+        ratio: 1,
+      });
+      expect(
+        await builder.evaluate(
+          (element) => element.scrollWidth - element.clientWidth,
+        ),
+      ).toBeLessThanOrEqual(1);
+      await page.screenshot({
+        path: testInfo.outputPath(`card-borders-mobile-${width}.png`),
+      });
+      await borders.click();
+      await expect(page.locator("[data-card-border]")).toHaveCount(0);
+      await expect(
+        page.locator('input:not([type="range"]):focus, textarea:focus'),
+      ).toHaveCount(0);
+    }
+  },
+);
+
 test("theme builder composes independent choices and detailed values without replacing content", async ({
   page,
 }, testInfo) => {
@@ -1884,7 +2064,7 @@ test("theme builder composes independent choices and detailed values without rep
     .toBe(1);
   const original = await savedWorkspace(page);
   expect(original.grid.overflow.length).toBeGreaterThan(0);
-  await openSidebarPanel(page, "Themes");
+  await openSidebarPanel(page, "Design");
   const builder = page.locator("[data-theme-builder]");
   await expect(
     page.getByRole("tab", { name: "Settings", exact: true }),
@@ -1992,7 +2172,7 @@ touchTest(
     await page.goto("./");
     for (const width of [390, 260]) {
       await setEditorViewport(page, { width, height: 844 });
-      await openSidebarPanel(page, "Themes");
+      await openSidebarPanel(page, "Design");
       const builder = page.locator("[data-theme-builder]");
       for (const title of [
         "Colors",

@@ -110,7 +110,8 @@ export function readNavigation(
   const source = parsedSource.success ? parsedSource.data : "imported";
   const next = {
     ...state,
-    selectedPanel: panel === "themes" ? (2 as const) : (0 as const),
+    selectedPanel:
+      panel === "design" || panel === "themes" ? (2 as const) : (0 as const),
     librarySource: source,
   };
   const provider = imageProviders.find((item) => item.id === source);

@@ -240,6 +240,12 @@ test("preset palettes theme headings, card surfaces and captions with readable c
 
 test("editor navigation migrates legacy URLs and restores browser-local history", () => {
   const defaults = navigation.parseEditorState({});
+  expect(
+    navigation.readNavigation(
+      defaults,
+      new URL("https://example.com/grids/?panel=design"),
+    ).selectedPanel,
+  ).toBe(2);
   expect(defaults.browsing["library:commons"]).toEqual(
     navigation.defaultBrowsing(providers.commons),
   );
@@ -340,6 +346,52 @@ test("editor navigation migrates legacy URLs and restores browser-local history"
       .navigationUrl(all, new URL("https://example.com/"))
       .searchParams.get("topic"),
   ).toBeNull();
+});
+
+test("card borders validate, roundtrip, disable without clearing values and reset", () => {
+  const workspace = model.makeWorkspace();
+  const settings = model.getEditorSettings(workspace);
+  const customized = {
+    ...settings,
+    style: {
+      ...settings.style,
+      cardBorderVisible: true,
+      cardBorderColor: "#e34567",
+      cardBorderWidth: 3,
+    },
+  };
+  const applied = model.applyEditorSettings(workspace, customized);
+  expect(model.getEditorSettings(applied)).toEqual(customized);
+  expect(model.cellGeometry(applied.grid, 600)).toEqual(
+    model.cellGeometry(workspace.grid, 600),
+  );
+  const disabled = model.applyEditorSettings(applied, {
+    ...customized,
+    style: { ...customized.style, cardBorderVisible: false },
+  });
+  expect(disabled.grid).toMatchObject({
+    cardBorderVisible: false,
+    cardBorderColor: "#e34567",
+    cardBorderWidth: 3,
+  });
+  const reset = model.applyEditorSettings(applied, settings);
+  expect(reset.grid.cardBorderVisible).toBeUndefined();
+  expect(reset.grid.cardBorderColor).toBeUndefined();
+  expect(reset.grid.cardBorderWidth).toBeUndefined();
+  for (const patch of [
+    { cardBorderWidth: -1 },
+    { cardBorderWidth: 6 },
+    { cardBorderWidth: Infinity },
+    { cardBorderColor: "red" },
+    { cardBorderVisible: "yes" },
+  ]) {
+    expect(
+      model.editorSettingsSchema.safeParse({
+        ...customized,
+        style: { ...customized.style, ...patch },
+      }).success,
+    ).toBe(false);
+  }
 });
 
 test("browser navigation stores no selected theme or per-theme customizations", () => {

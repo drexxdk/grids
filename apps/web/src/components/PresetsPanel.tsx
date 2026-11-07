@@ -17,7 +17,9 @@ import { t } from "../i18n";
 import {
   Button,
   ChoiceButton,
+  ColorField,
   IconRadioField,
+  PercentField,
   SelectField,
   Toggle,
 } from "./ui/controls";
@@ -276,6 +278,35 @@ export function ThemeBuilder({
                       onChange({ cornerRadius: rounded ? 12.5 : 0 })
                     }
                   />
+                  <Toggle
+                    label={t("builder.borders")}
+                    checked={board.cardBorderVisible === true}
+                    onChange={(cardBorderVisible) =>
+                      onChange({ cardBorderVisible })
+                    }
+                  />
+                  {board.cardBorderVisible && (
+                    <div className="flex flex-col gap-4">
+                      <ColorField
+                        id="card-border-color"
+                        label={t("builder.borderColor")}
+                        value={board.cardBorderColor ?? "#eef1f3"}
+                        onChange={(cardBorderColor) =>
+                          onChange({ cardBorderColor })
+                        }
+                      />
+                      <PercentField
+                        id="card-border-width"
+                        label={t("builder.borderThickness")}
+                        max={5}
+                        outputValue={`${board.cardBorderWidth ?? 0.5}%`}
+                        value={board.cardBorderWidth ?? 0.5}
+                        onChange={(cardBorderWidth) =>
+                          onChange({ cardBorderWidth })
+                        }
+                      />
+                    </div>
+                  )}
                 </>
               )}
               {index === 2 && (
