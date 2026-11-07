@@ -88,7 +88,6 @@ export function GridResizer({
       const y = Math.min(extra.height, workspace.scrollTop);
       area.style.translate = x > 0 || y > 0 ? `${-x}px ${-y}px` : "";
       area.style.setProperty("--frame-shift-y", `${y > 0 ? y : 0}px`);
-      viewport.toggleAttribute("data-scrolled-y", y > 0);
     };
     const syncWorkspace = () => {
       if (!workspace) return;
@@ -160,17 +159,17 @@ export function GridResizer({
         <span
           aria-hidden="true"
           data-image-canvas-background
-          className="pointer-events-none absolute top-(--frame-shift-y,0px) inset-x-0 bottom-0 -z-10 bg-(--board-bg)"
+          className="pointer-events-none absolute inset-0 -z-10 bg-(--board-bg)"
         />
         {heading && (
-          <div className="relative z-10 translate-y-(--frame-shift-y,0px) px-(--canvas-inset,0px) pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">
+          <div className="relative z-10 px-(--canvas-inset,0px) pt-(--canvas-inset,0px) pb-(--heading-gap,0px)">
             {heading}
           </div>
         )}
         <div
           ref={viewportRef}
           data-canvas-viewport
-          className="relative z-20 min-w-0 overflow-hidden data-scrolled-y:z-0 [clip-path:inset(var(--clip-top,0px)_var(--clip-x,-100vmax)_-100vmax_var(--clip-x,-100vmax))] data-scrolled-y:[--clip-top:calc(var(--frame-shift-y,0px)+var(--canvas-feedback-space))] data-overflow-x:[--clip-x:var(--canvas-feedback-space)]"
+          className="relative z-20 min-w-0 overflow-hidden [clip-path:inset(0px_var(--clip-x,-100vmax)_-100vmax_var(--clip-x,-100vmax))] data-overflow-x:[--clip-x:var(--canvas-feedback-space)]"
           style={
             {
               height: viewportHeight,

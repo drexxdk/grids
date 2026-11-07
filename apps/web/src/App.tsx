@@ -1535,6 +1535,9 @@ export default function App() {
     return (
       <section aria-label={t("editor.reset.title")}>
         <div className="flex flex-col gap-4">
+          <p data-reset-description className="m-0 text-sm text-(--muted)">
+            {t("editor.reset.description")}
+          </p>
           <fieldset className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0 max-[360px]:grid-cols-1">
             <legend className="sr-only">{t("editor.reset.prompt")}</legend>
             <label

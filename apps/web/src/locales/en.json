@@ -190,6 +190,7 @@
     "reset": {
       "title": "Reset",
       "tooltip": "Reset grid, canvas, theme or library",
+      "description": "Clear or restore parts of your grid, canvas, theme or image library without changing the rest.",
       "prompt": "Choose what to reset",
       "all": "All",
       "canvas": "Grid",

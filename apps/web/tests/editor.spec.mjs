@@ -20,6 +20,57 @@ const nativeTouchTest = scrollbarTest.extend({
   hasTouch: true,
 });
 
+function overlayScrollbar(viewport, axis) {
+  return viewport
+    .locator("xpath=following-sibling::*[1][@data-overlay-scroll-frame]")
+    .locator(`.os-scrollbar-${axis}`);
+}
+
+async function expectStationaryScrollbars(viewport) {
+  const metrics = await viewport.evaluate((target) => {
+    const rails = [
+      ...target.nextElementSibling.querySelectorAll(".os-scrollbar"),
+    ];
+    const measure = () =>
+      rails.map((rail) => {
+        const bounds = rail.getBoundingClientRect();
+        return [bounds.x, bounds.y];
+      });
+    const before = measure();
+    const left = target.scrollLeft;
+    const top = target.scrollTop;
+    target.scrollTo(target.scrollWidth, target.scrollHeight);
+    const after = measure();
+    target.scrollTo(left, top);
+    return { before, after };
+  });
+  expect(metrics.after).toEqual(metrics.before);
+}
+
+async function expectEditorTabBorders(tabs, vertical) {
+  const borders = await tabs.getByRole("tab").evaluateAll((elements) =>
+    elements.map((element) => {
+      const style = getComputedStyle(element);
+      return ["Top", "Right", "Bottom", "Left"].map((edge) =>
+        parseFloat(style[`border${edge}Width`]),
+      );
+    }),
+  );
+  expect(borders).toEqual(
+    vertical
+      ? [
+          [0, 1, 1, 0],
+          [1, 1, 1, 0],
+          [1, 1, 0, 0],
+        ]
+      : [
+          [0, 1, 1, 0],
+          [0, 1, 1, 1],
+          [0, 0, 1, 1],
+        ],
+  );
+}
+
 function sidebarToggle(page, expanded = false) {
   return page
     .getByRole("group", { name: "Editor panels", exact: true })
@@ -722,13 +773,18 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
   await openSidebarPanel(page, "Reset");
   const aside = page.locator("[data-editor-sidebar]");
   const panels = aside.locator("[data-sidebar-panels]");
-  await expect(panels.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
-    "opacity",
-    "1",
-  );
+  const panelControls = aside.locator("[data-panel-controls]");
+  const tabs = panelControls.getByRole("tablist");
+  await expect(panelControls).toHaveCSS("padding", "0px");
+  await expect(panelControls).toHaveCSS("height", "44px");
+  await expect(tabs).toHaveCSS("border-radius", "0px");
+  await expectEditorTabBorders(tabs, false);
+  expect(await tabs.boundingBox()).toEqual(await panelControls.boundingBox());
+  await expect(overlayScrollbar(panels, "vertical")).toHaveCSS("opacity", "1");
   await expect(panels).toHaveCSS("scrollbar-width", "none");
-  const sidebarHandle = panels.locator(
-    ":scope > .os-scrollbar-vertical .os-scrollbar-handle",
+  await expectStationaryScrollbars(panels);
+  const sidebarHandle = overlayScrollbar(panels, "vertical").locator(
+    ".os-scrollbar-handle",
   );
   const stickyBounds = await aside
     .locator("[data-sidebar-sticky]")
@@ -770,10 +826,7 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
   const headerBounds = await page.locator("[data-canvas-header]").boundingBox();
   await page.locator("#export-grid-header").click();
   const modal = page.locator("[data-modal-scroll]");
-  await expect(modal.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
-    "opacity",
-    "1",
-  );
+  await expect(overlayScrollbar(modal, "vertical")).toHaveCSS("opacity", "1");
   expect(
     await modal.evaluate(
       (element) => element.offsetWidth - element.clientWidth,
@@ -782,8 +835,9 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
   expect(await page.locator("[data-canvas-header]").boundingBox()).toEqual(
     headerBounds,
   );
-  const handle = modal.locator(
-    ":scope > .os-scrollbar-vertical .os-scrollbar-handle",
+  await expectStationaryScrollbars(modal);
+  const handle = overlayScrollbar(modal, "vertical").locator(
+    ".os-scrollbar-handle",
   );
   await handle.hover();
   const handleBounds = await handle.boundingBox();
@@ -815,11 +869,45 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
       listbox.evaluate((node) => node.scrollHeight > node.clientHeight),
     )
     .toBe(true);
-  await expect(listbox.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
-    "opacity",
-    "1",
+  await expect(overlayScrollbar(listbox, "vertical")).toHaveCSS("opacity", "1");
+  await expectStationaryScrollbars(listbox);
+  const listboxHandle = overlayScrollbar(listbox, "vertical").locator(
+    ".os-scrollbar-handle",
   );
-  await page.keyboard.press("Escape");
+  await listboxHandle.hover();
+  const listboxHandleBounds = await listboxHandle.boundingBox();
+  await page.mouse.move(
+    listboxHandleBounds.x + listboxHandleBounds.width / 2,
+    listboxHandleBounds.y + listboxHandleBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    listboxHandleBounds.x + listboxHandleBounds.width / 2,
+    listboxHandleBounds.y + listboxHandleBounds.height / 2 + 15,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect(listbox).toBeVisible();
+  await expect
+    .poll(() => listbox.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await page.mouse.click(12, 85);
+  await expect(listbox).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const targets = [
+          ...document.querySelectorAll("[data-overlay-scroll]"),
+        ].filter((target) =>
+          ["x", "y", "both"].includes(target.dataset.overlayScroll),
+        );
+        return (
+          document.querySelectorAll("[data-overlay-scroll-frame]").length ===
+          targets.length
+        );
+      }),
+    )
+    .toBe(true);
   await page.setViewportSize({ width: 390, height: 180 });
   await expect(page.locator("[data-editor-sidebar]")).toHaveCount(1);
   const rail = page.locator("[data-panel-controls]");
@@ -827,11 +915,9 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
   await expect(
     aside.locator("[data-sidebar-panels] > .os-scrollbar"),
   ).toHaveCount(0);
-  await expect(aside.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
-    "opacity",
-    "1",
-  );
+  await expect(overlayScrollbar(aside, "vertical")).toHaveCSS("opacity", "1");
   await aside.evaluate((element) => element.scrollTo(0, 0));
+  await expectStationaryScrollbars(aside);
   const railTop = (await rail.boundingBox()).y;
   const contentTop = (
     await aside.locator("[data-sidebar-panels]").boundingBox()
@@ -907,6 +993,21 @@ test("panel placement uses available width and height without losing selection",
     await expect(
       page.getByRole("tab", { name: "Reset", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
+    const description = page.locator("[data-reset-description]");
+    await expect(description).toHaveText(
+      "Clear or restore parts of your grid, canvas, theme or image library without changing the rest.",
+    );
+    expect(
+      await description.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const options = element.nextElementSibling.getBoundingClientRect();
+        return {
+          first: element.parentElement.firstElementChild === element,
+          aboveOptions: bounds.bottom <= options.top,
+          fits: element.scrollWidth <= element.clientWidth,
+        };
+      }),
+    ).toEqual({ first: true, aboveOptions: true, fits: true });
     await expect(
       page.getByRole("checkbox", { name: "Grid", exact: true }),
     ).toBeChecked();
@@ -933,6 +1034,7 @@ test("panel placement uses available width and height without losing selection",
     [400, 3 / 4],
   ]) {
     await setEditorViewport(page, { width: 780, height });
+    await expect(page.locator("[data-editor-sidebar]")).toHaveCount(1);
     const bounds = await page
       .locator("#asset-library [data-upload-tile]")
       .boundingBox();
@@ -957,6 +1059,19 @@ touchTest(
     for (const width of [260, 390, 780, 900]) {
       await setEditorViewport(page, { width, height: 720 });
       await expect(tabs).toHaveAttribute("aria-orientation", "vertical");
+      await expectEditorTabBorders(tabs, true);
+      const railBounds = await sidebar
+        .locator("[data-sidebar-sticky]")
+        .boundingBox();
+      const tabBounds = await tabs.boundingBox();
+      expect(tabBounds.y).toBeCloseTo(railBounds.y, 1);
+      expect(tabBounds.height).toBeCloseTo(149, 1);
+      expect(tabBounds.height).toBeCloseTo(railBounds.height, 1);
+      const lastTab = await reset.boundingBox();
+      expect(lastTab.y + lastTab.height).toBeCloseTo(
+        tabBounds.y + tabBounds.height,
+        1,
+      );
       await expect(tabs.getByRole("tab").first()).toHaveAccessibleName(
         "Images",
       );
@@ -1101,9 +1216,10 @@ touchTest(
         await expect
           .poll(() => panels.evaluate((element) => element.scrollTop))
           .toBeGreaterThan(0);
-        await expect(
-          panels.locator(":scope > .os-scrollbar-vertical"),
-        ).toHaveCSS("opacity", "1");
+        await expect(overlayScrollbar(panels, "vertical")).toHaveCSS(
+          "opacity",
+          "1",
+        );
         await expect(add).toBeInViewport();
       } else {
         await expect(add).toBeInViewport({ ratio: 1 });
@@ -2316,7 +2432,7 @@ scrollbarTest(
 );
 
 nativeTouchTest(
-  "workspace-edge scrolling moves rows and row controls while heading and column controls stay fixed",
+  "workspace-edge scrolling moves canvas heading rows and row controls while column controls stay fixed",
   async ({ page }, testInfo) => {
     await setEditorViewport(page, { width: 960, height: 600 });
     await page.goto("./");
@@ -2330,7 +2446,6 @@ nativeTouchTest(
     const gridViewport = page.locator("[data-canvas-viewport]");
     const fixed = [
       page.locator("[data-canvas-header]"),
-      page.locator(".board-export-heading"),
       page.getByRole("group", { name: "Column controls", exact: true }),
       page.getByRole("tab", { name: "Reset", exact: true }),
     ];
@@ -2352,6 +2467,34 @@ nativeTouchTest(
           element.scrollHeight > element.clientHeight,
         ]),
       ).toEqual([true, true]);
+      const verticalRail = overlayScrollbar(scroller, "vertical");
+      await expect(verticalRail).toBeVisible();
+      const railBefore = await verticalRail.boundingBox();
+      const horizontalJumpMetrics = await scroller.evaluate((outer) => {
+        const rail = outer.nextElementSibling.querySelector(
+          ".os-scrollbar-vertical",
+        );
+        const handle = rail.querySelector(".os-scrollbar-handle");
+        const measure = () => {
+          const bounds = rail.getBoundingClientRect();
+          return [bounds.x, bounds.y, handle.getBoundingClientRect().y];
+        };
+        const before = measure();
+        const samples = [];
+        const originalLeft = outer.scrollLeft;
+        const maximum = outer.scrollWidth - outer.clientWidth;
+        try {
+          for (const fraction of [0, 1, 0.25, 0.9, 0, 1]) {
+            outer.scrollLeft = maximum * fraction;
+            samples.push(measure());
+          }
+        } finally {
+          outer.scrollLeft = originalLeft;
+        }
+        return { before, samples };
+      });
+      for (const sample of horizontalJumpMetrics.samples)
+        expect(sample).toEqual(horizontalJumpMetrics.before);
       const bounds = await scroller.boundingBox();
       const region = await page.locator(".workspace").boundingBox();
       expect(bounds.x + bounds.width).toBe(region.x + region.width);
@@ -2359,6 +2502,8 @@ nativeTouchTest(
       const before = await Promise.all(
         fixed.map((locator) => locator.boundingBox()),
       );
+      const heading = page.locator(".board-export-heading");
+      const headingBefore = await heading.boundingBox();
       const cardBefore = await page.locator(".grid-cell").first().boundingBox();
       const rows = page.getByRole("group", {
         name: "Row controls",
@@ -2477,11 +2622,15 @@ nativeTouchTest(
       expect(cardAfter.y).toBeLessThan(cardBefore.y);
       const scrolled = await scroller.evaluate((element) => element.scrollTop);
       expect(
+        Math.abs((await heading.boundingBox()).y - headingBefore.y + scrolled),
+      ).toBeLessThan(1);
+      expect(
         Math.abs((await rows.boundingBox()).y - rowsBefore.y + scrolled),
       ).toBeLessThan(1);
       expect(
         await Promise.all(fixed.map((locator) => locator.boundingBox())),
       ).toEqual(before);
+      expect(await verticalRail.boundingBox()).toEqual(railBefore);
       expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0]);
       await scroller.evaluate((element) =>
         element.scrollTo(0, element.scrollHeight),

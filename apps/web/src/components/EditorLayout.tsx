@@ -319,7 +319,7 @@ export function EditorLayout({
               >
                 <div
                   data-sidebar-sticky
-                  className={`z-20 shrink-0 bg-(--panel) ${compact ? "relative min-h-37.25 w-11" : "sticky top-0"}`}
+                  className={`z-20 shrink-0 bg-(--panel) ${compact ? "relative h-(--shelf-content-height) w-11" : "sticky top-0"}`}
                 >
                   {!brandInHeader && !compact && (
                     <div
@@ -333,11 +333,11 @@ export function EditorLayout({
                     <div
                       data-panel-controls
                       data-overlay-scroll="none"
-                      className={`flex shrink-0 flex-col gap-2 ${compact ? "" : "px-4 py-4"}`}
+                      className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full **:[[role=tab]]:border-l-0! [&_[role=tab]:first-child]:border-t-0! [&_[role=tab]:last-child]:border-b-0!" : "**:[[role=tab]]:border-t-0! [&_[role=tab]:first-child]:border-l-0! [&_[role=tab]:last-child]:border-r-0!"}`}
                     >
                       <ImageTabs
                         id={panelsId}
-                        square={compact}
+                        square
                         vertical={compact}
                         label={t("editor.panels")}
                         selectedIndex={panelOrder.indexOf(selectedPanel)}
