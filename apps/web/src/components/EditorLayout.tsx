@@ -339,7 +339,7 @@ export function EditorLayout({
                 id={panelsId}
                 data-editor-sidebar
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? `flex flex-row overflow-y-hidden border-t ${selectedPanel === 2 ? "h-[min(400px,50dvh)]" : "h-39.25 max-h-[45dvh]"} [--shelf-content-height:min(156px,calc(45dvh-1px))]` : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
+                className={`min-h-0 min-w-0 w-full overflow-x-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(200px,30dvh)] flex-row overflow-y-hidden border-t [--shelf-content-height:calc(min(200px,30dvh)-1px)]" : "scrollbar-gutter-stable flex h-full flex-col overflow-y-auto border-l"}`}
               >
                 <div
                   data-sidebar-sticky

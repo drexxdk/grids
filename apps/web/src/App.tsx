@@ -844,7 +844,7 @@ export default function App() {
               >
                 <div
                   id="asset-library"
-                  className="asset-library max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:-m-3! max-[901px]:p-3!"
+                  className="asset-library @container/shelf max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:-m-3! max-[901px]:p-3!"
                 >
                   <UploadTile
                     ref={addImagesButton}
@@ -852,7 +852,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="self-start w-full max-[901px]:h-full max-[901px]:w-auto max-[901px]:self-auto"
+                    className="self-start w-full max-[901px]:h-full max-[901px]:max-h-[100cqw] max-[901px]:w-auto max-[901px]:self-auto"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);

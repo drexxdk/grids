@@ -45,7 +45,7 @@ test("refined dark defaults keep captions readable without restyling saved grids
   expect(workspace.grid).toMatchObject({
     rows: 3,
     columns: 3,
-    imageAspect: "square",
+    imageAspect: "portrait",
     captionPlacement: "overlay",
     captionAlignment: "bottom",
     captionOverlayOpacity: 75,
@@ -121,6 +121,17 @@ test("color theme identity roundtrips settings and resets without losing modifie
   expect(restored.grid.colorTheme).toBe("Forest");
   expect(restored.grid.background).toBe("#334455");
   expect(model.workspaceSchema.parse(workspace).grid.colorTheme).toBe("Forest");
+  for (const colorTheme of ["Cocoa", "Plum"]) {
+    const themed = { ...workspace, grid: { ...workspace.grid, colorTheme } };
+    expect(model.workspaceSchema.parse(themed).grid.colorTheme).toBe(
+      colorTheme,
+    );
+    const settings = model.getEditorSettings(themed);
+    expect(
+      model.applyEditorSettings(model.makeWorkspace(), settings).grid
+        .colorTheme,
+    ).toBe(colorTheme);
+  }
   expect(
     model.editorSettingsSchema.safeParse({
       ...settings,

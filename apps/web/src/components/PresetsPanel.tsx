@@ -31,13 +31,6 @@ import {
 
 const palettes = [
   {
-    name: "Snow",
-    background: "#ffffff",
-    surface: "#f1f3f2",
-    text: "#202325",
-    overlay: "#ffffff",
-  },
-  {
     name: "Ink",
     background: "#17191b",
     surface: "#23272b",
@@ -59,6 +52,13 @@ const palettes = [
     overlay: "#123d51",
   },
   {
+    name: "Plum",
+    background: "#46215b",
+    surface: "#643278",
+    text: "#f6eafa",
+    overlay: "#2c1639",
+  },
+  {
     name: "Rose",
     background: "#613745",
     surface: "#754957",
@@ -66,11 +66,25 @@ const palettes = [
     overlay: "#613745",
   },
   {
+    name: "Cocoa",
+    background: "#4a3328",
+    surface: "#684b3a",
+    text: "#fff0df",
+    overlay: "#322219",
+  },
+  {
     name: "Sun",
     background: "#f4ca36",
     surface: "#fff0a3",
     text: "#222222",
     overlay: "#fff0a3",
+  },
+  {
+    name: "Snow",
+    background: "#ffffff",
+    surface: "#f1f3f2",
+    text: "#202325",
+    overlay: "#ffffff",
   },
 ] as const;
 
@@ -170,7 +184,7 @@ export function ThemeBuilder({
     <section
       aria-label={t("presets.title")}
       data-theme-builder
-      className="flex min-w-0 flex-col"
+      className="@container/themes flex min-w-0 flex-col"
     >
       {steps.map((item, index) => (
         <Disclosure
@@ -242,7 +256,7 @@ export function ThemeBuilder({
                               });
                           }}
                           aria-label={t("builder.colors")}
-                          className="grid grid-cols-3 gap-2"
+                          className="grid grid-cols-1 gap-2 @min-[224px]/themes:grid-cols-2 @min-[328px]/themes:grid-cols-3 @min-[480px]/themes:grid-cols-4"
                         >
                           {palettes.map((palette) => (
                             <Radio

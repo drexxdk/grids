@@ -224,7 +224,15 @@ export function headingGeometry(style: GridStyle, width: number, rows = 1) {
   return { padding, contentHeight, height: contentHeight + padding * 2 };
 }
 export interface GridStyle {
-  colorTheme?: "Snow" | "Ink" | "Forest" | "Ocean" | "Rose" | "Sun";
+  colorTheme?:
+    | "Snow"
+    | "Ink"
+    | "Forest"
+    | "Ocean"
+    | "Rose"
+    | "Sun"
+    | "Cocoa"
+    | "Plum";
   publisher: Publisher;
   headingVisible: boolean;
   headingFont: string;
@@ -437,7 +445,7 @@ export const makeBoard = (name: string, assets: Asset[] = []): Board => ({
   cellFontSize: 12,
   cornerRadius: 6.25,
   captionOverlayOpacity: 75,
-  imageAspect: "square",
+  imageAspect: "portrait",
   captionPlacement: "overlay",
   captionAlignment: "bottom",
   captionOverlayColor: "#111315",
@@ -513,7 +521,7 @@ const layoutSchema = z.strictObject({
 });
 const styleSchema = z.strictObject({
   colorTheme: z
-    .enum(["Snow", "Ink", "Forest", "Ocean", "Rose", "Sun"])
+    .enum(["Snow", "Ink", "Forest", "Ocean", "Rose", "Sun", "Cocoa", "Plum"])
     .optional(),
   publisher: z.enum(["none", "dc", "marvel"]),
   headingVisible: z.boolean(),

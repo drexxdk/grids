@@ -592,6 +592,10 @@ for (const [mode, rowTest] of [
       await page.goto("./");
       await useComicExample(page);
       await setEditorViewport(page, { width: 390, height: 720 });
+      const shelfHeight = () =>
+        page
+          .locator("[data-editor-sidebar]")
+          .evaluate((element) => element.getBoundingClientRect().height);
       const checkRow = async (row, cardSelector) => {
         await expect(row).toBeVisible();
         await expect
@@ -627,9 +631,11 @@ for (const [mode, rowTest] of [
       for (const shape of ["portrait", "landscape", "square"]) {
         await selectField(page, "image-shape", shape);
         await openSidebarPanel(page, "Images");
+        await expect.poll(shelfHeight).toBeCloseTo(200, 0);
         await checkRow(page.locator("#asset-library"), "[data-library-image]");
       }
       await openSidebarPanel(page, "Design");
+      await expect.poll(shelfHeight).toBeCloseTo(200, 0);
       await openDesignSection(page, "Colors");
       await page
         .getByRole("button", { name: "Customize Colors", exact: true })
@@ -650,6 +656,7 @@ for (const [mode, rowTest] of [
           scrollbarTakesSpace: mode === "classic",
         });
       await setEditorViewport(page, { width: 390, height: 360 });
+      await expect.poll(shelfHeight).toBeCloseTo(108, 0);
       const measureShelf = () =>
         page.locator("[data-sidebar-panels]").evaluate((element) => {
           const bounds = element.getBoundingClientRect();
@@ -2193,6 +2200,34 @@ test("design identifies reset and modified color themes across navigation and re
   await expect(colors).toHaveText("1ColorsInk");
   await expect(ink).toBeChecked();
   await expect(ink).toBeDisabled();
+  const paletteOrder = [
+    "Ink",
+    "Forest",
+    "Ocean",
+    "Plum",
+    "Rose",
+    "Cocoa",
+    "Sun",
+    "Snow",
+  ];
+  for (const [index, name] of paletteOrder.entries()) {
+    await expect(builder.getByRole("radio").nth(index)).toHaveAccessibleName(
+      name,
+    );
+  }
+  for (const name of ["Cocoa", "Plum"]) {
+    await builder.getByRole("radio", { name, exact: true }).click();
+    await expect(colors).toHaveText(`1Colors${name}`);
+    await expect
+      .poll(async () => (await savedWorkspace(page)).grid.colorTheme)
+      .toBe(name);
+    await reloadWorkspace(page);
+    await openSidebarPanel(page, "Design");
+    await expect(
+      builder.getByRole("radio", { name, exact: true }),
+    ).toBeChecked();
+    await expect(colors).toHaveText(`1Colors${name}`);
+  }
   await builder.getByRole("radio", { name: "Forest", exact: true }).click();
   await expect(colors).toHaveText("1ColorsForest");
   await page.getByRole("button", { name: "Reset", exact: true }).click();
@@ -2226,6 +2261,7 @@ test("design identifies reset and modified color themes across navigation and re
     name: "Background hex value",
     exact: true,
   });
+  await background.click();
   await background.fill("#334455");
   await background.press("Tab");
   await expect(colors).toHaveText("1ColorsInk · Modified");
@@ -2240,10 +2276,39 @@ test("design identifies reset and modified color themes across navigation and re
   await ink.click();
   await expect(colors).toHaveText("1ColorsInk");
   await expect(ink).toBeChecked();
-  for (const width of [1440, 390, 260]) {
+  for (const [width, columns] of [
+    [1440, 3],
+    [835, 4],
+    [390, 3],
+    [320, 2],
+    [260, 1],
+    [220, 1],
+  ]) {
     await setEditorViewport(page, { width, height: 844 });
     await openSidebarPanel(page, "Design");
     await expect(colors).toHaveText("1ColorsInk");
+    const palettes = builder.getByRole("radiogroup", {
+      name: "Colors",
+      exact: true,
+    });
+    await expect(palettes.getByRole("radio")).toHaveCount(8);
+    await expect
+      .poll(() =>
+        palettes.evaluate(
+          (element) =>
+            getComputedStyle(element).gridTemplateColumns.split(" ").length,
+        ),
+      )
+      .toBe(columns);
+    expect(
+      await palettes.getByRole("radio").evaluateAll((elements) =>
+        elements.every((element) => {
+          const bounds = element.getBoundingClientRect();
+          const label = element.lastElementChild.getBoundingClientRect();
+          return label.left >= bounds.left && label.right <= bounds.right;
+        }),
+      ),
+    ).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath(`design-applied-${width}.png`),
       fullPage: true,
@@ -2777,7 +2842,7 @@ test("header reset confirms clearing the grid and all images at every screen siz
     columns: 2,
     heading: "",
     gap: 24,
-    imageAspect: "square",
+    imageAspect: "portrait",
     captionPlacement: "overlay",
     captionAlignment: "bottom",
     overflow: [],
@@ -5495,7 +5560,7 @@ test("appearance settings preserve content and match exported ratios and caption
   await page.locator("#gap").fill("10");
   await page.locator("#canvas-padding").fill("10");
   await expect(page.locator('#image-shape [aria-checked="true"]')).toHaveText(
-    "Square",
+    "Portrait",
   );
   await expect(
     page.locator('#caption-position [aria-checked="true"]'),
