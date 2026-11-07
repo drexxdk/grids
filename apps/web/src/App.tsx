@@ -858,7 +858,7 @@ export default function App() {
                 <div
                   id="asset-library"
                   data-overlay-scroll="x"
-                  className="asset-library @container/shelf panel-bottom:h-(--shelf-content-height) panel-bottom:grid-flow-col panel-bottom:grid-rows-[minmax(0,1fr)] panel-bottom:auto-cols-max panel-bottom:grid-cols-none! panel-bottom:overflow-x-auto panel-bottom:overflow-y-hidden panel-bottom:-m-3! panel-bottom:p-3!"
+                  className="asset-library @container/shelf panel-right:overflow-visible! panel-bottom:h-(--shelf-content-height) panel-bottom:grid-flow-col panel-bottom:grid-rows-[minmax(0,1fr)] panel-bottom:auto-cols-max panel-bottom:grid-cols-none! panel-bottom:overflow-x-auto panel-bottom:overflow-y-hidden panel-bottom:-m-3! panel-bottom:p-3!"
                 >
                   <UploadTile
                     ref={addImagesButton}

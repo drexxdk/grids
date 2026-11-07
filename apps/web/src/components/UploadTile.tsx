@@ -25,6 +25,11 @@ export function UploadTile({
   ref?: Ref<HTMLButtonElement>;
 }) {
   const geometry = cellGeometry(gridStyle, 600, captionRows);
+  const cardBackground = contrastingColor(
+    gridStyle.background,
+    gridStyle.cellBackgroundColor ?? "#111315",
+    1.5,
+  );
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -44,18 +49,15 @@ export function UploadTile({
             aspectRatio: `600 / ${geometry.height}`,
             "--card-radius": `${gridStyle.cornerRadius ?? 12.5}cqw`,
             "--upload-corner-radius": `${gridStyle.cornerRadius ?? 12.5}%`,
-            "--card-background": gridStyle.cellBackgroundColor ?? "#111315",
+            "--card-background": cardBackground,
             "--card-frame-hover-color": contrastingColor(
-              gridStyle.cellBackgroundColor ?? "#111315",
-              gridStyle.cellBackgroundColor ?? "#111315",
+              cardBackground,
+              cardBackground,
               3,
             ),
             borderRadius: `${gridStyle.cornerRadius ?? 12.5}% / ${((gridStyle.cornerRadius ?? 12.5) * 600) / geometry.height}%`,
-            backgroundColor: gridStyle.cellBackgroundColor ?? "#111315",
-            color: contrastingColor(
-              gridStyle.cellBackgroundColor ?? "#111315",
-              "#eef1f3",
-            ),
+            backgroundColor: cardBackground,
+            color: contrastingColor(cardBackground, "#eef1f3"),
           } as CSSProperties
         }
         data-image-hovered={hovered && !progress ? "" : undefined}

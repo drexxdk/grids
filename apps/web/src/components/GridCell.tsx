@@ -163,7 +163,8 @@ export function GridCell({
         1.5,
       )
     : (gridStyle.cellBackgroundColor ?? "#111315");
-  const frameBackground = library ? cardBackground : gridStyle.background;
+  const frameBackground =
+    library || dropPlaceholder ? cardBackground : gridStyle.background;
   const selectsLibraryImage = Boolean(
     coarsePointer && library?.onSelect && asset?.provenance,
   );
@@ -441,14 +442,16 @@ export function GridCell({
           ),
           "--card-frame-hover-color": contrastingColor(
             frameBackground,
-            library
-              ? (gridStyle.cellBackgroundColor ?? "#111315")
+            library || dropPlaceholder
+              ? cardBackground
               : (gridStyle.cellTextColor ?? "#eef1f3"),
             3,
           ),
           "--card-drop-color": contrastingColor(
             frameBackground,
-            gridStyle.cellBackgroundColor ?? "#111315",
+            dropPlaceholder
+              ? cardBackground
+              : (gridStyle.cellBackgroundColor ?? "#111315"),
             3,
           ),
           "--card-caption-hover-color": contrastingColor(

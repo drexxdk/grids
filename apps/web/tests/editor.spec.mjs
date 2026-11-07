@@ -2794,9 +2794,10 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
       "--card-frame-hover-color",
       palette.cellTextColor,
     );
-    await expect(empty).toHaveCSS(
-      "--card-frame-hover-color",
-      palette.cellTextColor,
+    const emptyFeedback = await empty.evaluate((element) =>
+      getComputedStyle(element)
+        .getPropertyValue("--card-frame-hover-color")
+        .trim(),
     );
     await expect(heading).toHaveCSS(
       "--heading-feedback-color",
@@ -2849,6 +2850,9 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
       "background-color",
       emptyBackground,
     );
+    const emptyHoveredBackground = await emptyContent.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
     await checkOverlay(empty, true, false);
     expect(await geometryOf(empty)).toEqual(beforeEmptyHover);
     await empty.dispatchEvent("dragover", { dataTransfer: transfer });
@@ -2857,6 +2861,7 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
       getComputedStyle(element).getPropertyValue("--card-drop-color").trim(),
     );
     expect(dropColor).not.toBe("#80cab1");
+    expect(dropColor).toBe(emptyFeedback);
     dropColors.add(dropColor);
     await expect(emptyContent).not.toHaveCSS(
       "background-color",
@@ -2907,6 +2912,30 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
     const beforeLibraryHover = await geometryOf(library);
     await library.locator(".library-image-button").hover();
     await checkOverlay(library);
+    const clippedFrameEdges = await library.evaluate((element) => {
+      const frame = element.getBoundingClientRect();
+      const clipped = [];
+      for (
+        let ancestor = element.parentElement;
+        ancestor;
+        ancestor = ancestor.parentElement
+      ) {
+        const style = getComputedStyle(ancestor);
+        const bounds = ancestor.getBoundingClientRect();
+        const edges = [
+          ["left", frame.left - bounds.left, style.overflowX],
+          ["right", bounds.right - frame.right, style.overflowX],
+          ["top", frame.top - bounds.top, style.overflowY],
+          ["bottom", bounds.bottom - frame.bottom, style.overflowY],
+        ];
+        for (const [edge, inset, overflow] of edges) {
+          if (overflow !== "visible" && inset < 2.9)
+            clipped.push({ ancestor: ancestor.id, edge, inset });
+        }
+      }
+      return clipped;
+    });
+    expect(clippedFrameEdges).toEqual([]);
     expect(await geometryOf(library)).toEqual(beforeLibraryHover);
     await library.locator(".library-heading").hover();
     await expect(library.locator("[data-caption-feedback]")).toHaveCSS(
@@ -2922,6 +2951,8 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
     const upload = page.locator("[data-upload-tile]").first();
     const beforeUploadHover = await geometryOf(upload);
     const uploadContent = upload.locator("[data-card-content]");
+    await expect(upload).toHaveCSS("--card-frame-hover-color", emptyFeedback);
+    await expect(uploadContent).toHaveCSS("background-color", emptyBackground);
     const uploadBackground = await uploadContent.evaluate(
       (element) => getComputedStyle(element).backgroundColor,
     );
@@ -2929,6 +2960,10 @@ test("theme feedback follows palette colors on cards headings and drop zones", a
     await expect(uploadContent).not.toHaveCSS(
       "background-color",
       uploadBackground,
+    );
+    await expect(uploadContent).toHaveCSS(
+      "background-color",
+      emptyHoveredBackground,
     );
     await checkOverlay(upload, true, false);
     expect(await geometryOf(upload)).toEqual(beforeUploadHover);
