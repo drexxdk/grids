@@ -17,11 +17,6 @@ export const motionPresets = {
     animate: { height: "auto", opacity: 1 },
     exit: { height: 0, opacity: 0 },
   },
-  popup: {
-    initial: { opacity: 0, y: -4 },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -4 },
-  },
 } satisfies Record<
   string,
   Pick<HTMLMotionProps<"div">, "initial" | "animate" | "exit">

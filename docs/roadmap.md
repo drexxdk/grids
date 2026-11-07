@@ -1,6 +1,6 @@
 # Gridz Roadmap
 
-Updated November 3, 2026. `[x]` = implemented and checked. `[ ]` = remaining work, including partial features. Only work items have checkboxes.
+Updated November 7, 2026. `[x]` = implemented and checked. `[ ]` = remaining work, including partial features. Only work items have checkboxes.
 
 Build a general-purpose, single-grid editor for anime, characters, films, games, books, cards, photographs, and personal collections. Guests can use it without an account, API key, paid service, or backend. Optional provider accounts save named reference-only grids and private/public layout/style presets in Postgres. Uploaded images remain browser-only; provider image binaries are not persisted. The static frontend can stay on GitHub Pages, but authentication/database access needs a separately hosted backend.
 
@@ -41,7 +41,8 @@ Current limits: local-upload blobs and grid/reference snapshots use IndexedDB; l
 - [ ] Incrementally separate editor/library/domain/rendering/storage ownership. Use build-managed font imports where suitable; retain stable public URLs where needed. Do not create empty architectural scaffolding.
 - [x] Error-only Sonner notifications at the top right, separated/dismissible on desktop/mobile, with deduplicated save failures. Reset/export successes stay silent; actionable inline failure/conflict status remains visible.
 - [x] Explicit Vite vendor chunks eliminate the oversized-bundle warning without raising its threshold; application TypeScript remains strictly checked during production builds. Upstream dependency annotation warnings are not hidden.
-- [ ] ESLint, Vitest, Testing Library, broader component variants, and remaining primitive checks below. Prettier is used for touched files; Floating UI/TanStack Virtual only when needed.
+- [x] Consolidate editor chrome into semantic Tailwind palette roles; reuse CVA button/joined-choice/modal/dropdown variants, native range/checkbox compositions, font-weight adapters, disclosure/switch timing and loading indicators. Remove unused generic controls/CSS without enabling Preflight or reactivating dormant accounts/search. Preserve native-disabled selected tabs, textarea scrolling, artwork hex persistence, crop/export and local-only behavior. See [UI consolidation design](ui-consolidation-plan.md). Integrated checkpoint: 167/168 passed, followed by the corrected rendered-chevron assertion passing its focused rerun; desktop/mobile/narrow/short-landscape palette and contrast checks passed.
+- [ ] ESLint, Vitest, Testing Library and remaining accessibility/primitive checks below. Prettier is used for touched files; Floating UI/TanStack Virtual only when needed.
 
 Exit criteria: one usable grid with no board manager, initialized from the new schema; guest autosave/reset works across reloads without accidental media deletion; failed saves are reported. Retain single-grid/default/reset and image-placement/export coverage without bundled demo loading.
 
