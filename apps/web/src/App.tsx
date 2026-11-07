@@ -1411,7 +1411,7 @@ export default function App() {
               {t("common.actions.cancel")}
             </Button>
             <Button
-              variant="primary"
+              intent="primary"
               className="min-h-11"
               disabled={exporting}
               onClick={exportGrid}
@@ -1517,7 +1517,7 @@ export default function App() {
             {t("common.actions.cancel")}
           </Button>
           <Button
-            variant="primary"
+            intent="primary"
             onClick={() => {
               deliberateReload.current = true;
               window.location.reload();
@@ -1650,7 +1650,7 @@ export default function App() {
           </p>
           <div className="flex flex-wrap justify-end gap-2">
             <Button
-              variant="danger"
+              intent="danger"
               disabled={!resetSelected || importProgress !== null || exporting}
               onClick={resetGrid}
             >

@@ -57,7 +57,10 @@ export function CropEditor({
       returnFocus={returnFocus}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 flex-1 bg-ui-background" data-crop-stage>
+        <div
+          className="relative min-h-0 flex-1 bg-ui-background"
+          data-crop-stage
+        >
           <Cropper
             image={asset.src}
             crop={position}
@@ -106,7 +109,7 @@ export function CropEditor({
           </div>
           <div className="flex shrink-0 items-center gap-3 max-[600px]:w-full max-[600px]:justify-end">
             <Button
-              variant="icon"
+              presentation="icon"
               title={t("crop.guides")}
               aria-label={t("crop.guides")}
               aria-pressed={grid}
@@ -115,7 +118,7 @@ export function CropEditor({
               <Grid3X3 aria-hidden="true" />
             </Button>
             <Button
-              variant="icon"
+              presentation="icon"
               title={t("crop.reset")}
               aria-label={t("crop.reset")}
               onClick={() => {
@@ -126,12 +129,12 @@ export function CropEditor({
             >
               <RotateCcw aria-hidden="true" />
             </Button>
-            <Button className="min-h-11" onClick={() => setOpen(false)}>
+            <Button onClick={() => setOpen(false)}>
               {t("common.actions.cancel")}
             </Button>
             <Button
               className="min-h-11"
-              variant="primary"
+              intent="primary"
               disabled={!ready || error || !draft}
               onClick={() => {
                 if (draft) {

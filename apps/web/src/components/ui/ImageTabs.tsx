@@ -1,5 +1,30 @@
 import type { LucideIcon } from "lucide-react";
+import { cva } from "class-variance-authority";
 import { useLayoutEffect, useRef, useState } from "react";
+import { joinedChoiceStyles, joinedControlStyles } from "./controls";
+
+const tabListStyles = cva(
+  "grid [&>button]:w-auto! [&>button]:flex-row! [&>button]:enabled:hover:z-10 [&>button:enabled:hover]:control-hover! [&_svg]:size-5! [&_svg]:shrink-0 [&>button>span]:min-w-0 [&>button>span]:text-center [&>button>span]:text-xs [&>button>span]:leading-4 [&>button>span]:font-normal [&>button>span]:whitespace-nowrap",
+  {
+    variants: {
+      vertical: {
+        true: "h-full w-11 grid-cols-1 [&>button]:h-auto!",
+        false: "w-full [&>button]:h-11!",
+      },
+      threeTabs: { true: "", false: "" },
+      iconsOnly: {
+        true: "[&>button>span]:sr-only",
+        false: "[&>button>span]:not-sr-only",
+      },
+    },
+    compoundVariants: [
+      { vertical: true, threeTabs: true, className: "grid-rows-3" },
+      { vertical: true, threeTabs: false, className: "grid-rows-2" },
+      { vertical: false, threeTabs: true, className: "grid-cols-3" },
+      { vertical: false, threeTabs: false, className: "grid-cols-2" },
+    ],
+  },
+);
 
 export function ImageTabs({
   id,
@@ -66,7 +91,15 @@ export function ImageTabs({
             }
           : undefined
       }
-      className={`isolate grid ${vertical ? `h-full w-11 grid-cols-1 ${tabs.length === 3 ? "grid-rows-3" : "grid-rows-2"} [&>button]:h-auto! [&>button+button]:-mt-px` : `w-full ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"} [&>button]:h-11! [&>button+button]:-ml-px`} gap-0 ${square ? "rounded-none" : "rounded-md"} bg-ui-background [&>button]:relative [&>button]:min-w-0 [&>button]:w-auto! [&>button]:flex-row! [&>button]:gap-2! [&>button]:rounded-none! [&>button]:border [&>button]:border-solid [&>button]:border-ui-border [&>button]:bg-ui-background! [&>button]:px-2! [&>button]:py-2! ${square ? "[&>button:first-child]:rounded-l-none! [&>button:last-child]:rounded-r-none!" : "[&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!"} [&>button[data-selected]]:bg-ui-selected! [&>button:enabled:hover]:z-10 [&>button:enabled:hover]:control-hover! [&>button:focus-visible]:z-20 [&_svg]:size-5! [&_svg]:shrink-0 ${vertical || iconsOnly ? "[&>button>span]:sr-only" : "[&>button>span]:not-sr-only"} [&>button>span]:min-w-0 [&>button>span]:text-center [&>button>span]:text-xs [&>button>span]:leading-4 [&>button>span]:font-normal [&>button>span]:whitespace-nowrap`}
+      className={joinedControlStyles({
+        orientation: vertical ? "vertical" : "horizontal",
+        shape: square ? "square" : "rounded",
+        className: tabListStyles({
+          vertical,
+          threeTabs: tabs.length === 3,
+          iconsOnly: vertical || iconsOnly,
+        }),
+      })}
     >
       {tabs.map((tab, index) => (
         <button
@@ -105,7 +138,7 @@ export function ImageTabs({
           }}
           title={tab.title ?? tab.label}
           aria-label={tab.label}
-          className="flex min-h-11 items-center justify-center border-0 bg-transparent text-ui-muted data-selected:bg-ui-selected data-selected:text-ui-accent focus-visible:outline-2 focus-visible:outline-ui-accent focus-visible:-outline-offset-2! disabled:cursor-default! disabled:opacity-50 data-selected:disabled:opacity-100!"
+          className={joinedChoiceStyles({ spacing: "regular" })}
         >
           {tab.icon && <tab.icon aria-hidden="true" />}
           <span className={tab.iconOnly ? "sr-only!" : undefined}>

@@ -110,33 +110,56 @@ export function MotionDiv({
 }
 
 const buttonStyles = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md border border-solid px-3 py-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent disabled:cursor-default disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-md border border-solid font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-accent disabled:cursor-default disabled:opacity-50",
   {
     variants: {
-      variant: {
-        secondary: "",
+      intent: {
+        neutral:
+          "border-ui-border bg-ui-background text-ui-text enabled:hover:not-aria-pressed:control-hover!",
         primary:
           "border-ui-accent bg-ui-accent text-ui-on-accent [--control-hover-base:var(--accent)] enabled:hover:control-hover",
         success:
           "border-emerald-400 bg-emerald-600 text-white [--control-hover-base:var(--color-emerald-600)] enabled:hover:control-hover focus-visible:outline-emerald-400",
         danger:
           "border-red-400/40 bg-red-500/10 text-red-300 [--control-hover-base:color-mix(in_srgb,var(--color-red-500)_10%,var(--panel))] enabled:hover:control-hover focus-visible:outline-red-400",
-        icon: "size-11 shrink-0 p-0",
       },
+      size: { regular: "", compact: "", fluid: "" },
+      presentation: { text: "", icon: "shrink-0 p-0" },
     },
     compoundVariants: [
       {
-        variant: ["secondary", "icon"],
-        className:
-          "border-ui-border bg-ui-background text-ui-text enabled:hover:not-aria-pressed:control-hover!",
+        size: "regular",
+        presentation: "text",
+        className: "min-h-11 px-3 py-2 text-[11px]",
+      },
+      {
+        size: "compact",
+        presentation: "text",
+        className: "min-h-8 px-2 py-1 text-xs",
+      },
+      {
+        size: "regular",
+        presentation: "icon",
+        className: "size-11 text-[11px]",
+      },
+      {
+        size: "compact",
+        presentation: "icon",
+        className: "size-8 text-xs",
       },
     ],
-    defaultVariants: { variant: "secondary" },
+    defaultVariants: {
+      intent: "neutral",
+      size: "regular",
+      presentation: "text",
+    },
   },
 );
 
 export function Button({
-  variant,
+  intent,
+  size,
+  presentation,
   className,
   ref,
   type = "button",
@@ -147,11 +170,58 @@ export function Button({
     <button
       ref={ref}
       type={type}
-      className={buttonStyles({ variant, className })}
+      className={buttonStyles({ intent, size, presentation, className })}
       {...props}
     />
   );
 }
+
+export const joinedControlStyles = cva("isolate gap-0 bg-ui-background", {
+  variants: {
+    orientation: {
+      horizontal: "[&>button+button]:-ml-px",
+      vertical: "[&>button+button]:-mt-px",
+    },
+    shape: {
+      square: "rounded-none [&>button]:rounded-none!",
+      rounded: "rounded-md [&>button]:rounded-none!",
+    },
+  },
+  compoundVariants: [
+    {
+      orientation: "horizontal",
+      shape: "rounded",
+      className:
+        "[&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!",
+    },
+    {
+      orientation: "vertical",
+      shape: "rounded",
+      className:
+        "[&>button:first-child]:rounded-t-md! [&>button:last-child]:rounded-b-md!",
+    },
+  ],
+  defaultVariants: { orientation: "horizontal", shape: "rounded" },
+});
+
+export const joinedChoiceStyles = cva(
+  "relative flex min-h-11 min-w-0 items-center justify-center rounded-none border border-solid border-ui-border bg-ui-background py-2 text-ui-muted [--control-hover-base:var(--bg)] enabled:data-hover:control-hover enabled:hover:control-hover data-checked:bg-ui-selected data-checked:text-ui-accent data-selected:bg-ui-selected data-selected:text-ui-accent disabled:cursor-default! disabled:opacity-50 data-checked:disabled:opacity-100! data-selected:disabled:opacity-100! focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2! focus-visible:outline-ui-accent",
+  {
+    variants: {
+      spacing: { compact: "gap-1 px-1", regular: "gap-2 px-2" },
+    },
+    defaultVariants: { spacing: "compact" },
+  },
+);
+
+const radioGridStyles = cva("isolate grid gap-0 rounded-md bg-ui-background", {
+  variants: {
+    columns: {
+      2: "grid-cols-2",
+      3: "grid-cols-3 @max-[260px]/radio:grid-cols-2",
+    },
+  },
+});
 
 export function ButtonGroup({
   label,
@@ -169,13 +239,14 @@ export function ButtonGroup({
       role="group"
       aria-label={label}
       data-button-group={orientation}
-      className={clsx(
-        "inline-flex gap-0 rounded-md bg-ui-background [&>button]:relative [&>button]:rounded-none! [&>button]:bg-ui-background! [&>button[aria-pressed=true]]:bg-ui-selected! [&>button[aria-pressed=true]:enabled:hover]:border-ui-border! [&>button[aria-pressed=true]]:cursor-default! [&>button:not([aria-pressed=true]):hover]:z-10 [&>button:focus-visible]:z-20",
-        orientation === "vertical"
-          ? "flex-col [&>button+button]:-mt-px [&>button:first-child]:rounded-t-md! [&>button:last-child]:rounded-b-md!"
-          : "[&>button+button]:-ml-px [&>button:first-child]:rounded-l-md! [&>button:last-child]:rounded-r-md!",
-        className,
-      )}
+      className={joinedControlStyles({
+        orientation,
+        className: clsx(
+          "inline-flex [&>button]:relative [&>button]:bg-ui-background! [&>button[aria-pressed=true]]:bg-ui-selected! [&>button[aria-pressed=true]:enabled:hover]:border-ui-border! [&>button[aria-pressed=true]]:cursor-default! [&>button:not([aria-pressed=true]):hover]:z-10 [&>button:focus-visible]:z-20",
+          orientation === "vertical" && "flex-col",
+          className,
+        ),
+      })}
     >
       {children}
     </div>
@@ -218,14 +289,7 @@ export function IconRadioField({
       className="@container/radio flex flex-col gap-2"
     >
       <Label className={hideLabel ? "sr-only" : "field-label"}>{label}</Label>
-      <div
-        className={clsx(
-          "isolate grid gap-0 rounded-md bg-ui-background",
-          columns === 3
-            ? "grid-cols-3 @max-[260px]/radio:grid-cols-2"
-            : "grid-cols-2",
-        )}
-      >
+      <div className={radioGridStyles({ columns })}>
         {options.map(
           (
             { value: optionValue, label: optionLabel, icon: Icon },
@@ -239,7 +303,8 @@ export function IconRadioField({
               disabled={optionValue === value}
               data-value={optionValue}
               className={clsx(
-                "relative flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-none border border-solid border-ui-border bg-ui-background px-1 py-2 text-ui-muted [--control-hover-base:var(--bg)] data-hover:z-10 enabled:data-hover:control-hover data-checked:bg-ui-selected data-checked:text-ui-accent data-checked:cursor-default! data-checked:opacity-100! focus-visible:z-20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ui-accent",
+                joinedChoiceStyles(),
+                "data-hover:z-10",
                 optionIndex % columns !== 0 && "-ml-px",
                 optionIndex >= columns && "-mt-px",
                 optionIndex === 0 && "rounded-tl-md",
@@ -664,7 +729,7 @@ export function ActionMenu({
         <>
           <MenuButton
             as={Button}
-            variant="icon"
+            presentation="icon"
             ref={buttonRef}
             aria-label={label}
             title={label}

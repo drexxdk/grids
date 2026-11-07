@@ -80,7 +80,7 @@ export function AccountDialog({
             })}</p>
             <p className="m-0 text-xs leading-relaxed text-ui-muted">{t("account.mergeHelp")}</p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="primary" disabled={busy || loading} onClick={() => void run(async () => {
+              <Button intent="primary" disabled={busy || loading} onClick={() => void run(async () => {
                 await apiRequest("/account/merge", z.undefined(), { method: "POST", body: { id: pendingMerge.id } });
                 await onRefresh();
                 toast.success(t("account.merged"));
@@ -126,7 +126,7 @@ export function AccountDialog({
               icon={Unlink}
               destructive
             >
-                <Button variant="danger" disabled={busy || loading} onClick={() => {
+                <Button intent="danger" disabled={busy || loading} onClick={() => {
                   const provider = disconnecting;
                   void run(async () => {
                     await apiRequest(`/account/providers/${provider}`, z.undefined(), { method: "DELETE" });
@@ -139,7 +139,7 @@ export function AccountDialog({
             </AccountConfirmationCard>}
           </section>
           <section className="flex flex-col items-start gap-3" aria-label={t("account.deleteTitle")}>
-            <Button variant="danger" disabled={busy || loading} aria-expanded={Boolean(confirmation)} onClick={() => {
+            <Button intent="danger" disabled={busy || loading} aria-expanded={Boolean(confirmation)} onClick={() => {
               setDisconnecting(null);
               confirm(t("account.confirmAccount"), async () => {
               await apiRequest("/account", z.undefined(), { method: "DELETE" });

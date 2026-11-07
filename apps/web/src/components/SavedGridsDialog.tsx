@@ -163,7 +163,7 @@ export function SavedGridsDialog({
             {item.public ? <Lock aria-hidden="true" /> : <Globe2 aria-hidden="true" />}
             {t(item.public ? "account.makePrivate" : "account.makePublic")}
           </Button>
-          <Button variant="danger" disabled={busy} onClick={() => confirm(t("account.confirmDelete"), () => deleteItem("presets", item.id), true)}>
+          <Button intent="danger" disabled={busy} onClick={() => confirm(t("account.confirmDelete"), () => deleteItem("presets", item.id), true)}>
             <Trash2 aria-hidden="true" />{t("account.delete")}
           </Button>
         </>}
@@ -206,7 +206,7 @@ export function SavedGridsDialog({
                 <p id="cloud-save-name-help" className="m-0 text-xs text-ui-muted">{t("account.nameHelp")}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <Button variant="primary" type="submit" disabled={busy || !name.trim()}>
+                <Button intent="primary" type="submit" disabled={busy || !name.trim()}>
                   <Save aria-hidden="true" />{t("account.saveGrid")}
                 </Button>
                 <Button disabled={busy || !name.trim()} onClick={() => void run(async () => {
@@ -248,7 +248,7 @@ export function SavedGridsDialog({
                     <Button disabled={busy} onClick={() => confirm(t("account.confirmReplace"), () => saveGrid(item))}>
                       <Upload aria-hidden="true" />{t("account.replace")}
                     </Button>
-                    <Button variant="danger" disabled={busy} onClick={() => confirm(t("account.confirmDelete"), () => deleteItem("grids", item.id), true)}>
+                    <Button intent="danger" disabled={busy} onClick={() => confirm(t("account.confirmDelete"), () => deleteItem("grids", item.id), true)}>
                       <Trash2 aria-hidden="true" />{t("account.delete")}
                     </Button>
                   </div>

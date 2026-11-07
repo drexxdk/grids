@@ -230,7 +230,7 @@ export function AccountConfirmation({
       destructive={confirmation.destructive}
     >
       <Button
-        variant={confirmation.destructive ? "danger" : "primary"}
+        intent={confirmation.destructive ? "danger" : "primary"}
         disabled={actions.busy}
         onClick={() => {
           actions.setConfirmation(null);

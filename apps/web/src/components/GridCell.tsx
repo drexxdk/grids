@@ -842,7 +842,8 @@ export function GridCell({
                   {coarsePointer && onTouchDrag && !library?.onSelect && (
                     <Button
                       {...bindTouchDrag(close)}
-                      variant="icon"
+                      presentation="icon"
+                      size="fluid"
                       aria-label={t("cell.actions.dragImage")}
                       title={t("cell.actions.dragImage")}
                       className={cardToolButtonStyles({
@@ -857,7 +858,8 @@ export function GridCell({
                   {!library && (
                     <div className="contents">
                       <Button
-                        variant="icon"
+                        presentation="icon"
+                        size="fluid"
                         className={cardToolButtonStyles({
                           position: "bottomLeft",
                         })}
@@ -883,7 +885,8 @@ export function GridCell({
                   )}
                   {onCrop && (
                     <Button
-                      variant="icon"
+                      presentation="icon"
+                      size="fluid"
                       className={cardToolButtonStyles({
                         position: "bottomRight",
                         size: library ? "fixed" : "proportional",
@@ -904,7 +907,8 @@ export function GridCell({
                     (selectsLibraryImage ||
                       library?.source?.kind !== "provider") && (
                       <Button
-                        variant="icon"
+                        presentation="icon"
+                        size="fluid"
                         className={cardToolButtonStyles({
                           position: "topRight",
                           size: library ? "fixed" : "proportional",

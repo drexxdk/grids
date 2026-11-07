@@ -248,7 +248,7 @@ export function GridResizeControls({
               return (
                 <Button
                   key={change}
-                  variant="icon"
+                  presentation="icon"
                   aria-label={label}
                   title={limited ? limit : label}
                   data-resize-action={change > 0 ? "add" : "remove"}

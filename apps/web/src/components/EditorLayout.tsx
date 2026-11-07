@@ -244,7 +244,7 @@ export function EditorLayout({
         {actions}
         {!compact && (
           <Button
-            variant="icon"
+            presentation="icon"
             title={t(
               sidebarOpen ? "editor.closeSidebar" : "editor.showSidebar",
             )}

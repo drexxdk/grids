@@ -146,7 +146,7 @@ export function Modal({
                     </DialogTitle>
                     <Button
                       ref={closeButton}
-                      variant="icon"
+                      presentation="icon"
                       onClick={onClose}
                       aria-label={t("common.actions.closeDialog")}
                       title={t("common.actions.closeDialog")}
@@ -171,7 +171,7 @@ export function Modal({
                   </span>
                   <Button
                     ref={pendingCloseButton}
-                    variant="icon"
+                    presentation="icon"
                     onClick={onClose}
                     aria-label={t("common.actions.closeDialog")}
                     title={t("common.actions.closeDialog")}
