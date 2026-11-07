@@ -149,7 +149,7 @@ function OnlineImage({
       : selectedSrc;
   return (
     <div
-      className="relative w-full max-[901px]:h-full max-[901px]:w-auto"
+      className="relative w-full panel-bottom:h-full panel-bottom:w-auto"
       style={{
         aspectRatio: `600 / ${cellGeometry(props.gridStyle, 600, props.captionRows).height}`,
       }}

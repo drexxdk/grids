@@ -767,7 +767,7 @@ export default function App() {
   }
   return (
     <>
-      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none min-[901px]:grid-cols-[minmax(0,1fr)_0px]! min-[901px]:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_350px]! max-[901px]:flex! max-[901px]:flex-col!">
+      <main className="app-layout relative h-dvh! min-h-0! min-w-0 grid-rows-[auto_minmax(0,1fr)]! transition-[grid-template-columns] duration-180 ease-in-out motion-reduce:transition-none panel-right:grid! panel-right:grid-cols-[minmax(0,1fr)_0px]! panel-right:has-data-sidebar-open:grid-cols-[minmax(0,1fr)_350px]! panel-bottom:flex! panel-bottom:flex-col!">
         <EditorLayout
           canvasControls={null}
           resetPanel={renderResetPanel()}
@@ -816,7 +816,7 @@ export default function App() {
         >
           {() => (
             <aside
-              className={`asset-panel max-[901px]:p-0! min-[901px]:p-0! min-[901px]:sticky min-[901px]:top-0 min-[901px]:h-dvh min-[901px]:self-start min-[901px]:overflow-hidden min-[901px]:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
+              className={`asset-panel p-0! panel-right:sticky panel-right:top-0 panel-right:h-dvh panel-right:self-start panel-right:overflow-hidden panel-right:[&_.asset-library]:grid-cols-2! ${libraryDragOver ? "outline-2 -outline-offset-2 outline-(--mint)" : ""}`}
               aria-label={t("library.dropZone")}
               aria-busy={importProgress !== null}
               onDragOver={(event) => {
@@ -842,7 +842,7 @@ export default function App() {
             >
               <div
                 data-sidebar-header
-                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 max-[901px]:hidden"
+                className="flex min-h-19 shrink-0 items-center border-0 border-b border-solid border-(--line) px-4 py-4 panel-bottom:hidden"
               >
                 <a className="brand" href="./">
                   <span className="brand-mark">
@@ -853,12 +853,12 @@ export default function App() {
               </div>
               <div
                 data-sidebar-content
-                className="contents min-[901px]:flex min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:flex-col min-[901px]:overflow-y-auto min-[901px]:overflow-x-hidden min-[901px]:*:shrink-0 max-[901px]:block"
+                className="contents panel-right:flex panel-right:min-h-0 panel-right:flex-1 panel-right:flex-col panel-right:overflow-y-auto panel-right:overflow-x-hidden panel-right:*:shrink-0 panel-bottom:block"
               >
                 <div
                   id="asset-library"
                   data-overlay-scroll="x"
-                  className="asset-library @container/shelf max-[901px]:h-(--shelf-content-height) max-[901px]:grid-flow-col max-[901px]:grid-rows-[minmax(0,1fr)] max-[901px]:auto-cols-max max-[901px]:grid-cols-none! max-[901px]:overflow-x-auto max-[901px]:overflow-y-hidden max-[901px]:-m-3! max-[901px]:p-3!"
+                  className="asset-library @container/shelf panel-bottom:h-(--shelf-content-height) panel-bottom:grid-flow-col panel-bottom:grid-rows-[minmax(0,1fr)] panel-bottom:auto-cols-max panel-bottom:grid-cols-none! panel-bottom:overflow-x-auto panel-bottom:overflow-y-hidden panel-bottom:-m-3! panel-bottom:p-3!"
                 >
                   <UploadTile
                     ref={addImagesButton}
@@ -866,7 +866,7 @@ export default function App() {
                     progress={importProgress}
                     gridStyle={board}
                     captionRows={captionRows}
-                    className="self-start w-full max-[901px]:h-full max-[901px]:max-h-[100cqw] max-[901px]:w-auto max-[901px]:self-auto"
+                    className="self-start w-full panel-bottom:h-full panel-bottom:max-h-[100cqw] panel-bottom:w-auto panel-bottom:self-auto"
                     onClick={() => document.getElementById("upload")?.click()}
                     onDropFiles={(files) => {
                       setLibraryDragOver(false);

@@ -3,6 +3,9 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "overlayscrollbars/overlayscrollbars.css" layer(components);
 
+@custom-variant panel-bottom (&:where(.app-layout:has(> [data-editor-layout="bottom"]), .app-layout:has(> [data-editor-layout="bottom"]) *));
+@custom-variant panel-right (&:where(.app-layout:has(> [data-editor-layout="right"]), .app-layout:has(> [data-editor-layout="right"]) *));
+
 @utility control-hover {
   background-color: color-mix(
     in srgb,

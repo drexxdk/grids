@@ -641,18 +641,18 @@ test("overlay scrollbars keep compact panels and modals gutter-free", async ({
   for (const shape of ["portrait", "landscape", "square"]) {
     await selectField(page, "image-shape", shape);
     await openSidebarPanel(page, "Images");
-    await expect.poll(shelfHeight).toBeCloseTo(200, 0);
+    await expect.poll(shelfHeight).toBeCloseTo(150, 0);
     await checkRow(page.locator("#asset-library"), "[data-library-image]");
   }
   await openSidebarPanel(page, "Design");
-  await expect.poll(shelfHeight).toBeCloseTo(200, 0);
+  await expect.poll(shelfHeight).toBeCloseTo(150, 0);
   await openDesignSection(page, "Colors");
   await page
     .getByRole("button", { name: "Customize Colors", exact: true })
     .click();
   await expect
     .poll(() =>
-      page.locator("[data-sidebar-panels]").evaluate((element) => ({
+      page.locator("[data-editor-sidebar]").evaluate((element) => ({
         padding: getComputedStyle(element).paddingRight,
         scrollbar: getComputedStyle(element).scrollbarWidth,
         scrollable: element.scrollHeight > element.clientHeight,
@@ -701,10 +701,10 @@ test("overlay scrollbars keep compact panels and modals gutter-free", async ({
   await expect
     .poll(() =>
       page
-        .locator("[data-sidebar-panels]")
+        .locator("[data-editor-sidebar]")
         .evaluate((element) => element.scrollHeight > element.clientHeight + 1),
     )
-    .toBe(false);
+    .toBe(true);
   const beforeImagesDialog = await measureShelf();
   await page.locator("#export-grid-header").click();
   await expect(dialog).toBeVisible();
@@ -823,10 +823,34 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
   await page.setViewportSize({ width: 390, height: 180 });
   await expect(page.locator("[data-editor-sidebar]")).toHaveCount(1);
   const rail = page.locator("[data-panel-controls]");
-  await expect(rail.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
+  await expect(rail.locator(".os-scrollbar")).toHaveCount(0);
+  await expect(
+    aside.locator("[data-sidebar-panels] > .os-scrollbar"),
+  ).toHaveCount(0);
+  await expect(aside.locator(":scope > .os-scrollbar-vertical")).toHaveCSS(
     "opacity",
     "1",
   );
+  await aside.evaluate((element) => element.scrollTo(0, 0));
+  const railTop = (await rail.boundingBox()).y;
+  const contentTop = (
+    await aside.locator("[data-sidebar-panels]").boundingBox()
+  ).y;
+  const shelfBounds = await aside.boundingBox();
+  await page.mouse.move(
+    shelfBounds.x + shelfBounds.width / 2,
+    shelfBounds.y + shelfBounds.height / 2,
+  );
+  await page.mouse.wheel(0, 100);
+  await expect
+    .poll(() => aside.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  const shelfScroll = await aside.evaluate((element) => element.scrollTop);
+  expect((await rail.boundingBox()).y + shelfScroll).toBeCloseTo(railTop, 1);
+  expect(
+    (await aside.locator("[data-sidebar-panels]").boundingBox()).y +
+      shelfScroll,
+  ).toBeCloseTo(contentTop, 1);
   expect(
     await rail.evaluate((element) => element.offsetWidth - element.clientWidth),
   ).toBe(0);
@@ -851,6 +875,69 @@ test("overlay scrollbars cover sidebar, tab rail, modal and dropdown overflow", 
       .map((element) => element.id || element.className),
   );
   expect(missing).toEqual([]);
+});
+
+test("panel placement uses available width and height without losing selection", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await openSidebarPanel(page, "Reset");
+  await page.getByRole("checkbox", { name: "Grid", exact: true }).check();
+  for (const [width, height, layout] of [
+    [780, 720, "bottom"],
+    [780, 400, "right"],
+    [620, 300, "bottom"],
+    [900, 720, "bottom"],
+    [900, 500, "right"],
+    [901, 900, "right"],
+    [780, 720, "bottom"],
+  ]) {
+    await setEditorViewport(page, { width, height });
+    await expect(page.locator("[data-sidebar-track]")).toHaveAttribute(
+      "data-editor-layout",
+      layout,
+    );
+    await expect(page.locator("[data-editor-sidebar]")).toHaveCount(1);
+    await expect(
+      page.getByRole("tablist", { name: "Editor panels", exact: true }),
+    ).toHaveAttribute(
+      "aria-orientation",
+      layout === "bottom" ? "vertical" : "horizontal",
+    );
+    await expect(
+      page.getByRole("tab", { name: "Reset", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("checkbox", { name: "Grid", exact: true }),
+    ).toBeChecked();
+    const bounds = await page.locator("[data-editor-sidebar]").boundingBox();
+    if (layout === "right") {
+      expect(bounds.width).toBeCloseTo(350, 1);
+      expect(bounds.x).toBeCloseTo(width - 350, 1);
+      expect(bounds.y + bounds.height).toBeCloseTo(height, 1);
+    } else {
+      expect(bounds.width).toBeCloseTo(width, 1);
+      expect(bounds.height).toBeCloseTo(Math.min(150, height * 0.3), 1);
+    }
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <= innerWidth &&
+          document.documentElement.scrollHeight <= innerHeight + 1,
+      ),
+    ).toBe(true);
+  }
+  await openSidebarPanel(page, "Images");
+  for (const [height, ratio] of [
+    [720, 1],
+    [400, 3 / 4],
+  ]) {
+    await setEditorViewport(page, { width: 780, height });
+    const bounds = await page
+      .locator("#asset-library [data-upload-tile]")
+      .boundingBox();
+    expect(bounds.width / bounds.height).toBeCloseTo(ratio, 2);
+  }
 });
 
 touchTest(
@@ -923,7 +1010,8 @@ touchTest(
       });
       await showTitles.scrollIntoViewIfNeeded();
       await expect(showTitles).toBeInViewport();
-      await expect(themes).toBeInViewport({ ratio: 1 });
+      await images.scrollIntoViewIfNeeded();
+      await expect(images).toBeInViewport({ ratio: 1 });
       await images.click();
       await expect(page.locator("#asset-library")).toBeVisible();
       expect(
@@ -936,6 +1024,7 @@ touchTest(
       ).toBe(true);
     }
     await setEditorViewport(page, { width: 901, height: 900 });
+    await expect(sidebar).toHaveCount(1);
     await expect(tabs).toHaveAttribute("aria-orientation", "horizontal");
     await expect(tabs.getByRole("tab").first()).toHaveAccessibleName("Images");
     await expect(images).toBeDisabled();
@@ -977,26 +1066,68 @@ touchTest(
       name: "Add images",
       exact: true,
     });
-    for (const [width, shape, ratio] of [
-      [260, "portrait", 3 / 4],
-      [390, "landscape", 4 / 3],
-      [780, "square", 1],
-      [900, "portrait", 3 / 4],
+    for (const [width, shape, ratio, height] of [
+      [260, "portrait", 3 / 4, 720],
+      [390, "landscape", 4 / 3, 720],
+      [780, "square", 1, 720],
+      [900, "portrait", 3 / 4, 720],
+      [390, "portrait", 3 / 4, 240],
     ]) {
       await setEditorViewport(page, { width, height: 720 });
       await selectField(page, "image-shape", shape);
+      if (height !== 720) await setEditorViewport(page, { width, height });
       await library.evaluate((element) => {
         element.scrollLeft = 0;
       });
-      await expect(add).toBeInViewport({ ratio: 1 });
+      expect(
+        (await page.locator("[data-editor-sidebar]").boundingBox()).height,
+      ).toBeCloseTo(Math.min(150, height * 0.3), 1);
+      if (height * 0.3 < 150) {
+        const panels = page.locator("[data-editor-sidebar]");
+        await expect(library).toHaveCSS("height", "149px");
+        await expect
+          .poll(() =>
+            panels.evaluate(
+              (element) => element.scrollHeight > element.clientHeight,
+            ),
+          )
+          .toBe(true);
+        const panelBounds = await panels.boundingBox();
+        await page.mouse.move(
+          panelBounds.x + panelBounds.width / 2,
+          panelBounds.y + panelBounds.height / 2,
+        );
+        await page.mouse.wheel(0, 100);
+        await expect
+          .poll(() => panels.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(0);
+        await expect(
+          panels.locator(":scope > .os-scrollbar-vertical"),
+        ).toHaveCSS("opacity", "1");
+        await expect(add).toBeInViewport();
+      } else {
+        await expect(add).toBeInViewport({ ratio: 1 });
+      }
       const uploadBounds = await add.boundingBox();
+      expect(uploadBounds.height).toBeCloseTo(125, 1);
       expect(uploadBounds.width).toBeCloseTo(uploadBounds.height, 1);
-      for (const label of await add.locator("[data-upload-label]").all()) {
+      for (const [index, label] of (
+        await add.locator("[data-upload-label]").all()
+      ).entries()) {
         expect(
           await label.evaluate((element) =>
             parseFloat(getComputedStyle(element).fontSize),
           ),
-        ).toBeGreaterThanOrEqual(12);
+        ).toBeCloseTo(uploadBounds.width * [0.085, 0.07][index], 1);
+        const labelBounds = await label.boundingBox();
+        expect(labelBounds.x).toBeGreaterThanOrEqual(uploadBounds.x);
+        expect(labelBounds.y).toBeGreaterThanOrEqual(uploadBounds.y);
+        expect(labelBounds.x + labelBounds.width).toBeLessThanOrEqual(
+          uploadBounds.x + uploadBounds.width,
+        );
+        expect(labelBounds.y + labelBounds.height).toBeLessThanOrEqual(
+          uploadBounds.y + uploadBounds.height,
+        );
       }
       const imageBounds = await page
         .locator(".grid-cell")

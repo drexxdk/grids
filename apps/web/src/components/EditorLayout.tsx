@@ -22,7 +22,8 @@ import { Button, MotionDiv } from "./ui/controls";
 import { ImageTabs } from "./ui/ImageTabs";
 import { useEditorState } from "../browser/navigation";
 
-const compactQuery = "(width < 901px)";
+const compactQuery =
+  "(width < 640px), (width < 901px) and (aspect-ratio < 7/5)";
 function subscribeToViewport(onChange: () => void) {
   const media = window.matchMedia(compactQuery);
   media.addEventListener("change", onChange);
@@ -284,6 +285,7 @@ export function EditorLayout({
       {workspace(null)}
       <div
         data-sidebar-track
+        data-editor-layout={compact ? "bottom" : "right"}
         data-sidebar-open={!compact && sidebarOpen ? "" : undefined}
         className={
           compact
@@ -311,13 +313,13 @@ export function EditorLayout({
               <aside
                 id={panelsId}
                 data-editor-sidebar
-                data-overlay-scroll="none"
+                data-overlay-scroll={compact ? "y" : "none"}
                 aria-label={t("editor.tools")}
-                className={`min-h-0 min-w-0 w-full overflow-hidden border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(200px,30dvh)] flex-row border-t [--shelf-content-height:calc(min(200px,30dvh)-1px)]" : "flex h-full flex-col border-l"}`}
+                className={`min-h-0 min-w-0 w-full border-0 border-solid border-(--line) bg-(--panel) ${compact ? "flex h-[min(150px,30dvh)] flex-row items-start overflow-x-hidden overflow-y-auto overscroll-contain border-t [--shelf-content-height:149px]" : "flex h-full flex-col overflow-hidden border-l"}`}
               >
                 <div
                   data-sidebar-sticky
-                  className={`sticky top-0 z-20 shrink-0 bg-(--panel) ${compact ? "min-h-0 w-11 overflow-y-auto" : ""}`}
+                  className={`z-20 shrink-0 bg-(--panel) ${compact ? "relative min-h-37.25 w-11" : "sticky top-0"}`}
                 >
                   {!brandInHeader && !compact && (
                     <div
@@ -330,8 +332,8 @@ export function EditorLayout({
                   {
                     <div
                       data-panel-controls
-                      data-overlay-scroll={compact ? "y" : "none"}
-                      className={`flex shrink-0 flex-col gap-2 ${compact ? "h-full" : "px-4 py-4"}`}
+                      data-overlay-scroll="none"
+                      className={`flex shrink-0 flex-col gap-2 ${compact ? "" : "px-4 py-4"}`}
                     >
                       <ImageTabs
                         id={panelsId}
@@ -360,8 +362,8 @@ export function EditorLayout({
                 </div>
                 <div
                   data-sidebar-panels
-                  data-overlay-scroll="y"
-                  className={`relative isolate z-0 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain ${selectedPanel === 2 ? "p-0" : "p-3"} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible!`}
+                  data-overlay-scroll={compact ? "none" : "y"}
+                  className={`relative isolate z-0 min-w-0 flex-1 ${compact ? "min-h-37.25" : "min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain"} ${selectedPanel === 2 ? "p-0" : "p-3"} **:data-sidebar-header:hidden! [&_.asset-panel]:static! [&_.asset-panel]:block! [&_.asset-panel]:h-auto! [&_.asset-panel]:overflow-visible! [&_.asset-panel]:border-0! **:data-sidebar-content:overflow-visible!`}
                 >
                   <div
                     role="tabpanel"

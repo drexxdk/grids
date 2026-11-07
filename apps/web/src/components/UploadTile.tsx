@@ -28,7 +28,7 @@ export function UploadTile({
   const [hovered, setHovered] = useState(false);
   return (
     <div
-      className={`min-w-0 max-[901px]:shrink-0 ${squareOnShelf ? "max-[901px]:aspect-square!" : ""} ${className}`}
+      className={`min-w-0 panel-bottom:shrink-0 ${squareOnShelf ? "panel-bottom:aspect-square!" : ""} ${className}`}
       style={{ aspectRatio: `600 / ${geometry.height}` }}
     >
       <button
@@ -38,7 +38,7 @@ export function UploadTile({
         aria-label={t("common.actions.addImages", { count: 2 })}
         disabled={progress !== null}
         title={t("common.actions.addOrDropImages", { count: 2 })}
-        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] focus-visible:[--card-frame-color:var(--card-frame-hover-color)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "max-[901px]:aspect-square! max-[901px]:rounded-(--upload-corner-radius)! max-[901px]:**:data-upload-label:text-xs" : ""}`}
+        className={`image-card @container relative size-full border-0! p-0! text-(--muted) outline-none! [--card-frame-color:transparent] data-image-hovered:[--card-frame-color:var(--card-frame-hover-color)] focus-visible:[--card-frame-color:var(--card-frame-hover-color)] disabled:cursor-default! disabled:opacity-100! ${squareOnShelf ? "panel-bottom:aspect-square! panel-bottom:rounded-(--upload-corner-radius)!" : ""}`}
         style={
           {
             aspectRatio: `600 / ${geometry.height}`,
